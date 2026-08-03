@@ -52,6 +52,8 @@ const Progression = (() => {
     s.hp = max;
     s.supply = { fuel: 1, ammo: 1 };
     st.stats.remodel++;
+    notify('remodel', 1);
+    if (def.type === 'BB' || def.type === 'BBV') notify('remodel_bb', 1);
     return { ok: true, def };
   }
 
@@ -101,6 +103,7 @@ const Progression = (() => {
     }
     G.destroyShip(materialUid);
     st.stats.modernize++;
+    notify('modernize', 1);
     return { ok: true };
   }
 
@@ -201,10 +204,28 @@ const Progression = (() => {
     return gains;
   }
 
+  /* 动态条件检查（编成规模/搭载飞机数），由主循环每秒调用 */
+  function checkDynamic() {
+    const G = GameRef();
+    const st = G.state;
+    const fleetCount = (st.fleet[1] || []).length + (st.fleet[2] || []).length;
+    notify('fleet_size', fleetCount >= 4 ? 1 : 0, 4);
+    let planes = 0;
+    for (const uid of st.fleet[1] || []) {
+      const s = st.ships[uid];
+      if (!s) continue;
+      for (const euid of s.equipped) {
+        const e = st.equipment[euid];
+        if (e && EquipmentData[e.id] && [SLOT.FIGHTER, SLOT.ATTACKER, SLOT.BOMBER].includes(EquipmentData[e.id].slot)) planes++;
+      }
+    }
+    notify('plane_count', planes >= 8 ? 1 : 0, 8);
+  }
+
   return {
     MAX_LV, shipExpToLevel, addShipExp, remodelInfo, remodel,
     modernizeInfo, modernize, resetDue, resetQuests, initQuests, notify, canClaim, claimQuest,
-    applyBattleResult
+    applyBattleResult, checkDynamic
   };
 })();
 

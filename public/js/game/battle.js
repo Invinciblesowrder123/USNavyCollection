@@ -175,6 +175,12 @@ const Battle = (() => {
     if (def.hp <= 0 && def.alive) { def.alive = false; log.push(`${def.name} 被击沉了！`); }
   }
 
+  /* HP 快照（供 UI 演出） */
+  function snapshot(sideA, sideB) {
+    const mk = s => ({ n: s.name, hp: Math.max(0, s.hp), max: s.stats.hpMax, alive: s.alive });
+    return { snap: { A: sideA.map(mk), B: sideB.map(mk) } };
+  }
+
   /* ============ 昼战特殊攻击判定 ============ */
   function resolveDayAttack(s, airSup) {
     if (s.stats.fp <= 0 || !s.alive) return null;
@@ -203,7 +209,7 @@ const Battle = (() => {
   }
 
   /* ============ 空袭 ============ */
-  function airStrike(log, attackers, defenders, sideLabel) {
+  function airStrike(log, attackers, defenders, sideLabel, snap) {
     for (const s of attackers) {
       if (!s.alive) continue;
       for (const sl of s.slots) {
@@ -225,6 +231,7 @@ const Battle = (() => {
         s.dealt += dmg;
         t.hp -= dmg;
         if (t.hp <= 0 && t.alive) { t.alive = false; log.push(`${t.name} 被击沉了！`); }
+        if (snap) snap();
       }
     }
   }
@@ -241,6 +248,8 @@ const Battle = (() => {
     const fA = FORMATIONS[formationA] || FORMATIONS['单纵阵'];
     const fB = FORMATIONS[formationB] || FORMATIONS['单纵阵'];
     const losOk = (opts.losReq == null) || (G.fleetLos(opts.fleetIdx) >= opts.losReq);
+    const pushSnap = () => log.push(snapshot(sideA, sideB));
+    const hit = (s, t, dmg, prefix, extra) => { dealDamage(log, s, t, dmg, prefix, extra); pushSnap(); };
 
     L(`敌军阵型：${formationB}。我军选择：${formationA}。`);
     let airSup = false;
@@ -282,8 +291,8 @@ const Battle = (() => {
           }
         }
         /* 双方空袭 */
-        airStrike(log, sideA, sideB, '我军');
-        airStrike(log, sideB, sideA, '敌军');
+        airStrike(log, sideA, sideB, '我军', pushSnap);
+        airStrike(log, sideB, sideA, '敌军', pushSnap);
       } else {
         L('索敌失败！无法展开航空战。');
       }
@@ -300,7 +309,7 @@ const Battle = (() => {
       if (Util.chance(0.9)) {
         const ap = threshold(s.stats.asw + 20 + (fA.asw || 0), 150);
         const dmg = calcDamage(ap, t.stats.arm, 0.1);
-        dealDamage(log, s, t, dmg, '先制对潜！');
+        hit(s, t, dmg, '先制对潜！');
       } else L(`先制对潜！${s.name} 攻击 ${t.name}，未命中。`);
     }
 
@@ -312,7 +321,7 @@ const Battle = (() => {
       if (Util.chance(0.7)) {
         const ap = threshold(s.stats.tp + 5, 150);
         const dmg = calcDamage(ap, t.stats.arm, critChance(s));
-        dealDamage(log, s, t, dmg, '开幕雷击！');
+        hit(s, t, dmg, '开幕雷击！');
       } else L(`开幕雷击！${s.name} 的鱼雷未命中。`);
     }
 
@@ -330,7 +339,7 @@ const Battle = (() => {
       if (ammoMult < 1) ap *= ammoMult;
       ap = threshold(ap, 180);
       const dmg = calcDamage(ap, t.stats.arm, critChance(s));
-      dealDamage(log, s, t, dmg, `${label}`, atk.name ? `发动${atk.name}！` : '');
+      hit(s, t, dmg, `${label}`, atk.name ? `发动${atk.name}！` : '');
     };
 
     const round = (label) => {
@@ -368,7 +377,7 @@ const Battle = (() => {
       if (Util.chance(0.7)) {
         const ap = threshold(s.stats.tp + 5, 150);
         const dmg = calcDamage(ap, t.stats.arm, critChance(s));
-        dealDamage(log, s, t, dmg, '雷击战！');
+        hit(s, t, dmg, '雷击战！');
       } else L(`雷击战！${s.name} 的鱼雷未命中。`);
     }
 
@@ -392,7 +401,7 @@ const Battle = (() => {
             if (Util.chance(0.72)) {
               const ap = threshold((s.stats.fp + s.stats.tp + 5) * atk.mult, 300);
               const dmg = calcDamage(ap, t.stats.arm, critChance(s) + 0.05);
-              dealDamage(log, s, t, dmg, '夜战：', atk.name ? `发动${atk.name}！` : '');
+              hit(s, t, dmg, '夜战：', atk.name ? `发动${atk.name}！` : '');
             } else L(`夜战：${s.name} 攻击 ${t.name}，未命中。`);
           }
         }

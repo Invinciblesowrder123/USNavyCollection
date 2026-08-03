@@ -12,10 +12,30 @@
 - 编写 MEMORY.md（架构决策 + 数据规范速查）
 
 **下一步：**
-- [ ] 服务器脚手架：package.json、server.js、index.html、style.css
-- [ ] 数据层三件套：equipment.js → ships.js → maps/expeditions/quests
-- [ ] state.js 存档系统
-- [ ] battle.js 战斗引擎
-- [ ] generate_art.js SVG 立绘生成
-- [ ] UI 各屏幕
-- [ ] simulate.js headless 验证
+- [x] 服务器脚手架：package.json、server.js、index.html、style.css
+- [x] 数据层三件套：equipment.js → ships.js → maps/expeditions/quests
+- [x] state.js 存档系统
+- [x] battle.js 战斗引擎
+- [x] generate_art.js SVG 立绘生成
+- [x] UI 各屏幕
+- [x] simulate.js headless 验证
+
+---
+
+## 2026-08-03 17:30 — v0.1 完成（全功能可玩）
+
+**完成：**
+- 数据层：44件装备 / 55艘美舰（含改/改二形态）/ 3海域 / 8远征 / 日常8+周常6+月常2+一次性14任务
+- 核心引擎（battle.js）：制空权5档+S1/S2+空袭+先制对潜+开幕雷击(SS)+交战形态+昼战炮击(射程序/BB二轮/观测射击CI/连击)+昼战雷击+夜战(鱼雷CI/主鱼CI/连击)+对空CI+经验/掉落/血条/疲劳/补给惩罚
+- 核心引擎（其余）：建造(配方池+稀有度加权)/开发(秘书舰池)/远征(条件+大破失败)/入渠/补给/等级/改造/近代化/任务追踪/演习
+- 美术：57张 SVG 立绘（舰娘55 + 深海通用2）
+- UI：母港/编成/舰娘详情(装备/改造/近代化/解体)/出击(海域地图+路线分歧+阵型选择+战斗演出)/工厂/后勤(远征/入渠/补给/演习)/任务
+- 测试：`npm run sim` 255项引擎断言全过；`test_flow.html` 浏览器端 39项 E2E 全过
+- 修复记录：dealDamage 传参bug / STAT_NAMES 未导出 / 经验曲线过陡(改平坦) / 演习敌方用真实舰船 / finishTimers 误删建造队列 / window.Game 未挂载 / esc 未定义 / BOSS 平衡(满级舰队50战全胜，正常)
+
+**下一步（后续迭代候选）：**
+- [ ] 装备改修工厂（明石=维斯塔尔工作舰）
+- [ ] 活动海域（贴条/削甲/友军/多段血条）
+- [ ] 图鉴收集率、更多海域（1-4~1-6）
+- [ ] 音乐/音效、战斗动画增强
+- [ ] 浏览器 E2E 脚本化（自动化运行 test_flow）

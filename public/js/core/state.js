@@ -95,6 +95,12 @@ const Game = (() => {
       supply: { fuel: 1, ammo: 1 },  // 0~1 补给比例
       locked: false
     };
+    if (typeof Progression !== 'undefined') {
+      const t = def.type;
+      if (t === 'DD' || t === 'DE') Progression.notify('get_type', 1, 'DD');
+      else if (t === 'CL' || t === 'CA' || t === 'CLT' || t === 'CAV') Progression.notify('get_type', 1, 'CLCA');
+      else if (t === 'CV' || t === 'CVL' || t === 'CVB') Progression.notify('get_type', 1, 'CV');
+    }
     return state.ships[uid];
   }
 
@@ -240,17 +246,8 @@ const Game = (() => {
 
   /* ============ 通用检查/完成处理 ============ */
   function finishTimers(now) {
-    /* 建造完成 */
-    for (let i = state.construction.length - 1; i >= 0; i--) {
-      const c = state.construction[i];
-      if (now >= c.end) { state.construction.splice(i, 1); state.stats.build++; }
-    }
-    /* 开发完成 */
-    for (let i = state.development.length - 1; i >= 0; i--) {
-      const c = state.development[i];
-      if (now >= c.end) { state.development.splice(i, 1); state.stats.develop++; }
-    }
-    /* 入渠完成 */
+    /* 建造/开发：完成后保留在队列中，由玩家点击领取（Factory.claimBuild/claimDevelop） */
+    /* 入渠完成：自动修复 */
     for (let i = 0; i < state.repairs.length; i++) {
       const r = state.repairs[i];
       if (r && now >= r.end) {
@@ -258,11 +255,6 @@ const Game = (() => {
         if (s) { s.hp = shipStats(s.uid).hpMax; state.stats.repair++; }
         state.repairs[i] = null;
       }
-    }
-    /* 远征完成 */
-    for (const f in state.expeditions) {
-      const ex = state.expeditions[f];
-      if (ex && now >= ex.end) { /* 由 UI/逻辑领取 */ }
     }
   }
 
@@ -274,4 +266,5 @@ const Game = (() => {
   };
 })();
 
+if (typeof window !== 'undefined') window.Game = Game;
 if (typeof module !== 'undefined' && module.exports) module.exports = { Game };

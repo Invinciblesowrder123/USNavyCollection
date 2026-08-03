@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>UI Flow Test</title></head>
+<body>
+<div id="result">RUNNING</div>
+<header id="topbar"><div class="top-left"><span id="admiralInfo"></span></div><div id="resBar"></div></header>
+<nav id="navbar"></nav>
+<main id="screen"></main>
+<div id="toast"></div>
+<div id="modal-root"></div>
+<script src="js/core/utils.js"></script>
+<script src="js/data/equipment.js"></script>
+<script src="js/data/ships.js"></script>
+<script src="js/data/maps.js"></script>
+<script src="js/data/quests.js"></script>
+<script src="js/core/state.js"></script>
+<script src="js/game/battle.js"></script>
+<script src="js/game/factory.js"></script>
+<script src="js/game/logistics.js"></script>
+<script src="js/game/progression.js"></script>
+<script src="js/game/sortie.js"></script>
+<script src="js/ui/common.js"></script>
+<script src="js/ui/homeport.js"></script>
+<script src="js/ui/sortie.js"></script>
+<script src="js/ui/factory.js"></script>
+<script src="js/ui/logistics.js"></script>
+<script src="js/ui/quests.js"></script>
+<script>
+  window.__errors = [];
+  window.onerror = function (msg, src, line) { window.__errors.push(msg + ' @' + (src || '').split('/').pop() + ':' + line); };
+  window.__results = [];
+  const R = (ok, name, extra) => { window.__results.push((ok ? 'PASS' : 'FAIL') + ' ' + name + (extra ? ' :: ' + extra : '')); };
+
+  function boot() {
+    try {
+      Game.load();
+      Progression.initQuests();
+      Progression.resetDue();
+
+      /* 1. 屏幕渲染 */
+      const screens = [['home'], ['formation'], ['factory'], ['logistics', 'expedition'], ['logistics', 'dock'], ['logistics', 'supply'], ['logistics', 'practice'], ['quests'], ['sortie']];
+      for (const s of screens) {
+        UI.go(s[0], s[1]);
+        R(document.querySelector('#screen').innerHTML.length > 50, 'screen:' + s.join('/'));
+      }
+
+      /* 2. 资源注入 + 强舰队 */
+      Game.gain({ fuel: 20000, ammo: 20000, steel: 20000, baux: 20000 });
+      const strongIds = ['enterprise', 'iowa', 'essex', 'fletcher', 'atlanta', 'saratoga'];
+      const fleet = [];
+      for (const id of strongIds) {
+        const s = Game.createShip(id, 60);
+        s.kai = 1;
+        Game.equipDefaults(s.uid);
+        s.supply = { fuel: 1, ammo: 1 };
+        s.hp = Game.shipStats(s.uid).hpMax;
+        fleet.push(s.uid);
+      }
+      Game.state.fleet[1] = fleet;
+      Game.state.fleet[2] = [fleet.pop(), fleet.pop()];
+
+      /* 3. 完整出击 1-1（血条=3次击破，循环3次） */
+      let cleared = false;
+      for (let run = 0; run < 3 && !cleared; run++) {
+        const st1 = Sortie.start('1-1', 1);
+        R(st1.ok, 'sortie:start', JSON.stringify(st1));
+        let guard = 0, battles = 0, bossFought = false;
+        while (Game.state.sortie && guard++ < 12) {
+          const r = Sortie.advance('单纵阵', true);
+          R(r.ok, 'sortie:advance-' + (r.type || '?'), JSON.stringify(r.msg));
+          if (r.type === 'battle' || r.type === 'boss') {
+            battles++;
+            Progression.applyBattleResult(1, r.result, false);
+            if (r.type === 'boss') { bossFought = true; if (r.cleared) cleared = true; }
+            /* 战斗演出渲染冒烟测试 */
+            UI.go('sortie');
+            SortieUI.renderBattle(document.querySelector('#screen'), r, function () {});
+            document.querySelector('#screen').innerHTML = '';
+          }
+          const nxt = Sortie.moveToNext();
+          if (!nxt) break;
+        }
+        Sortie.returnHome();
+        R(battles > 0, 'sortie:battles', 'count=' + battles);
+        R(bossFought, 'sortie:bossFought');
+      }
+      R(cleared, 'sortie:1-1cleared');
+
+      /* 4. 建造/开发/远征/入渠 UI 冒烟（直接逻辑） */
+      const b = Factory.startBuild({ fuel: 400, ammo: 400, steel: 500, baux: 500 });
+      R(b.ok, 'factory:build', JSON.stringify(b));
+      Game.state.construction[0].end = Date.now() - 1;
+      const cb = Factory.claimBuild(0);
+      R(cb.ok, 'factory:claimBuild');
+      const d = Factory.startDevelop({ fuel: 10, ammo: 20, steel: 10, baux: 40 }, null);
+      R(d.ok, 'factory:develop');
+      Game.state.development[0].end = Date.now() - 1;
+      const cd = Factory.claimDevelop(0);
+      R(cd.ok, 'factory:claimDevelop');
+      const ex = Logistics.startExpedition(2, 'ex1');
+      R(ex.ok, 'logistics:expedition', JSON.stringify(ex));
+      Game.state.expeditions[2].end = Date.now() - 1;
+      const cex = Logistics.claimExpedition(2);
+      R(cex.ok, 'logistics:claimExpedition');
+      const s0 = Game.state.ships[Game.state.fleet[1][0]];
+      s0.hp = 1;
+      const rc = Logistics.repairCost(s0.uid);
+      const rr = Logistics.startRepair(0, s0.uid);
+      R(rr.ok, 'logistics:repair', JSON.stringify(rr));
+      Game.state.repairs[0].end = Date.now() - 1;
+      Game.finishTimers(Date.now());
+      R(Game.state.ships[s0.uid].hp > 1, 'logistics:repairDone', 'hp=' + Game.state.ships[s0.uid].hp);
+
+      /* 5. 演习 */
+      const pr = Logistics.practiceReady();
+      const res = Battle.battle(Game.state.fleet[1], pr.fleets[0].ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
+      R(typeof res.rank === 'string' && res.rank.length === 1, 'practice:battle', res.rank);
+      Progression.applyBattleResult(1, res, true);
+
+      /* 6. 任务 */
+      Progression.notify('sortie', 3);
+      const cq = Progression.claimQuest('d1');
+      R(cq.ok, 'quest:claim', JSON.stringify(cq.q && cq.q.id));
+
+      /* 7. 改造 */
+      s0.lv = 90;
+      const rm = Progression.remodel(s0.uid);
+      R(rm.ok, 'remodel:kai2', JSON.stringify(rm));
+
+      document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
+    } catch (e) {
+      window.__errors.push('FATAL ' + e.message + ' ' + (e.stack || '').split('\n')[1]);
+      document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
+    }
+  }
+  setTimeout(boot, 300);
+</script>
+</body>
+</html>

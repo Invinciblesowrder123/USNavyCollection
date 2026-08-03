@@ -53,6 +53,7 @@ const Logistics = (() => {
     const ex = EXPEDITIONS.find(e => e.id === exInfo.exId);
     st.expeditions[fleetIdx] = null;
     st.stats.expedition++;
+    Progression.notify('expedition', 1);
     G.gain(ex.reward);
     /* 远征归来的舰娘加疲劳 */
     for (const uid of st.fleet[fleetIdx]) {
@@ -115,6 +116,7 @@ const Logistics = (() => {
     if (st.resources.steel < c.steel) return { ok: false, msg: `钢材不足！需要 ${c.steel}` };
     st.resources.steel -= c.steel;
     st.repairs[dockIdx] = { ship: uid, start: Date.now(), end: Date.now() + c.minutes * TIME_SCALE * 1000 };
+    Progression.notify('repair', 1);
     return { ok: true, c };
   }
 

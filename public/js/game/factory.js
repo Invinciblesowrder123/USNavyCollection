@@ -39,6 +39,7 @@ const Factory = (() => {
     st.construction.splice(i, 1);
     const ship = G.createShip(job.shipId, 1);
     st.stats.build++;
+    Progression.notify('build', 1);
     return { ok: true, ship };
   }
 
@@ -76,6 +77,7 @@ const Factory = (() => {
     if (!job || Date.now() < job.end) return { ok: false, msg: '尚未开发完成！' };
     st.development.splice(i, 1);
     st.stats.develop++;
+    Progression.notify('develop', 1);
     if (!job.eqId) return { ok: true, eq: null };
     const eq = G.createEquip(job.eqId);
     return { ok: true, eq };
