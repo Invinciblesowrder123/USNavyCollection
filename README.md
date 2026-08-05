@@ -7,6 +7,17 @@
 - 账号：注册/登录/云存档（密码 scrypt 加盐哈希，存档存 `data/saves/`）；游客模式可无账号本地游玩（localStorage）
 - 美术：程序化生成的 SVG 舰娘立绘（`npm run art` 可重新生成）
 
+## 版本说明
+
+本仓库按「新 → 旧」顺序维护：
+
+| 版本 | 位置 | 说明 |
+|---|---|---|
+| **当前版（v0.1.1+）** | 仓库根目录 | 含账号系统（注册/登录/云存档）、改修工厂完善、立绘/UI 优化 |
+| **旧版备份（v0.1，2026-08-04）** | `archive/USNavyCollection_20260804/` | 上线前完整快照，独立 `.gitignore`，仅供对照回滚 |
+
+详细变更记录见 [VERSION_HISTORY.md](VERSION_HISTORY.md)。
+
 ## 快速开始
 
 ```bash
@@ -47,6 +58,7 @@ public/js/data/          舰船/装备/地图/远征/任务数据
 public/js/game/          战斗/工厂/改修工厂/后勤/养成/出击引擎
 public/js/ui/            各屏幕渲染器（含登录/注册）
 docs                     设计文档（MEMORY/HEARTBEAT/CHARACTER）
+archive/                 旧版本快照（见 VERSION_HISTORY.md）
 ```
 
 ## 养成系统速查（参照 kcwiki）
