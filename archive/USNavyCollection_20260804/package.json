@@ -1,0 +1,15 @@
+{
+  "name": "us-navy-collection",
+  "version": "0.1.0",
+  "description": "美舰收藏 - 基于舰队收藏机制的美国海军舰娘仿品网页游戏",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "art": "node scripts/generate_art.js",
+    "sim": "node scripts/simulate.js",
+    "test": "node scripts/simulate.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
