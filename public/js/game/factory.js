@@ -49,7 +49,8 @@ const Factory = (() => {
     const st = G.state;
     if (!G.canAfford(recipe)) return { ok: false, msg: '资源不足！' };
     if (st.development.length >= 2) return { ok: false, msg: '开发位已满！' };
-    const sec = secretaryUid ? st.ships[secretaryUid] : null;
+    const secInst = secretaryUid ? st.ships[secretaryUid] : null;
+    const sec = secInst ? G.shipDef(secInst) : null;
     const key = secretaryKey(sec);
     let pool = (SECRETARY_POOL[key] || []).map(id => EquipmentData[id])
       .filter(e => e.buildable !== false && recipe.fuel >= e.cost[0] && recipe.ammo >= e.cost[1] &&

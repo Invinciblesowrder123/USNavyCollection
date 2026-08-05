@@ -1,23 +1,46 @@
 'use strict';
 /* ============================================================
  * 游戏存档状态管理
- * 资源自然恢复：每30秒 +2/+2/+2/+1（油弹钢/铝），离线补算
+ * 资源自然恢复（参照 kcwiki「资源」条目）：
+ *   原版每3分钟 燃料/弹药/钢材+3、铝土+1，上限=(司令部等级+3)×250
+ *   本作按 6 倍时间压缩：每30秒 +3/+3/+3/+1（油弹钢/铝），离线补算
+ * 调试模式：无限资源（顶栏按钮切换，独立于存档存储）
  * ============================================================ */
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
+  const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
-  const REGEN = { fuel: 2, ammo: 2, steel: 2, baux: 1 };
+  const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
+  const INFINITE_RES = 999999;   // 调试模式资源显示值
+  const SCREW_CAP = 3000;
+
+  /* ---- 调试模式（不写入游戏存档） ---- */
+  let debug = { infiniteRes: false };
+  function loadDebug() {
+    try {
+      const raw = localStorage.getItem(DEBUG_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (typeof d.infiniteRes === 'boolean') debug.infiniteRes = d.infiniteRes;
+      }
+    } catch (e) { debug.infiniteRes = false; }
+  }
+  function saveDebug() {
+    try { localStorage.setItem(DEBUG_KEY, JSON.stringify(debug)); } catch (e) { /* ignore */ }
+  }
+  function setInfiniteRes(on) { debug.infiniteRes = !!on; saveDebug(); }
+  function isInfiniteRes() { return debug.infiniteRes; }
 
   let uidSeq = 1;
 
   const state = {
     version: 1,
     admiral: { name: '提督', level: 1, exp: 0 },
-    resources: { fuel: 1000, ammo: 1000, steel: 1000, baux: 500 },
+    resources: { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0 },  // screws=改修资材（上限3000）
     fleet: { 1: [], 2: [] },           // 舰队1=出击主力(6)，舰队2=远征用(6)
     ships: {},                          // uid -> shipInstance
-    equipment: {},                      // uid -> equipInstance
+    equipment: {},                      // uid -> equipInstance {uid,id,star}
     construction: [],                   // {start,end,recipe} 建造队列
     development: [],                    // {start,end,recipe} 开发队列
     repairs: [null, null],              // 入渠槽位 {ship,start,end}
@@ -26,6 +49,7 @@ const Game = (() => {
     mapProgress: {},                    // mapId -> {gauge, cleared, kills}
     sortie: null,                       // {mapId, fleetIdx, node, path[]}
     practice: { date: '', fleets: [] },
+    improve: { date: '', count: 0 },    // 改修工厂每日次数
     stats: { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {} },
     lastSave: Date.now()
   };
@@ -40,11 +64,19 @@ const Game = (() => {
       state.admiral.level++;
     }
   }
-  function resourceCap() { return 2000 + 250 * (state.admiral.level - 1); }
+  function resourceCap() { return 250 * (state.admiral.level + 3); }  // wiki: (司令部等级+3)×250
 
   /* ============ 资源恢复 ============ */
   function regen(now) {
-    const elapsed = Math.max(0, (now || Date.now()) - state.lastSave);
+    now = now || Date.now();
+    /* 调试模式：无限资源（每秒时钟兜底，修复所有直接改动的资源） */
+    if (debug.infiniteRes) {
+      state.resources.fuel = state.resources.ammo = state.resources.steel = state.resources.baux = INFINITE_RES;
+      state.resources.screws = SCREW_CAP;
+      state.lastSave = now;
+      return;
+    }
+    const elapsed = Math.max(0, now - state.lastSave);
     const ticks = Math.floor(elapsed / REGEN_MS);
     if (ticks > 0) {
       const cap = resourceCap();
@@ -64,10 +96,12 @@ const Game = (() => {
     }
   }
   function canAfford(cost) {
-    return state.resources.fuel >= cost.fuel && state.resources.ammo >= cost.ammo &&
-      state.resources.steel >= cost.steel && state.resources.baux >= cost.baux;
+    if (debug.infiniteRes) return true;
+    return state.resources.fuel >= (cost.fuel || 0) && state.resources.ammo >= (cost.ammo || 0) &&
+      state.resources.steel >= (cost.steel || 0) && state.resources.baux >= (cost.baux || 0);
   }
   function spend(cost) {
+    if (debug.infiniteRes) return;  // 调试：不扣资源
     state.resources.fuel -= cost.fuel || 0;
     state.resources.ammo -= cost.ammo || 0;
     state.resources.steel -= cost.steel || 0;
@@ -100,13 +134,14 @@ const Game = (() => {
       if (t === 'DD' || t === 'DE') Progression.notify('get_type', 1, 'DD');
       else if (t === 'CL' || t === 'CA' || t === 'CLT' || t === 'CAV') Progression.notify('get_type', 1, 'CLCA');
       else if (t === 'CV' || t === 'CVL' || t === 'CVB') Progression.notify('get_type', 1, 'CV');
+      else if (t === 'AS') Progression.notify('get_type', 1, 'AS');
     }
     return state.ships[uid];
   }
 
   function createEquip(equipId) {
     const uid = 'e' + nextUid();
-    state.equipment[uid] = { uid, id: equipId };
+    state.equipment[uid] = { uid, id: equipId, star: 0 };
     return state.equipment[uid];
   }
 
@@ -115,6 +150,9 @@ const Game = (() => {
     if (!s) return;
     for (const e of s.equipped) if (state.equipment[e]) delete state.equipment[e];
     for (const f in state.fleet) state.fleet[f] = state.fleet[f].filter(x => x !== uid);
+    for (let i = 0; i < state.repairs.length; i++) {
+      if (state.repairs[i] && state.repairs[i].ship === uid) state.repairs[i] = null;
+    }
     delete state.ships[uid];
   }
 
@@ -139,6 +177,30 @@ const Game = (() => {
     return Math.floor(base * 0.55 * (lv - 1) / 98);
   }
 
+  /* 改修效果：改修强化值 = 类别系数 × √★（参照 wiki「明石的改修工厂」，简化实现）
+   * 大口径主炮昼战1.5 / 鱼雷1.2 / 其余1.0；舰战·舰攻按 ★×0.2 加算
+   * 电探→索敌、水侦→索敌、声呐/爆雷→对潜 */
+  function equipStarBonus(ed, star) {
+    if (!star) return null;
+    const s = Math.sqrt(star);
+    const out = {};
+    switch (ed.cat) {
+      case '小主炮': case '中主炮': case '副炮': case '穿甲弹': case '设备':
+        out.fp = s; break;
+      case '大主炮': out.fp = 1.5 * s; break;
+      case '鱼雷': out.tp = 1.2 * s; break;
+      case '机枪': out.aa = 3 * s; out.tp = 1.2 * s; break;
+      case '高角炮': out.aa = 2 * s; break;
+      case '声呐': case '爆雷': out.asw = s; break;
+      case '对空电探': case '对水电探': out.los = 1.25 * s; break;
+      case '水侦': case '水爆': out.los = 1.2 * s; break;
+      case '舰战': out.aa = 0.2 * star; break;
+      case '舰攻': out.tp = 0.2 * star; out.bmb = 0.2 * star; break;
+      default: return null;
+    }
+    return out;
+  }
+
   /* 舰船最终面板属性 */
   function shipStats(uid) {
     const inst = state.ships[uid];
@@ -148,17 +210,24 @@ const Game = (() => {
       const name = STAT_NAMES[i];
       out[name] = def.stats[i] + levelBonus(def, name, inst.lv) + (inst.modern[name] || 0);
     }
-    /* 装备加成 */
+    /* 装备加成（含改修★效果） */
     for (const euid of inst.equipped) {
       const eq = state.equipment[euid];
       if (!eq) continue;
       const ed = EquipmentData[eq.id];
       if (!ed) continue;
       for (const k in ed.stat) out[k] = (out[k] || 0) + ed.stat[k];
+      const sb = equipStarBonus(ed, eq.star || 0);
+      if (sb) for (const k in sb) out[k] = (out[k] || 0) + sb[k];
     }
     out.hpMax = out.hp;
     out.hp = Math.min(out.hpMax, inst.hp);
     return out;
+  }
+
+  /* 舰队中是否已有同名舰船（按原始舰种 id 判断，含改造前后） */
+  function fleetHasName(fleetIdx, shipId) {
+    return (state.fleet[fleetIdx] || []).some(uid => state.ships[uid] && state.ships[uid].id === shipId);
   }
 
   /* 舰船总索敌（素索敌+装备索敌） */
@@ -173,7 +242,7 @@ const Game = (() => {
   function newGame() {
     uidSeq = 1;
     state.admiral = { name: '提督', level: 1, exp: 0 };
-    state.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500 };
+    state.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0 };
     state.fleet = { 1: [], 2: [] };
     state.ships = {};
     state.equipment = {};
@@ -185,6 +254,7 @@ const Game = (() => {
     state.mapProgress = {};
     state.sortie = null;
     state.practice = { date: '', fleets: [] };
+    state.improve = { date: '', count: 0 };
     state.stats = { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {} };
     state.lastSave = Date.now();
     for (const sid of STARTER_IDS) {
@@ -213,35 +283,75 @@ const Game = (() => {
   }
 
   /* ============ 存档 ============ */
+  let saveHook = null;   // 账号模式：保存时同步服务器（由 main.js 注入）
+  function setSaveHook(fn) { saveHook = fn; }
+
   function save() {
     state.lastSave = Date.now();
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify(state));
-    } catch (e) { console.warn('存档失败', e); }
+    } catch (e) { console.warn('本地存档失败', e); }
+    if (saveHook) {
+      try { saveHook(state); } catch (e) { console.warn('服务器存档失败', e); }
+    }
+  }
+
+  /* 将存档数据应用到当前状态（含旧档迁移与离线补算） */
+  function applySave(data) {
+    Object.assign(state, data);
+    /* 旧存档迁移 */
+    if (typeof state.resources.screws !== 'number') state.resources.screws = 0;
+    for (const k of ['fuel', 'ammo', 'steel', 'baux']) {
+      state.resources[k] = Math.floor(state.resources[k]);
+    }
+    if (!state.improve) state.improve = { date: '', count: 0 };
+    for (const k in state.equipment) {
+      if (typeof state.equipment[k].star !== 'number') state.equipment[k].star = 0;
+    }
+    if (!state.admiral) state.admiral = { name: '提督', level: 1, exp: 0 };
+    if (!state.resources) state.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0 };
+    uidSeq = 1;
+    for (const k in state.ships) {
+      const n = parseInt(k.slice(1), 10);
+      if (n >= uidSeq) uidSeq = n + 1;
+    }
+    for (const k in state.equipment) {
+      const n = parseInt(k.slice(1), 10);
+      if (n >= uidSeq) uidSeq = n + 1;
+    }
+    regen(Date.now());
   }
 
   function load() {
+    loadDebug();
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) { newGame(); return false; }
-      const data = JSON.parse(raw);
-      Object.assign(state, data);
-      uidSeq = 1;
-      for (const k in state.ships) {
-        const n = parseInt(k.slice(1), 10);
-        if (n >= uidSeq) uidSeq = n + 1;
-      }
-      for (const k in state.equipment) {
-        const n = parseInt(k.slice(1), 10);
-        if (n >= uidSeq) uidSeq = n + 1;
-      }
-      regen(Date.now());
+      applySave(JSON.parse(raw));
       return true;
     } catch (e) {
       console.error('读档失败，重建存档', e);
       newGame();
       return false;
     }
+  }
+
+  /* 载入服务器存档（账号模式） */
+  function loadData(data) {
+    if (!data) return false;
+    try {
+      applySave(JSON.parse(JSON.stringify(data)));
+      return true;
+    } catch (e) {
+      console.error('服务器存档解析失败，重建存档', e);
+      newGame();
+      return false;
+    }
+  }
+
+  /* 当前状态的深拷贝（用于上传服务器） */
+  function serialize() {
+    return JSON.parse(JSON.stringify(state));
   }
 
   /* ============ 通用检查/完成处理 ============ */
@@ -259,10 +369,11 @@ const Game = (() => {
   }
 
   return {
-    state, save, load, newGame, regen, canAfford, spend, gain,
+    state, save, load, loadData, serialize, setSaveHook, newGame, regen, canAfford, spend, gain,
     createShip, createEquip, destroyShip, destroyEquip, equipDefaults,
-    shipDef, shipStats, fleetLos, addAdmiralExp, resourceCap,
-    expForLevel, finishTimers, nextUid, STAT_NAMES
+    shipDef, shipStats, fleetLos, fleetHasName, addAdmiralExp, resourceCap,
+    expForLevel, finishTimers, nextUid, STAT_NAMES,
+    setInfiniteRes, isInfiniteRes
   };
 })();
 

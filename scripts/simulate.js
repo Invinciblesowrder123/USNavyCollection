@@ -4,12 +4,16 @@
  * 用法: npm run sim
  * ============================================================ */
 
+/* 账号系统测试用独立临时数据目录（须在 require auth.js 之前设置） */
+process.env.AUTH_DATA_DIR = require('path').join(require('os').tmpdir(), 'usnc_auth_test_' + Date.now());
+const authMod = require('../auth.js');
+
 /* ---- 注入全局命名空间（模拟浏览器经典脚本环境） ---- */
 const equipMod = require('../public/js/data/equipment.js');
 Object.assign(global, {
   SLOT: equipMod.SLOT, EquipmentData: equipMod.EquipmentData,
   SECRETARY_POOL: equipMod.SECRETARY_POOL, secretaryKey: equipMod.secretaryKey,
-  EQUIP_CAT_ZH: equipMod.EQUIP_CAT_ZH
+  EQUIP_CAT_ZH: equipMod.EQUIP_CAT_ZH, IMPROVE: equipMod.IMPROVE, IMPROVE_NEED_ZH: equipMod.IMPROVE_NEED_ZH
 });
 const shipsMod = require('../public/js/data/ships.js');
 Object.assign(global, {
@@ -28,6 +32,7 @@ Object.assign(global, require('../public/js/core/utils.js'));
 Object.assign(global, require('../public/js/core/state.js'));
 Object.assign(global, require('../public/js/game/battle.js'));
 Object.assign(global, require('../public/js/game/factory.js'));
+Object.assign(global, require('../public/js/game/improve.js'));
 Object.assign(global, require('../public/js/game/logistics.js'));
 Object.assign(global, require('../public/js/game/progression.js'));
 Object.assign(global, require('../public/js/game/sortie.js'));
@@ -123,7 +128,7 @@ assert('hp回满', s0.hp === Game.shipStats(ddUid).hpMax);
 const mi = Progression.modernizeInfo(ddUid);
 assert('近代化可选', mi && Object.keys(mi.gains).length > 0, JSON.stringify(mi && mi.gains));
 if (mi && Object.keys(mi.gains).length) {
-  const m = Progression.modernize(Game.state.fleet[1][1], ddUid);
+  const m = Progression.modernize(ddUid, [Game.state.fleet[1][1]]);
   assert('近代化成功', m.ok, JSON.stringify(m));
 }
 
@@ -184,6 +189,278 @@ section('持久化');
 Game.save();
 const loaded = Game.load();
 assert('存档往返', loaded === true && Object.keys(Game.state.ships).length === Object.keys(require('../public/js/core/state.js').Game.state.ships).length);
+
+section('wiki还原机制（战斗/经验）');
+/* 经验曲线（参照舰娘百科经验表：Lv1~99 累计100万） */
+assert('升级曲线 Lv1→2=100', Progression.shipExpToLevel(1) === 100);
+assert('升级曲线 Lv10→11=1000', Progression.shipExpToLevel(10) === 1000);
+assert('升级曲线 Lv50→51=5000', Progression.shipExpToLevel(50) === 5000);
+assert('升级曲线 Lv98→99=148500', Progression.shipExpToLevel(98) === 148500);
+let cumExp = 0;
+for (let lv = 1; lv <= 98; lv++) cumExp += Progression.shipExpToLevel(lv);
+assert('Lv1→99 累计100万', cumExp === 1000000, 'cum=' + cumExp);
+/* 升级变慢：5万经验只能升到~33级 */
+const slowShip = Game.createShip('mahan', 1);
+Progression.addShipExp(slowShip.uid, 50000);
+assert('5万经验升到30级左右（旧版直升99）', slowShip.lv >= 10 && slowShip.lv <= 40, 'lv=' + slowShip.lv);
+Game.destroyShip(slowShip.uid);
+/* 防沉保护：我方舰船战斗中不会死亡 */
+const protFleet = [Game.state.fleet[1][0], Game.state.fleet[1][1]];
+const protRes = Battle.battle(protFleet, ENEMY_FLEETS.F09.ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
+assert('防沉保护：我方全员存活', protRes.mySide.every(x => x.hp >= 1), 'hp=' + protRes.mySide.map(x => x.hp).join(','));
+/* 完全胜利S与MVP */
+let sawPerfect = false, sawMvp = false;
+for (let i = 0; i < 20; i++) {
+  const r = Battle.battle(strongFleet, ENEMY_FLEETS.F01.ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
+  if (r.rank === 'S') {
+    if (r.perfect) sawPerfect = true;
+    if (r.mvpUid) sawMvp = true;
+  }
+}
+assert('存在完全胜利S（无伤全歼）', sawPerfect);
+assert('MVP正常产生', sawMvp);
+/* 出击经验：基础=敌HP/2 ×评价×旗舰×MVP */
+const expRes = Battle.battle(strongFleet, ENEMY_FLEETS.F01.ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
+assert('F01敌总HP=60', expRes.enemyHpTotal === 60);
+const expGains = Progression.applyBattleResult(1, expRes, false);
+const expBase = expRes.perfect ? Math.floor(30 * 1.2) : 30;
+const plainGain = expGains.find(g => g.uid !== strongFleet[0] && g.uid !== expRes.mvpUid) || expGains[0];
+assert('基础经验=敌HP总和/2' + (expRes.perfect ? '×1.2' : ''), plainGain.exp === expBase, 'exp=' + plainGain.exp);
+const expMvp = expGains.find(g => g.uid === expRes.mvpUid);
+const expFlag = expGains.find(g => g.uid === strongFleet[0]);
+assert('MVP经验×2', !!expMvp && expMvp.exp === expBase * 2 * (expMvp === expFlag ? 1.5 : 1), 'exp=' + (expMvp && expMvp.exp));
+assert('旗舰经验×1.5', !!expFlag && expFlag.exp === expBase * 1.5 * (expFlag === expMvp ? 2 : 1), 'exp=' + (expFlag && expFlag.exp));
+/* 演习经验：旗舰必要exp/100 + 第2舰/300（>500 时开根） */
+const pracRes = Battle.battle(strongFleet, pr.fleets[0].ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
+const pracGains = Progression.applyBattleResult(1, pracRes, true);
+assert('演习经验按wiki公式', pracGains.every(g => g.exp > 0 && g.exp < 5000), 'exp=' + pracGains.map(g => g.exp).join(','));
+/* 远征经验：基础×旗舰1.5 */
+const exFleet = [];
+for (const id of ['fletcher', 'kidd']) {
+  const s = Game.createShip(id, 1);
+  Game.equipDefaults(s.uid);
+  exFleet.push(s.uid);
+}
+Game.state.fleet[2] = exFleet;
+const exStart = Logistics.startExpedition(2, 'ex1');
+Game.state.expeditions[2].end = Date.now() - 1;
+Logistics.claimExpedition(2);
+assert('远征经验：旗舰1.5倍', Game.state.ships[exFleet[0]].exp === Math.round(30 * 1.5) && Game.state.ships[exFleet[1]].exp === 30,
+  `flag=${Game.state.ships[exFleet[0]].exp} other=${Game.state.ships[exFleet[1]].exp}`);
+/* 旗舰大破禁出击 */
+Game.state.fleet[1] = strongFleet;
+const fs = Game.state.ships[strongFleet[0]];
+fs.hp = Math.floor(Game.shipStats(fs.uid).hpMax * 0.2);
+const fsStart = Sortie.start('1-1', 1);
+assert('旗舰大破无法出击', !fsStart.ok && fsStart.msg.includes('旗舰大破'), fsStart.msg);
+fs.hp = Game.shipStats(fs.uid).hpMax;
+/* 大破进击轰沉 */
+const doomedShip = Game.state.ships[strongFleet[2]];
+doomedShip.hp = Math.floor(Game.shipStats(doomedShip.uid).hpMax * 0.2);
+const dsStart = Sortie.start('1-1', 1);
+assert('僚舰大破可出击', dsStart.ok);
+assert('daPoShips识别大破僚舰', Sortie.daPoShips().length === 1);
+Sortie.advance('单纵阵', true);      // S → move
+Sortie.moveToNext();                 // → A
+const dsAdv = Sortie.advance('单纵阵', true);  // A 战斗 → 轰沉
+assert('大破进击战斗正常', dsAdv.ok && dsAdv.type === 'battle');
+assert('大破进击僚舰轰沉', !Game.state.ships[doomedShip.uid]);
+assert('战斗日志包含轰沉提示', dsAdv.result.log.some(l => typeof l === 'string' && l.includes('轰沉')));
+Sortie.returnHome();
+
+section('近代化改修（wiki标准：素材值/奖励偏斜/上限/海防舰/改造重置）');
+/* 素材属性值表 */
+const fk = Game.createShip('fletcher', 1);
+assert('素材值 DD=火力1雷装1', Progression.materialValue(fk.uid).fp === 1 && Progression.materialValue(fk.uid).tp === 1, JSON.stringify(Progression.materialValue(fk.uid)));
+const fk2 = Game.createShip('fletcher', 40);
+fk2.kai = 1;
+assert('素材值 改DD=火力2', Progression.materialValue(fk2.uid).fp === 2, JSON.stringify(Progression.materialValue(fk2.uid)));
+const iowaM = Game.createShip('iowa', 60);
+iowaM.kai = 1;
+const imv = Progression.materialValue(iowaM.uid);
+assert('素材值 改BB=火力4装甲4对空2', imv.fp === 4 && imv.arm === 4 && imv.aa === 2, JSON.stringify(imv));
+/* 奖励/偏斜公式（参照wiki上升量表） */
+assert('奖励值 n=1→1', Progression.gainReward(1) === 1);
+assert('奖励值 n=4→5(+1奖励)', Progression.gainReward(4) === 5);
+assert('奖励值 n=9→11(+2奖励)', Progression.gainReward(9) === 11);
+assert('奖励值 n=24→29(+5奖励)', Progression.gainReward(24) === 29);
+assert('偏斜值 n=1→0', Progression.gainDeviation(1) === 0);
+assert('偏斜值 n=3→2', Progression.gainDeviation(3) === 2);
+assert('偏斜值 n=9→5', Progression.gainDeviation(9) === 5);
+/* 多素材合成 */
+Game.gain({ fuel: 500, ammo: 500 });
+const t1 = Game.createShip('mahan', 1);
+const m1 = Game.createShip('benson', 1);
+const m2 = Game.createShip('benson', 1);
+const pv1 = Progression.modernizePreview(t1.uid, [m1.uid, m2.uid]);
+assert('双素材预览：火力+2（奖励）', pv1.ok && pv1.shown.fp === 2 && pv1.shown.tp === 2, JSON.stringify(pv1 && pv1.shown));
+const ms1 = Progression.modernize(t1.uid, [m1.uid, m2.uid]);
+assert('合成成功', ms1.ok, JSON.stringify(ms1));
+assert('素材舰被消耗', !Game.state.ships[m1.uid] && !Game.state.ships[m2.uid]);
+assert('目标属性增加（奖励2或偏斜1）', t1.modern.fp >= 1 && t1.modern.fp <= 2, JSON.stringify(t1.modern));
+/* 奖励点与上限截断 */
+const t2 = Game.createShip('mahan', 1);
+const pv2 = Progression.modernizePreview(t2.uid, [iowaM.uid]);
+assert('BB素材预览：火力上限截断为+3（奖励点1）', pv2.ok && pv2.shown.fp === 3 && pv2.bonus.fp === 1, JSON.stringify(pv2));
+const ms2 = Progression.modernize(t2.uid, [iowaM.uid]);
+assert('合成成功2', ms2.ok);
+assert('火力改修值=上限(3)或偏斜(2)', t2.modern.fp === 3 || t2.modern.fp === 2, 'fp=' + t2.modern.fp);
+/* 满改修后不可再改修 */
+const t3 = Game.createShip('mahan', 1);
+const caps3 = Progression.modernizeInfo(t3.uid).gains;
+for (const k in caps3) t3.modern[k] = caps3[k];
+assert('满改修后无可提升属性', Object.keys(Progression.modernizeInfo(t3.uid).gains).length === 0);
+assert('满改修后合成被拒', !Progression.modernizePreview(t3.uid, [iowaM.uid]).ok);
+/* 普通素材不能喂 运/对潜/耐久 */
+const t4 = Game.createShip('mahan', 1);
+Progression.modernize(t4.uid, [Game.createShip('fletcher', 1).uid]);
+assert('普通素材不提供运/对潜/耐久', !t4.modern.lck && !t4.modern.asw && !t4.modern.hp, JSON.stringify(t4.modern));
+/* 海防舰(DE)改修：耐久/对潜/运 */
+const de = Game.createShip('sbroberts', 1);
+const dev1 = Progression.materialValue(de.uid);
+assert('DE素材=耐久1对潜1运1', dev1.hp === 1 && dev1.asw === 1 && dev1.lck === 1, JSON.stringify(dev1));
+const t5 = Game.createShip('mahan', 1);
+const pv5 = Progression.modernizePreview(t5.uid, [de.uid]);
+assert('DE预览提供耐久/对潜/运', pv5.ok && pv5.shown.hp === 1 && pv5.shown.asw === 1 && pv5.shown.lck === 1, JSON.stringify(pv5));
+Progression.modernize(t5.uid, [de.uid, Game.createShip('sbroberts', 1).uid]);
+assert('DE改修后三属性+1以上', t5.modern.hp >= 1 && t5.modern.asw >= 1 && t5.modern.lck >= 1, JSON.stringify(t5.modern));
+assert('运改修上限+8', Progression.modernCap(t4.uid, 'lck') === 8, 'cap=' + Progression.modernCap(t4.uid, 'lck'));
+assert('对潜改修上限+9', Progression.modernCap(t4.uid, 'asw') === 9);
+/* 改造重置：火力/雷装/对空/装甲不继承，运/对潜/耐久继承 */
+const t6 = Game.createShip('mahan', 30);
+Progression.modernize(t6.uid, [Game.createShip('fletcher', 1).uid, Game.createShip('fletcher', 1).uid]);
+Progression.modernize(t6.uid, [Game.createShip('sbroberts', 1).uid, Game.createShip('sbroberts', 1).uid]);
+assert('改造前有改修值', t6.modern.fp > 0 || t6.modern.tp > 0);
+assert('改造前DE属性已改修', t6.modern.asw >= 1);
+const rmt = Progression.remodel(t6.uid);
+assert('改造成功', rmt.ok, JSON.stringify(rmt));
+assert('改造后火力改修重置', t6.modern.fp === 0 && t6.modern.tp === 0, JSON.stringify(t6.modern));
+assert('改造后运/对潜继承', t6.modern.asw >= 1);
+
+section('改修工厂（明石=维斯塔尔）');
+assert('未开启：无维斯塔尔秘书舰', !Improve.secretaryIsVestal());
+const vestal = Game.createShip('vestal', 1);
+const vestal2 = Game.createShip('vestal', 1);
+Game.state.fleet[1] = [vestal.uid, vestal2.uid];
+assert('维斯塔尔秘书舰开启改修工厂', Improve.secretaryIsVestal());
+assert('每日上限=2（二号舰工作舰）', Improve.dailyLimit() === 2, 'limit=' + Improve.dailyLimit());
+Game.state.resources.screws = 100;
+Game.gain({ fuel: 500, ammo: 500, steel: 500, baux: 500 });
+const eqI1 = Game.createEquip('gun5in_30');
+assert('基础装备无需二号舰解锁', Improve.improveInfo(eqI1.uid).unlocked === true);
+const eqBig = Game.createEquip('gun16in_45');
+assert('大主炮未解锁（无战列舰二号舰）', Improve.improveInfo(eqBig.uid).unlocked === false);
+const iowa2 = Game.createShip('iowa', 1);
+Game.state.fleet[1] = [vestal.uid, iowa2.uid];
+assert('战列舰二号舰解锁大主炮', Improve.improveInfo(eqBig.uid).unlocked === true);
+Game.state.fleet[1] = [vestal.uid, vestal2.uid];
+const rI1 = Improve.improve(eqI1.uid, false);
+assert('改修成功★0→1', rI1.ok && rI1.success && eqI1.star === 1, JSON.stringify(rI1));
+const scA = Game.state.resources.screws;
+Improve.improve(eqI1.uid, true);
+assert('确定化消耗2倍螺丝(1×2)', Game.state.resources.screws === scA - 2, 'screws=' + Game.state.resources.screws);
+const usedA = Improve.dailyUsed();
+const rI2 = Improve.improve(eqI1.uid, false);
+assert('每日上限后拒绝', !rI2.ok && Improve.dailyUsed() === usedA, JSON.stringify(rI2));
+/* 清空起始库存中未装备的 gun5in_30（起始库存有2件★0，避免干扰素材判定） */
+{
+  const used = new Set();
+  for (const sh of Object.values(Game.state.ships)) for (const e of sh.equipped) used.add(e);
+  for (const k in Game.state.equipment) {
+    const e = Game.state.equipment[k];
+    if (e.id === 'gun5in_30' && !used.has(k)) delete Game.state.equipment[k];
+  }
+}
+/* ★+6 需要同名素材 */
+Game.state.improve.count = 0;
+const eqI2 = Game.createEquip('gun5in_30');
+eqI2.star = 6;
+const rI3 = Improve.improve(eqI2.uid, true);
+assert('★6改修缺少素材被拒', !rI3.ok && rI3.msg.includes('素材'), rI3.msg);
+const matE = Game.createEquip('gun5in_30');
+Game.state.improve.count = 0;
+const rI4 = Improve.improve(eqI2.uid, true);
+assert('★6改修消耗素材且成功', rI4.ok && rI4.success && eqI2.star === 7 && !Game.state.equipment[matE.uid], JSON.stringify(rI4));
+/* 高星失败与确定化 */
+const eqI3 = Game.createEquip('gun5in_30');
+eqI3.star = 9;
+const matG = Game.createEquip('gun5in_30');
+Game.state.improve.count = 0;
+const scB = Game.state.resources.screws;
+const rI5 = Improve.improve(eqI3.uid, true);
+assert('确定化必定成功★9→MAX', rI5.ok && rI5.success && eqI3.star === 10 && !Game.state.equipment[matG.uid], JSON.stringify(rI5));
+assert('确定化消耗2倍螺丝(★6+=2×2)', Game.state.resources.screws === scB - 4, 'screws=' + Game.state.resources.screws);
+/* 成功率数据（wiki表） */
+assert('成功率表 ★4→5=95%', Improve.successRate(4) === 95);
+assert('成功率表 ★9→MAX=60%', Improve.successRate(9) === 60);
+assert('更新成功率=50%', Improve.successRate(10) === 50);
+/* 装备更新（进化） */
+const eqI4 = Game.createEquip('gun5in_30');
+eqI4.star = 10;
+const matU1 = Game.createEquip('gun5in_30');
+const matU2 = Game.createEquip('gun5in_30');
+Game.state.improve.count = 0;
+const rI6 = Improve.updateEquip(eqI4.uid, true);
+assert('★MAX更新成功→5inch连装两用炮★5', rI6.ok && rI6.success && eqI4.id === 'gun5in_38' && eqI4.star === 5, JSON.stringify(rI6));
+assert('更新消耗2素材', !Game.state.equipment[matU1.uid] && !Game.state.equipment[matU2.uid]);
+/* 装备中的装备不可改修 */
+const eqI5 = Game.createEquip('gun5in_30');
+const ddShip = Game.createShip('mahan', 1);
+ddShip.equipped = [eqI5.uid];
+assert('装备中的装备无法改修', Improve.improveInfo(eqI5.uid).available === false);
+/* 改修效果：改修强化值 = 系数×√★ */
+const starShip = Game.createShip('mahan', 1);
+const eqI6 = Game.createEquip('gun5in_30');
+eqI6.star = 4;
+starShip.equipped = [eqI6.uid];
+const sts = Game.shipStats(starShip.uid);
+assert('★4小主炮：火力+2 改修效果', Math.abs(sts.fp - 14) < 0.001, 'fp=' + sts.fp);
+/* 改修相关任务 */
+Game.state.quests = {};
+Progression.initQuests();
+Progression.resetDue();
+const eqI7 = Game.createEquip('gun5in_30');
+Game.state.improve.count = 0;
+Improve.improve(eqI7.uid, true);
+assert('改修日常任务进度', Game.state.quests.d9.progress === 1, 'p=' + Game.state.quests.d9.progress);
+const cq9 = Progression.claimQuest('d9');
+assert('领取改修日常（+1螺丝+50弹）', cq9.ok && Game.state.resources.screws >= 1 && Game.state.resources.ammo >= 50, JSON.stringify(cq9 && cq9.q && cq9.q.id));
+
+section('账号系统（注册/登录/云存档）');
+const A = authMod;
+A.clearSessions();
+const uName = 'test_' + Date.now() % 100000;
+const rReg = A.registerUser(uName, 'secret123');
+assert('注册成功', rReg.ok && rReg.username === uName, JSON.stringify(rReg));
+assert('注册无存档(首次)', rReg.save === null);
+assert('注册重复被拒', !A.registerUser(uName, 'secret123').ok);
+assert('非法用户名被拒', !A.registerUser('a', 'secret123').ok);
+assert('非法用户名被拒2', !A.registerUser('bad name!', 'secret123').ok);
+assert('短密码被拒', !A.registerUser('newuser01', '123').ok);
+assert('错误密码登录被拒', !A.loginUser(uName, 'wrongpass').ok);
+const rLog = A.loginUser(uName, 'secret123');
+assert('正确密码登录成功', rLog.ok && rLog.token, JSON.stringify(rLog));
+const token = rLog.token;
+/* 存档往返 */
+const fakeSave = { version: 1, admiral: { name: '提督', level: 5, exp: 0 }, ships: {}, foo: 'bar' };
+A.putSave(uName, fakeSave);
+const gs = A.loadSave(uName);
+assert('云存档写入后读回一致', gs && gs.foo === 'bar' && gs.admiral.level === 5);
+assert('token 鉴权有效', A.authenticate(token) === uName);
+assert('伪造 token 无效', A.authenticate('deadbeef') === null);
+/* 登录返回存档 */
+const rLog2 = A.loginUser(uName, 'secret123');
+assert('登录返回已有存档', rLog2.save && rLog2.save.foo === 'bar');
+A.revoke(token);
+assert('登出后 token 失效', A.authenticate(token) === null);
+/* 与游戏存档互操作：Game.serialize 可被 putSave 存下并被 loadData 恢复 */
+const snap = Game.serialize();
+A.putSave(uName, snap);
+const gs2 = A.loadSave(uName);
+assert('游戏存档可入云', gs2 && gs2.ships && Object.keys(gs2.ships).length > 0);
+Game.newGame();
+Game.loadData(gs2);
+assert('云存档可恢复游戏状态', Object.keys(Game.state.ships).length === Object.keys(gs2.ships).length && Game.state.resources.fuel >= gs2.resources.fuel, 'fuel=' + Game.state.resources.fuel);
 
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);

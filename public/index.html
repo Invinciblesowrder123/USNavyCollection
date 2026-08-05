@@ -13,7 +13,12 @@
         <span class="logo">★ 美舰收藏</span>
         <span id="admiralInfo" class="admiral"></span>
       </div>
-      <div id="resBar" class="resbar"></div>
+      <div class="top-right">
+        <div id="resBar" class="resbar"></div>
+        <span id="accountInfo" class="acc dim"></span>
+        <button id="accountBtn" class="debug-btn" title="登录账号启用云存档，或退出登录">游客模式</button>
+        <button id="debugToggle" class="debug-btn" title="调试模式：开启后所有资源不消耗（油弹钢铝/改修资材）">无限资源 OFF</button>
+      </div>
     </header>
     <nav id="navbar"></nav>
     <main id="screen"></main>
@@ -22,6 +27,7 @@
   <div id="modal-root"></div>
 
   <script src="js/core/utils.js"></script>
+  <script src="js/core/account.js"></script>
   <script src="js/data/equipment.js"></script>
   <script src="js/data/ships.js"></script>
   <script src="js/data/maps.js"></script>
@@ -29,10 +35,12 @@
   <script src="js/core/state.js"></script>
   <script src="js/game/battle.js"></script>
   <script src="js/game/factory.js"></script>
+  <script src="js/game/improve.js"></script>
   <script src="js/game/logistics.js"></script>
   <script src="js/game/progression.js"></script>
   <script src="js/game/sortie.js"></script>
   <script src="js/ui/common.js"></script>
+  <script src="js/ui/login.js"></script>
   <script src="js/ui/homeport.js"></script>
   <script src="js/ui/sortie.js"></script>
   <script src="js/ui/factory.js"></script>

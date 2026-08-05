@@ -22,14 +22,25 @@ const UI = (() => {
 
   function refreshNav() {
     const nav = $('#navbar');
+    /* 顶部一级菜单（图标+文字置顶UI） */
     const defs = [
-      ['home', '母港'], ['sortie', '出击'], ['formation', '编成'],
-      ['factory', '工厂'], ['logistics', '后勤'], ['quests', '任务']
+      ['home', '🏠 母港', ''],
+      ['sortie', '⚔️ 出击', ''],
+      ['formation', '👥 编成', ''],
+      ['factory', '🛠 工厂', ''],
+      ['logistics', '🔧 入渠', 'dock'],
+      ['logistics', '⛽ 补给', 'supply'],
+      ['logistics', '🚢 远征', 'expedition'],
+      ['logistics', '🏆 演习', 'practice'],
+      ['quests', '📋 任务', '']
     ];
-    nav.innerHTML = defs.map(([k, label]) =>
-      `<button data-s="${k}" class="${current && current.name === k ? 'active' : ''}">${label}</button>`).join('');
+    nav.innerHTML = defs.map(([k, label, tab]) =>
+      `<button data-s="${k}" data-tab="${tab}" class="${current && current.name === k && (!tab || current.arg === tab) ? 'active' : ''}">${label}</button>`).join('');
     nav.querySelectorAll('button').forEach(b => {
-      b.addEventListener('click', () => { if (!b.classList.contains('active')) go(b.dataset.s); });
+      b.addEventListener('click', () => {
+        if (b.classList.contains('active')) return;
+        go(b.dataset.s, b.dataset.tab || undefined);
+      });
     });
     /* 出击中禁止切换（强制返回出击界面） */
     if (Game.state.sortie && current && current.name !== 'sortie') {
@@ -61,15 +72,25 @@ const UI = (() => {
 
   function esc(s) { return Util.esc(s); }
 
-  /* 立绘 img */
+  /* 立绘占位（暂时用舰种占位符替代，后续可替换为真实立绘资源） */
   function portraitImg(shipId, cls = 'portrait', extra = '') {
-    return `<img class="${cls}" src="art/portraits/${Util.esc(shipId)}.svg" loading="lazy" alt="${Util.esc(shipId)}" ${extra}>`;
+    const def = ShipData[shipId];
+    if (!def) return `<div class="portrait-ph ${cls}" ${extra}>${Util.esc(shipId)}</div>`;
+    const typeName = SHIP_TYPE_ZH[def.type] || def.type;
+    return `<div class="portrait-ph ${cls}" ${extra}><span class="type-mark">${Util.esc(typeName)}</span><span class="type-sub">${Util.esc(def.en)}</span></div>`;
   }
 
   /* 舰船名（含改造后缀） */
   function shipTitle(inst) {
     const def = Game.shipDef(inst);
     return def.zh + (inst.kai === 1 ? '改' : inst.kai >= 2 ? '改二' : '');
+  }
+
+  /* 装备改修星级显示（★1~★9 / ★MAX） */
+  function starHtml(eq) {
+    if (!eq || !eq.star) return '';
+    const n = Math.min(10, eq.star || 0);
+    return n >= 10 ? '<span class="star-line">★MAX</span>' : `<span class="star-line">★${n}</span>`;
   }
 
   function hpRatio(uid) {
@@ -122,7 +143,8 @@ const UI = (() => {
     return `<span class="res"><span class="ico ico-fuel"></span><b>${r.fuel}</b><span class="dim">/${cap}</span></span>
       <span class="res"><span class="ico ico-ammo"></span><b>${r.ammo}</b><span class="dim">/${cap}</span></span>
       <span class="res"><span class="ico ico-steel"></span><b>${r.steel}</b><span class="dim">/${cap}</span></span>
-      <span class="res"><span class="ico ico-baux"></span><b>${r.baux}</b><span class="dim">/${cap}</span></span>`;
+      <span class="res"><span class="ico ico-baux"></span><b>${r.baux}</b><span class="dim">/${cap}</span></span>
+      <span class="res"><span class="ico ico-screw"></span><b>${r.screws || 0}</b></span>`;
   }
 
   function refreshTop() {
@@ -145,7 +167,7 @@ const UI = (() => {
     return `<span class="countdown">${Util.fmtTime(ms)}</span>`;
   }
 
-  return { go, Screens, toast, modal, esc, portraitImg, shipCard, shipTitle, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current };
+  return { go, Screens, toast, modal, esc, portraitImg, shipCard, shipTitle, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml };
 })();
 
 window.UI = UI;

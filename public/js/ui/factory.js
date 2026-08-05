@@ -24,7 +24,7 @@ const FactoryUI = (() => {
   ];
 
   function factory(root, arg) {
-    let tab = arg === 'dev' ? 'dev' : 'build';
+    let tab = arg === 'dev' ? 'dev' : arg === 'improve' ? 'improve' : arg === 'modernize' ? 'modernize' : 'build';
     render();
 
     function render() {
@@ -32,10 +32,30 @@ const FactoryUI = (() => {
         <div class="tabs">
           <button class="${tab === 'build' ? 'active' : ''}" data-t="build">舰娘建造</button>
           <button class="${tab === 'dev' ? 'active' : ''}" data-t="dev">装备开发</button>
+          <button class="${tab === 'improve' ? 'active' : ''}" data-t="improve">改修工厂</button>
+          <button class="${tab === 'modernize' ? 'active' : ''}" data-t="modernize">近代化改修</button>
         </div>
-        ${tab === 'build' ? buildPanel() : devPanel()}`;
+        ${tab === 'build' ? buildPanel() : tab === 'dev' ? devPanel() : tab === 'improve' ? improvePanel() : modernizePanel()}`;
       root.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.t; render(); }));
       wirePanel();
+      UI.setTick(tick);
+    }
+
+    /* 每秒刷新倒计时与领取按钮状态 */
+    function tick() {
+      const now = Date.now();
+      root.querySelectorAll('[data-until]').forEach(el => {
+        const end = parseInt(el.dataset.until, 10) || 0;
+        el.textContent = end - now > 0 ? Util.fmtTime(end - now) : '完成！';
+      });
+      root.querySelectorAll('[data-claim]').forEach(b => {
+        const job = Game.state.construction[parseInt(b.dataset.claim, 10)];
+        b.disabled = !(job && now >= job.end);
+      });
+      root.querySelectorAll('[data-dclaim]').forEach(b => {
+        const job = Game.state.development[parseInt(b.dataset.dclaim, 10)];
+        b.disabled = !(job && now >= job.end);
+      });
     }
 
     function buildPanel() {
@@ -60,7 +80,7 @@ const FactoryUI = (() => {
             return `<div class="panel" style="margin:6px 0">
               <div class="flex" style="justify-content:space-between;align-items:center">
                 <div><b>${UI.esc(def.zh)}</b> <span class="dim">${UI.esc(def.en)}</span> ${UI.portraitImg(c.shipId, '', 'style="width:48px;height:64px;object-fit:cover"')}</div>
-                <div>${left > 0 ? UI.countdown(left) : '<span style="color:var(--gold)">完成！</span>'}</div>
+                <div><span class="countdown" data-until="${c.end}">${left > 0 ? Util.fmtTime(left) : '完成！'}</span></div>
                 <button class="btn btn-gold btn-sm" data-claim="${i}" ${left > 0 ? 'disabled' : ''}>领取</button>
               </div></div>`;
           }).join('') || '<span class="dim">队列为空</span>'}
@@ -91,12 +111,78 @@ const FactoryUI = (() => {
             return `<div class="panel" style="margin:6px 0">
               <div class="flex" style="justify-content:space-between;align-items:center">
                 <div><span class="dim">开发中…（${UI.esc(c.poolKey)}池）</span></div>
-                <div>${left > 0 ? UI.countdown(left) : '<span style="color:var(--gold)">完成！</span>'}</div>
+                <div><span class="countdown" data-until="${c.end}">${left > 0 ? Util.fmtTime(left) : '完成！'}</span></div>
                 <button class="btn btn-gold btn-sm" data-dclaim="${i}" ${left > 0 ? 'disabled' : ''}>领取</button>
               </div></div>`;
           }).join('') || '<span class="dim">队列为空</span>'}
         </div>
         <div class="hint">秘书舰类型决定开发池：空母→舰载机、战列舰→主炮、驱逐→鱼雷/反潜、亚特兰大级→对空。</div>
+      </div>`;
+    }
+
+    /* ============ 改修工厂（参照 wiki「明石的改修工厂」） ============ */
+    function improvePanel() {
+      const st = Game.state;
+      if (!Improve.secretaryIsVestal()) {
+        return `<div class="panel">
+          <h3>改修工厂 <span class="dim">未开启</span></h3>
+          <div class="hint">需要工作舰「维斯塔尔」担任秘书舰（第一舰队旗舰）才能使用改修工厂。</div>
+          <div class="hint">维斯塔尔在一次性任务「舰队之母」（累计修理5艘舰娘）中可获得。将她的改修装备养成并编入第一舰队旗舰，即可解锁本系统。</div>
+        </div>`;
+      }
+      const unlocks = Improve.unlockedNeeds();
+      const list = Improve.list().filter(e => e.cfg.need === 'basic' || unlocks.includes(e.cfg.need));
+      return `<div class="panel">
+        <h3>改修工厂 <span class="dim">秘书舰：维斯塔尔${Improve.flagshipKai() ? '改' : ''}</span></h3>
+        <div class="hint">改修资材：<span class="screw">🔩 ${st.resources.screws || 0}/3000</span> ｜ 今日改修：<b>${Improve.dailyUsed()}/${Improve.dailyLimit()}</b> 次
+          ｜ 二号舰解锁：${unlocks.map(n => UI.esc(IMPROVE_NEED_ZH[n])).join('、')}</div>
+        <div class="section-title">可改修装备（装备中的装备需先卸下）</div>
+        ${list.length ? list.map(e => {
+          const ed = EquipmentData[e.id];
+          const info = Improve.improveInfo(e.euid);
+          const needLock = !info.unlocked;
+          return `<div class="improve-row ${needLock ? 'improve-locked' : ''}">
+            <div class="grow">
+              <b>${UI.esc(ed.zh)}</b> ${UI.starHtml({ star: e.star })}
+              <span class="dim">(${EQUIP_CAT_ZH[ed.cat] || ed.cat})</span>
+            </div>
+            <div class="dim">${info.available ? `资材×${info.cost.screws} 成功率${info.rate}%` : UI.esc(info.reason)}</div>
+            <div class="btn-row" style="gap:4px">
+              ${info.available ? `<button class="btn btn-sm" data-improve="${e.euid}">改修</button>
+                <button class="btn btn-sm btn-gold" data-improve-g="${e.euid}">确定化(×2资材)</button>` : ''}
+              ${info.update && info.updateOk ? `<button class="btn btn-sm btn-gold" data-update="${e.euid}">更新→${UI.esc(EquipmentData[info.update.to].zh)}</button>
+                <button class="btn btn-sm" data-update-g="${e.euid}">确定更新(×2资材)</button>` : ''}
+            </div>
+          </div>`;
+        }).join('') : '<span class="dim">没有可改修的装备，先去开发/打捞一些吧。</span>'}
+        <div class="hint">改修规则：★+4前必定成功，之后星级越高越容易失败；★+6起需要消耗同名装备（★0）作为素材；★MAX后可通过「更新」进化为更强装备（新装备★+5起步）。确定化消耗双倍资材、必定成功。改修资材主要来自日常任务「装备的改修强化」。</div>
+      </div>`;
+    }
+
+    /* ============ 近代化改修（舰艇强化，参照 wiki「近代化改修」） ============ */
+    function modernizePanel() {
+      const st = Game.state;
+      const zh = { fp: '火力', tp: '雷装', aa: '对空', arm: '装甲', hp: '耐久', asw: '对潜', lck: '运' };
+      const ships = Object.values(st.ships);
+      return `<div class="panel">
+        <h3>近代化改修 <span class="dim">（利用多余的舰娘强化目标舰属性，最多选5艘素材）</span></h3>
+        ${ships.length ? `<div class="mod-ship-list">
+          ${ships.map(s => {
+            const def = Game.shipDef(s);
+            const modInfo = Progression.modernizeInfo(s.uid);
+            const caps = modInfo ? modInfo.gains : {};
+            const avail = Object.keys(caps).length > 0;
+            const capTxt = Object.keys(caps).map(k => `${zh[k]}+${caps[k]}`).join(' ');
+            return `<div class="improve-row ${avail ? '' : 'improve-locked'}">
+              <div class="grow">
+                <b>${UI.esc(def.zh)}</b> <span class="dim">Lv.${s.lv}${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} · ${SHIP_TYPE_ZH[def.type]}</span>
+                <div class="dim">剩余可改修：${capTxt || '改修MAX'}</div>
+              </div>
+              ${avail ? `<button class="btn btn-gold btn-sm" data-mod-target="${s.uid}">近代化改修</button>` : '<span class="dim">改修MAX</span>'}
+            </div>`;
+          }).join('')}
+        </div>` : '<span class="dim">还没有舰娘，先去建造吧！</span>'}
+        <div class="hint">规则：消耗 油30/弹30，素材舰将被解体（装备一并销毁）。素材属性由舰种/改造形态决定（参照 wiki 素材列表）；奖励/偏斜各50%，素材合计 +4/+9/+14/+19/+24 额外奖励点。上限：火力/雷装/对空/装甲=基础×1.3；海防舰(DE)素材可喂 耐久+2/对潜+9/运+8（改造后继承）。改造会重置 火力/雷装/对空/装甲 的改修值。</div>
       </div>`;
     }
 
@@ -143,6 +229,43 @@ const FactoryUI = (() => {
           if (!r.ok) { UI.toast(r.msg); return; }
           UI.toast(r.eq ? `开发成功！获得 ${UI.esc(EquipmentData[r.eq.id].zh)}！` : '开发失败……（什么也没得到）');
           Game.save(); render();
+        });
+      });
+      root.querySelectorAll('[data-improve]').forEach(b => {
+        b.addEventListener('click', () => {
+          const r = Improve.improve(b.dataset.improve, false);
+          if (!r.ok) { UI.toast(r.msg); return; }
+          UI.toast(r.success ? `改修成功！★+${r.star}` : `改修失败……（★${r.star}）`);
+          Game.save(); render();
+        });
+      });
+      root.querySelectorAll('[data-improve-g]').forEach(b => {
+        b.addEventListener('click', () => {
+          const r = Improve.improve(b.dataset.improveG, true);
+          if (!r.ok) { UI.toast(r.msg); return; }
+          UI.toast(`确定化改修成功！★+${r.star}`);
+          Game.save(); render();
+        });
+      });
+      root.querySelectorAll('[data-update]').forEach(b => {
+        b.addEventListener('click', () => {
+          const r = Improve.updateEquip(b.dataset.update, false);
+          if (!r.ok) { UI.toast(r.msg); return; }
+          UI.toast(r.success ? `更新成功！获得 ${UI.esc(EquipmentData[r.to].zh)}★5！` : '更新失败……（素材已消耗）');
+          Game.save(); render();
+        });
+      });
+      root.querySelectorAll('[data-update-g]').forEach(b => {
+        b.addEventListener('click', () => {
+          const r = Improve.updateEquip(b.dataset.updateG, true);
+          if (!r.ok) { UI.toast(r.msg); return; }
+          UI.toast(`确定化更新成功！获得 ${UI.esc(EquipmentData[r.to].zh)}★5！`);
+          Game.save(); render();
+        });
+      });
+      root.querySelectorAll('[data-mod-target]').forEach(b => {
+        b.addEventListener('click', () => {
+          Homeport.openModernize(b.dataset.modTarget, render);
         });
       });
     }

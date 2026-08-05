@@ -29,6 +29,9 @@ const TYPE_COLLAR = {
 const HAIRSTYLES = ['long', 'twintail', 'short', 'bob', 'ponytail', 'wave'];
 const HAIR_COLORS = ['#c9b28e', '#8fb6d4', '#d8c8e8', '#e8d8b0', '#98c8a8', '#d4a0a0', '#b8b8c8', '#c8b090'];
 
+/* 指定舰船的发型覆盖（默认按 id 哈希分配；个别舰需要统一人物比例） */
+const HAIR_OVERRIDE = { wasp: 'long' };
+
 /* 军舰侧影（简单多边形，按舰级不同轮廓） */
 const SILHOUETTES = {
   BB: 'M30,290 L40,268 L52,268 L56,258 L118,258 L126,268 L176,268 L186,258 L226,258 L230,280 L214,290 Z',
@@ -120,7 +123,7 @@ function portrait(ship) {
   const bg = TYPE_BG[ship.type] || TYPE_BG.DD;
   const collar = TYPE_COLLAR[ship.type] || '#cfe8ff';
   const hairColor = HAIR_COLORS[(ship.id.length + ship.rarity) % HAIR_COLORS.length];
-  const style = HAIRSTYLES[(ship.id.length + ship.stats[8]) % HAIRSTYLES.length];
+  const style = HAIR_OVERRIDE[ship.id] || HAIRSTYLES[(ship.id.length + ship.stats[8]) % HAIRSTYLES.length];
   const sil = SILHOUETTES[ship.type] || SILHOUETTES.DD;
   const seed = (ship.id.length * 7 + ship.rarity * 13) % 13;
   const stars = '★'.repeat(ship.rarity) + '☆'.repeat(5 - ship.rarity);

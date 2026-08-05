@@ -41,6 +41,8 @@ const SortieUI = (() => {
       b.addEventListener('click', () => {
         const r = Sortie.start(b.dataset.map, 1);
         if (!r.ok) { UI.toast(r.msg); return; }
+        const daPo = Sortie.daPoShips();
+        if (daPo.length) UI.toast(`警告：${daPo.map(u => UI.esc(Game.shipDef(Game.state.ships[u]).zh)).join('、')} 大破出击，进击有轰沉风险！`);
         Game.save();
         UI.go('sortie');
       });
@@ -93,12 +95,20 @@ const SortieUI = (() => {
       root.querySelector('[data-act="retreat"]').addEventListener('click', () => {
         if (confirm('确定撤退返回母港？')) { Sortie.retreat(); Game.save(); UI.go('home'); }
       });
-      const act = root.querySelector('[data-act]');
-      if (act && act.dataset.act === 'advance') {
+      const act = root.querySelector('[data-act="advance"]');
+      if (act) {
         act.addEventListener('click', () => {
-          if (def.type === 'battle' || def.type === 'boss') openFormationSelect(formation => {
-            doBattle(formation, true);
-          });
+          if (def.type === 'battle' || def.type === 'boss') {
+            if (Sortie.flagshipDaPo()) { UI.toast('旗舰大破！无法进击！请撤退！'); return; }
+            const daPo = Sortie.daPoShips();
+            if (daPo.length) {
+              const names = daPo.map(u => UI.esc(Game.shipDef(Game.state.ships[u]).zh)).join('、');
+              if (!confirm(`警告：${names} 处于大破状态！大破进击将可能导致轰沉！确定进击？`)) return;
+            }
+            openFormationSelect(formation => {
+              doBattle(formation, true);
+            });
+          }
           else doAdvance();
         });
       }
@@ -124,6 +134,8 @@ const SortieUI = (() => {
         Sortie.moveToNext();
       } else if (r.type === 'supply') {
         UI.toast('舰队获得补给！');
+        Sortie.moveToNext();
+      } else if (r.type === 'move') {
         Sortie.moveToNext();
       }
       Game.save();
@@ -182,7 +194,8 @@ const SortieUI = (() => {
     const logEl = root.querySelector('#battleLog');
     const entries = r.result.log;
     let i = 0;
-    const speed = 300;
+    /* 回合制后日志变长：条目多时自动加速播放 */
+    const speed = entries.length > 40 ? 150 : 300;
     const timer = setInterval(() => {
       if (i >= entries.length) {
         clearInterval(timer);
@@ -216,7 +229,7 @@ const SortieUI = (() => {
 
     function showResult() {
       const gains = opts.gains || Progression.applyBattleResult(1, r.result, isPractice);
-      const rankLabel = { S: '完全胜利', A: '胜利', B: '战术胜利', C: '战术败北', D: '败北' }[r.result.rank];
+      const rankLabel = r.result.perfect ? '完全胜利' : { S: '胜利', A: '胜利', B: '战术胜利', C: '战术败北', D: '败北', E: '败北E' }[r.result.rank] || '败北';
       root.querySelector('#battleLog').insertAdjacentHTML('beforeend',
         `<div class="line" style="margin-top:8px">
           <span class="big-rank">${r.result.rank} ${rankLabel}</span>
@@ -230,7 +243,8 @@ const SortieUI = (() => {
         ? `<button class="btn btn-gold" data-next>继续前进</button><button class="btn" data-back>返回母港</button>`
         : `<button class="btn btn-gold" data-back>${r.cleared ? '凯旋！返回母港' : '返回母港'}</button>`;
       root.querySelector('#battleLog').appendChild(nav);
-      nav.querySelector('[data-next]').addEventListener('click', () => { onDone(); });
+      const nextBtn = nav.querySelector('[data-next]');
+      if (nextBtn) nextBtn.addEventListener('click', () => { onDone(); });
       nav.querySelector('[data-back]').addEventListener('click', () => {
         Sortie.returnHome();
         Game.save();
@@ -241,12 +255,10 @@ const SortieUI = (() => {
   }
 
   function battleShipHtml(s, idx) {
-    const src = s.isPlayer
-      ? `art/portraits/${Util.esc(Game.state.ships[s.uid].id)}.svg`
-      : (s.boss ? 'art/portraits/deep_boss.svg' : 'art/portraits/deep.svg');
+    const name = s.zh || s.name || '';
     return `<div class="battle-ship" data-ship="${idx}">
-      <img src="${src}" alt="">
-      <div class="bname">${Util.esc(s.zh || s.name)}${s.boss ? ' ☠' : ''}</div>
+      <div class="portrait-ph">${Util.esc(name)}</div>
+      <div class="bname">${Util.esc(name)}${s.boss ? ' ☠' : ''}</div>
       <div class="bhp"><div class="ok" style="width:100%"></div></div>
     </div>`;
   }

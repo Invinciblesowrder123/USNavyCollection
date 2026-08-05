@@ -16,6 +16,7 @@
 <script src="js/core/state.js"></script>
 <script src="js/game/battle.js"></script>
 <script src="js/game/factory.js"></script>
+<script src="js/game/improve.js"></script>
 <script src="js/game/logistics.js"></script>
 <script src="js/game/progression.js"></script>
 <script src="js/game/sortie.js"></script>
@@ -126,6 +127,31 @@
       s0.lv = 90;
       const rm = Progression.remodel(s0.uid);
       R(rm.ok, 'remodel:kai2', JSON.stringify(rm));
+
+      /* 8. 改修工厂 + 近代化（冒烟） */
+      Game.state.improve.count = 0;
+      const vestal = Game.createShip('vestal', 1);
+      Game.state.fleet[1].unshift(vestal.uid);
+      R(Improve.secretaryIsVestal(), 'improve:unlock');
+      Game.state.resources.screws = 50;
+      const eqI = Game.createEquip('gun5in_30');
+      const ri = Improve.improve(eqI.uid, false);
+      R(ri.ok && ri.success && eqI.star === 1, 'improve:run', JSON.stringify(ri));
+      R(Game.state.resources.screws === 49, 'improve:screwsCost', 'screws=' + Game.state.resources.screws);
+      UI.go('factory', 'improve');
+      R(document.querySelector('#screen').innerHTML.includes('改修工厂') && document.querySelector('#screen').innerHTML.includes('5inch单装炮'), 'screen:improve');
+      const tgt = Game.createShip('mahan', 1);
+      const matP = Game.createShip('mahan', 1);
+      const pvM = Progression.modernizePreview(tgt.uid, [matP.uid]);
+      R(pvM.ok && pvM.shown.fp === 1, 'modernize:preview', JSON.stringify(pvM));
+      const rmM = Progression.modernize(tgt.uid, [Game.createShip('benson', 1).uid]);
+      R(rmM.ok, 'modernize:synthesize', JSON.stringify(rmM));
+      /* 顶部一级菜单 + 工厂近代化改修页签 */
+      R(document.querySelectorAll('#navbar button').length === 9, 'nav:topmenu', 'n=' + document.querySelectorAll('#navbar button').length);
+      UI.go('factory', 'modernize');
+      R(document.querySelector('#screen').innerHTML.includes('近代化改修') && document.querySelector('#screen').innerHTML.includes('剩余可改修'), 'screen:factory-modernize');
+      document.querySelector('#screen').querySelector('[data-mod-target]').click();
+      R(document.querySelector('#modal-root').innerHTML.includes('选择素材舰'), 'modernize:modalFromFactory');
 
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {

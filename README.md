@@ -3,7 +3,8 @@
 基于《舰队收藏》核心机制分析报告的美军舰船拟人化网页游戏。
 
 - 题材：美国海军军舰拟人化（55 艘美舰：衣阿华/企业/弗莱彻/亚特兰大/加托等）
-- 技术：Node.js (Express) 静态服务器 + 原生 JS 单页应用 + localStorage 存档
+- 技术：Node.js (Express) 静态服务器 + 原生 JS 单页应用
+- 账号：注册/登录/云存档（密码 scrypt 加盐哈希，存档存 `data/saves/`）；游客模式可无账号本地游玩（localStorage）
 - 美术：程序化生成的 SVG 舰娘立绘（`npm run art` 可重新生成）
 
 ## 快速开始
@@ -22,39 +23,61 @@ npm start          # 启动服务器 → http://localhost:3000
 | 建造/开发 | 配方决定舰池（稀有度加权）、秘书舰决定开发池、双队列 |
 | 远征 | 8 个任务（15秒~12分钟压缩时长）、舰种/数量条件、大破失败 |
 | 入渠/补给 | 钢材+时间修理、油弹铝补给、弹药<50%伤害减半 |
-| 养成 | 等级（改造解锁）、改造(改/改二)、近代化改修喂属性、疲劳(闪/红脸) |
-| 任务 | 日常8+周常6+月常2+一次性14（含送船/送装备的引导链） |
+| 养成 | 等级（改造解锁）、改造(改/改二)、近代化改修（wiki标准：素材属性值/多素材合成/奖励偏斜/上限/海防舰喂运对潜耐久）、装备改修工厂（明石=维斯塔尔，★0~MAX、确定化、更新进化）、疲劳(闪/红脸) |
+| 任务 | 日常9+周常7+月常3+一次性15（含送船/送装备/送改修资材的引导链） |
 | 演习 | 每日5个NPC对手，零消耗练级 |
 
 ## 测试
 
 ```bash
-npm run sim     # headless 引擎测试（255项断言）
+npm run sim     # headless 引擎测试（328项断言）
 ```
-浏览器端 E2E：访问 `http://localhost:3000/test_flow.html`（headless 运行，39项断言）
+浏览器端 E2E：访问 `http://localhost:3000/test_flow.html`（headless 运行，45项断言）
 （可用 Edge/Chrome 无头模式：`msedge --headless --dump-dom http://localhost:3000/test_flow.html`）
 
 ## 目录
 
 ```
-server.js                Express 静态服务器
+server.js                Express 服务器（静态 + API）
+auth.js                  账号系统（注册/登录/会话/云存档）
 scripts/generate_art.js  SVG立绘生成器（55+2张）
-scripts/simulate.js      引擎回归测试
-public/js/core/          存档/工具
+scripts/simulate.js      引擎回归测试（含账号系统测试）
+public/js/core/          存档/工具/账号会话
 public/js/data/          舰船/装备/地图/远征/任务数据
-public/js/game/          战斗/工厂/后勤/养成/出击引擎
-public/js/ui/            各屏幕渲染器
+public/js/game/          战斗/工厂/改修工厂/后勤/养成/出击引擎
+public/js/ui/            各屏幕渲染器（含登录/注册）
 docs                     设计文档（MEMORY/HEARTBEAT/CHARACTER）
 ```
 
+## 养成系统速查（参照 kcwiki）
+
+- **近代化改修（合成）**：母港舰娘详情 → 近代化改修，最多选5艘素材舰。素材值由舰种/改造形态决定（参照 wiki 素材列表），奖励/偏斜各50%（奖励值=(n+1)÷5+n），素材合计 +4/+9/+14/+19/+24 额外奖励点。上限：火力/雷装/对空/装甲=基础×1.3；海防舰(DE)素材可喂 耐久+2/对潜+9/运+8（改造后继承）。改造会重置 火力/雷装/对空/装甲 的改修值。
+- **装备改修工厂**：需要工作舰「维斯塔尔」担任秘书舰（一次性任务「舰队之母」获得）。消耗改修资材(螺丝)+资源强化装备★。每日次数 1~3（二号舰工作舰/水母+1，维斯塔尔改+1）。★+4前必成功，之后按 wiki 成功率表；「确定化」消耗双倍螺丝必定成功。★+6起需同名★0装备作素材；★MAX 后可更新进化为更强装备。改修效果=类别系数×√★（大主炮1.5、鱼雷1.2、其余1.0，隐藏加成自动计入面板）。
+- **改修资材（螺丝）**：日常「装备的改修强化」+1/天，周常/月常任务更多；上限3000。
+
 ## 存档
 
-- localStorage 键 `usnc_save_v1`，每5秒自动保存 + 切页保存
-- 想重开：浏览器控制台执行 `localStorage.removeItem('usnc_save_v1'); location.reload()`
+- **游客模式**：存档存浏览器 localStorage，键 `usnc_save_v1`，每5秒自动保存 + 切页保存
+- **账号模式**：注册/登录后存档同步到服务器 `data/saves/<用户名>.json`（本地仍有缓存）；服务器重启后需重新登录
+- 登录后若账号无存档，会自动带走当前游客存档作为初始档
+- 想重开（游客）：浏览器控制台执行 `localStorage.removeItem('usnc_save_v1'); location.reload()`
+- 想重开（账号）：登录后在游戏内无法重置，可删除服务器 `data/saves/<用户名>.json` 与 `data/users.json` 中对应条目
+
+## 账号 API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/auth/register` | 注册 `{username, password}` → `{token, save}` |
+| POST | `/api/auth/login` | 登录 → `{token, save}` |
+| POST | `/api/auth/logout` | 退出（Bearer token） |
+| GET | `/api/save` | 取档（Bearer token）→ `{save}` |
+| PUT | `/api/save` | 存档 `{save}`（Bearer token） |
+
+密码以 `scrypt` 加盐哈希存储于 `data/users.json`；会话为内存 Bearer token（7 天），`data/` 目录不入库。
 
 ## 时间缩放说明
 
 为适配网页游戏的会话节奏，所有游戏时间按比例压缩：
 - 远征：配置分钟数 = 现实秒数（15分钟远征=15秒，12小时远征=12分钟）
 - 建造：1小时 = 现实60秒（4.5小时空母 ≈ 4.5分钟）
-- 资源恢复：每30秒 +2/+2/+2/+1（油/弹/钢/铝）
+- 资源恢复：每30秒 +3/+3/+3/+1（油/弹/钢/铝）。参照 kcwiki「资源」：原版每3分钟 油弹钢+3 铝+1，按6倍压缩到30秒；自然恢复上限=(提督等级+3)×250（wiki公式）。顶栏「无限资源」按钮为调试模式（不消耗资源、自动补满）

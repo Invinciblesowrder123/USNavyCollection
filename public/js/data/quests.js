@@ -24,6 +24,8 @@ const QUESTS = [
     cond: { kind: 'repair', count: 1 }, reward: { fuel: 60 } },
   { id: 'd8', type: 'daily', name: '击沉10艘', desc: '击沉10艘深海军舰艇。',
     cond: { kind: 'sink', count: 10 }, reward: { ammo: 150 } },
+  { id: 'd9', type: 'daily', name: '装备的改修强化', desc: '在改修工厂进行1次装备改修。',
+    cond: { kind: 'improve', count: 1 }, reward: { screws: 1, ammo: 50 } },
 
   /* ---------------- 周常 ---------------- */
   { id: 'w1', type: 'weekly', name: '出击15次！', desc: '出击并完成15次战斗。',
@@ -38,12 +40,16 @@ const QUESTS = [
     cond: { kind: 'practice', count: 5 }, reward: { baux: 150, equip: ['radar_sg'] } },
   { id: 'w6', type: 'weekly', name: '所罗门制海权', desc: '通关 1-2 所罗门哨戒。',
     cond: { kind: 'clear_map', param: '1-2', count: 1 }, reward: { fuel: 400, steel: 300, equip: ['aa_40mm'] } },
+  { id: 'w7', type: 'weekly', name: '改修工厂作业', desc: '在改修工厂进行5次装备改修。',
+    cond: { kind: 'improve', count: 5 }, reward: { screws: 3, steel: 200 } },
 
   /* ---------------- 月常 ---------------- */
   { id: 'm1', type: 'monthly', name: '远征30次', desc: '完成30次远征任务。',
     cond: { kind: 'expedition', count: 30 }, reward: { baux: 500, fuel: 500 } },
   { id: 'm2', type: 'monthly', name: '击沉100艘', desc: '击沉100艘深海军舰艇。',
     cond: { kind: 'sink', count: 100 }, reward: { ammo: 600, steel: 600, equip: ['ap_mk8'] } },
+  { id: 'm3', type: 'monthly', name: '月间改修任务', desc: '在改修工厂进行10次装备改修。',
+    cond: { kind: 'improve', count: 10 }, reward: { screws: 5, baux: 200 } },
 
   /* ---------------- 一次性（新手引导链） ---------------- */
   { id: 'o1', type: 'once', name: '驱逐队的组建', desc: '在编成界面编入1艘驱逐舰。',
@@ -73,7 +79,9 @@ const QUESTS = [
   { id: 'o13', type: 'once', name: '王牌飞行员', desc: '在一次出击中取得S胜利。',
     cond: { kind: 's_win', count: 1 }, reward: { equip: ['sb2c'] } },
   { id: 'o14', type: 'once', name: '深海空母栖姬讨伐', desc: '在 1-3 取得对深海空母栖姬的S胜利。',
-    cond: { kind: 'boss_s_win', param: '1-3', count: 1 }, reward: { ship: ['missouri'] } }
+    cond: { kind: 'boss_s_win', param: '1-3', count: 1 }, reward: { ship: ['missouri'] } },
+  { id: 'o15', type: 'once', name: '改修工厂开启！', desc: '获得工作舰维斯塔尔（任务「舰队之母」奖励）。',
+    cond: { kind: 'get_type', param: 'AS', count: 1 }, reward: { screws: 10, fuel: 300 } }
 ];
 
 /* 领取奖励时合并（资源部分） */
@@ -83,6 +91,7 @@ function addQuestReward(state, q) {
   if (r.ammo) state.resources.ammo += r.ammo;
   if (r.steel) state.resources.steel += r.steel;
   if (r.baux) state.resources.baux += r.baux;
+  if (r.screws) state.resources.screws = Math.min(3000, (state.resources.screws || 0) + r.screws);
   return r;
 }
 

@@ -5,9 +5,10 @@
  * ============================================================ */
 
 /* ---------- 深海敌军模板 ---------- */
+/* 参照wiki还原：驱逐I级(20/6/15/6/5/15/10/5/5)、驱逐II级(24/12/20/8/7/20/14/6/6) */
 const DEEP_TEMPLATES = {
-  edd1: { name: '深海军驱逐舰I级', type: 'DD', stats: [18, 10, 14, 8, 5, 20, 20, 5, 5] },
-  edd2: { name: '深海军驱逐舰II级', type: 'DD', stats: [24, 16, 20, 12, 8, 24, 24, 6, 6] },
+  edd1: { name: '深海军驱逐舰I级', type: 'DD', stats: [20, 6, 15, 6, 5, 15, 10, 5, 5] },
+  edd2: { name: '深海军驱逐舰II级', type: 'DD', stats: [24, 12, 20, 8, 7, 20, 14, 6, 6] },
   edd2e:{ name: '深海军驱逐舰II级(精锐)', type: 'DD', stats: [30, 22, 26, 16, 10, 30, 28, 6, 8] },
   ecl1: { name: '深海军轻巡洋舰He级', type: 'CL', stats: [30, 20, 12, 16, 10, 20, 22, 6, 6] },
   ecl1e:{ name: '深海军轻巡洋舰He级(精锐)', type: 'CL', stats: [38, 28, 16, 22, 14, 24, 26, 6, 8] },
@@ -31,7 +32,7 @@ const DEEP_TEMPLATES = {
 const ENEMY_FLEETS = {
   F01: { formation: '单纵阵', ships: ['edd1', 'edd1', 'edd1'] },
   F02: { formation: '单纵阵', ships: ['edd2', 'edd2', 'ecl1'] },
-  F03: { formation: '单纵阵', ships: ['eB1', 'edd2', 'edd2', 'ecl1'] },
+  F03: { formation: '单纵阵', ships: ['edd2', 'edd2', 'ecl1'] },
   F04: { formation: '单纵阵', ships: ['edd2', 'edd2', 'ecl1', 'ecl1'] },
   F05: { formation: '轮形阵', ships: ['ecv1', 'edd2', 'edd2', 'ecl1', 'eca1'] },
   F06: { formation: '单纵阵', ships: ['eB2', 'edd2e', 'eca1', 'ecl1e', 'edd2e'] },

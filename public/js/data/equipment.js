@@ -121,6 +121,86 @@ const DEEP_EQUIP = {
   'deep_aa_ci': { en: 'Enemy AA Suite', zh: '敌方对空兵装', cat: '设备', slot: SLOT.EQUIP, stat: { aa: 0 } }
 };
 
+/* ============================================================
+ * 装备改修配置（参照 wiki「明石的改修工厂」）
+ * need  : 解锁类别（由二号舰决定）
+ *         basic=无需二号舰 / dd=驱逐·海防 / cl=巡洋系 / bb=战列系 / cv=空母系 / as=工作舰·水母
+ * screws: 每次改修的改修资材消耗（★+6 起再 +1）
+ * res   : [燃料, 弹药, 钢材, 铝] 每次改修消耗
+ * matFrom: 从★几起需要消耗同名装备作为素材（wiki：多数装备 ★+6 起）
+ * update: 更新（进化）路线 { to: 目标装备id, mats: 消耗素材ids }（素材须 ★0 且未上锁）
+ * 除 searchlight/souju（kai:0）外均可改修，★上限统一为 10（★MAX）
+ * ============================================================ */
+const IMPROVE = {
+  /* 小主炮 */
+  gun5in_30:  { need: 'basic', screws: 1, res: [10, 30, 30, 0], matFrom: 6, update: { to: 'gun5in_38', mats: ['gun5in_30', 'gun5in_30'] } },
+  gun5in_38:  { need: 'basic', screws: 1, res: [10, 30, 30, 0], matFrom: 6, update: { to: 'gun5in_54', mats: ['gun5in_38', 'gun5in_38'] } },
+  gun5in_54:  { need: 'basic', screws: 1, res: [10, 30, 30, 0], matFrom: 6 },
+  /* 中主炮 */
+  gun6in_3:   { need: 'cl', screws: 1, res: [10, 60, 60, 0], matFrom: 6, update: { to: 'gun6in_3r', mats: ['gun6in_3', 'gun6in_3'] } },
+  gun6in_3r:  { need: 'cl', screws: 1, res: [10, 60, 60, 0], matFrom: 6 },
+  gun8in_9:   { need: 'cl', screws: 1, res: [10, 60, 60, 0], matFrom: 6, update: { to: 'gun8in_15', mats: ['gun8in_9', 'gun8in_9'] } },
+  gun8in_15:  { need: 'cl', screws: 1, res: [10, 60, 60, 0], matFrom: 6, update: { to: 'gun8in_r', mats: ['gun8in_15', 'gun8in_15'] } },
+  gun8in_r:   { need: 'cl', screws: 1, res: [10, 60, 60, 0], matFrom: 6 },
+  /* 大主炮 */
+  gun14in_3:  { need: 'bb', screws: 2, res: [10, 120, 120, 0], matFrom: 6, update: { to: 'gun16in_45', mats: ['gun14in_3', 'gun14in_3'] } },
+  gun16in_45: { need: 'bb', screws: 2, res: [10, 120, 120, 0], matFrom: 6, update: { to: 'gun16in_45r', mats: ['gun14in_3', 'gun14in_3'] } },
+  gun16in_45r:{ need: 'bb', screws: 2, res: [10, 120, 120, 0], matFrom: 6 },
+  gun16in_50: { need: 'bb', screws: 2, res: [10, 120, 120, 0], matFrom: 1, update: { to: 'gun16in_50r', mats: ['gun16in_45', 'gun16in_45'] } },
+  gun16in_50r:{ need: 'bb', screws: 2, res: [10, 120, 120, 0], matFrom: 6 },
+  /* 副炮 */
+  sec5in_1:   { need: 'basic', screws: 1, res: [10, 20, 20, 0], matFrom: 6, update: { to: 'sec5in_2', mats: ['sec5in_1', 'sec5in_1'] } },
+  sec5in_2:   { need: 'basic', screws: 1, res: [10, 20, 20, 0], matFrom: 6 },
+  sec6in_1:   { need: 'basic', screws: 1, res: [10, 20, 20, 0], matFrom: 6 },
+  /* 鱼雷 */
+  torp_mk15:  { need: 'basic', screws: 1, res: [20, 40, 30, 0], matFrom: 6, update: { to: 'torp_mk15r', mats: ['torp_mk15', 'torp_mk15'] } },
+  torp_mk15r: { need: 'basic', screws: 1, res: [20, 40, 30, 0], matFrom: 6 },
+  torp_mk14:  { need: 'basic', screws: 1, res: [20, 40, 30, 0], matFrom: 6 },
+  torp_mk16:  { need: 'basic', screws: 1, res: [20, 40, 30, 0], matFrom: 1 },
+  /* 舰战 */
+  f2a:        { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6, update: { to: 'f4f', mats: ['f2a', 'f2a'] } },
+  f4f:        { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6, update: { to: 'f4f_r', mats: ['f4f', 'f4f'] } },
+  f4f_r:      { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6, update: { to: 'f6f', mats: ['f4f', 'f4f'] } },
+  f6f:        { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6 },
+  f4u:        { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6 },
+  /* 舰攻 */
+  tbd:        { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6, update: { to: 'tbf', mats: ['tbd', 'tbd'] } },
+  tbf:        { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6, update: { to: 'tbm', mats: ['tbd', 'tbd'] } },
+  tbm:        { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6 },
+  /* 舰爆 */
+  sbd:        { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6, update: { to: 'sbd5', mats: ['sbd', 'sbd'] } },
+  sbd5:       { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6, update: { to: 'sb2c', mats: ['sbd', 'sbd'] } },
+  sb2c:       { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6 },
+  /* 水侦 */
+  soc:        { need: 'cv', screws: 1, res: [10, 10, 10, 20], matFrom: 6, update: { to: 'os2u', mats: ['soc', 'soc'] } },
+  os2u:       { need: 'cv', screws: 1, res: [10, 10, 10, 20], matFrom: 6, update: { to: 'pby', mats: ['soc', 'soc'] } },
+  pby:        { need: 'cv', screws: 1, res: [10, 10, 10, 20], matFrom: 6 },
+  /* 电探 */
+  radar_mk22: { need: 'as', screws: 2, res: [10, 10, 10, 30], matFrom: 6, update: { to: 'radar_mk37', mats: ['radar_mk22', 'radar_mk22'] } },
+  radar_mk37: { need: 'as', screws: 2, res: [10, 10, 10, 30], matFrom: 1 },
+  radar_sg:   { need: 'as', screws: 2, res: [10, 10, 10, 30], matFrom: 6, update: { to: 'radar_sk', mats: ['radar_sg', 'radar_sg'] } },
+  radar_sk:   { need: 'as', screws: 2, res: [10, 10, 10, 30], matFrom: 6 },
+  /* 高角炮/机枪 */
+  aa_5in:     { need: 'dd', screws: 1, res: [10, 30, 30, 0], matFrom: 6, update: { to: 'aa_5in_t', mats: ['aa_5in', 'aa_5in'] } },
+  aa_5in_t:   { need: 'dd', screws: 1, res: [10, 30, 30, 0], matFrom: 6 },
+  aa_40mm:    { need: 'basic', screws: 1, res: [10, 20, 20, 0], matFrom: 6, update: { to: 'aa_40mm_r', mats: ['aa_40mm', 'aa_40mm'] } },
+  aa_20mm:    { need: 'basic', screws: 1, res: [10, 20, 20, 0], matFrom: 6 },
+  aa_40mm_r:  { need: 'basic', screws: 1, res: [10, 20, 20, 0], matFrom: 6 },
+  /* 声呐/爆雷 */
+  sonar_qc:   { need: 'dd', screws: 1, res: [20, 20, 20, 0], matFrom: 6, update: { to: 'sonar_qcr', mats: ['sonar_qc', 'sonar_qc'] } },
+  sonar_qcr:  { need: 'dd', screws: 1, res: [20, 20, 20, 0], matFrom: 6 },
+  dc_mk6:     { need: 'dd', screws: 1, res: [20, 20, 20, 0], matFrom: 6, update: { to: 'dc_mk9', mats: ['dc_mk6', 'dc_mk6'] } },
+  dc_mk9:     { need: 'dd', screws: 1, res: [20, 20, 20, 0], matFrom: 6 },
+  /* 穿甲弹 */
+  ap_mk8:     { need: 'bb', screws: 2, res: [10, 90, 90, 0], matFrom: 6 }
+};
+
+/* 解锁类别中文名（UI 用） */
+const IMPROVE_NEED_ZH = {
+  basic: '基础装备', dd: '驱逐/海防舰二号舰', cl: '巡洋舰二号舰',
+  bb: '战列舰二号舰', cv: '空母二号舰', as: '工作舰/水母二号舰'
+};
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { EQ, EquipmentData, SECRETARY_POOL, secretaryKey, EQUIP_CAT_ZH, SLOT, DEEP_EQUIP };
+  module.exports = { EQ, EquipmentData, SECRETARY_POOL, secretaryKey, EQUIP_CAT_ZH, SLOT, DEEP_EQUIP, IMPROVE, IMPROVE_NEED_ZH };
 }

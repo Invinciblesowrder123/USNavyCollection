@@ -12,16 +12,21 @@ const Logistics = (() => {
   function checkExReq(fleet, ex) {
     const req = ex.req || {};
     if (fleet.length < (req.ships || 0)) return false;
-    const types = fleet.map(u => GameRef().state.ships[u]);
-    const count = t => types.filter(s => s && s.type === t).length;
+    const G = GameRef();
+    const typeOf = u => {
+      const s = G.state.ships[u];
+      return s ? G.shipDef(s).type : null;
+    };
+    const types = fleet.map(typeOf);
+    const count = t => types.filter(x => x === t).length;
     if (req.dd && count('DD') < req.dd) return false;
     if (req.cv_or_cvl && count('CV') + count('CVL') < req.cv_or_cvl) return false;
     if (req.cl_or_dd_flagship) {
       const flag = types[0];
-      if (!flag || (flag.type !== 'CL' && flag.type !== 'DD')) return false;
+      if (!flag || (flag !== 'CL' && flag !== 'DD')) return false;
     }
     if (req.asw) {
-      const aswCount = types.filter(s => s && (s.type === 'DE' || s.type === 'AS')).length;
+      const aswCount = types.filter(x => x === 'DE' || x === 'AS').length;
       if (aswCount < req.asw) return false;
     }
     return true;
@@ -38,7 +43,9 @@ const Logistics = (() => {
     if (!checkExReq(fleet, ex)) return { ok: false, msg: '不满足远征条件（舰船数量/舰种要求）！' };
     for (const uid of fleet) {
       const s = st.ships[uid];
-      if (s && s.hp <= Math.floor(G.shipDef(s).stats[0] * 0.25)) return { ok: false, msg: '舰队中有大破舰娘，无法远征！' };
+      if (!s) continue;
+      if (st.repairs.some(r => r && r.ship === uid)) return { ok: false, msg: '舰队中有舰娘正在入渠，无法远征！' };
+      if (s.hp <= Math.floor(G.shipDef(s).stats[0] * 0.25)) return { ok: false, msg: '舰队中有大破舰娘，无法远征！' };
     }
     st.expeditions[fleetIdx] = { exId, start: Date.now(), end: Date.now() + ex.time * TIME_SCALE * 1000 };
     return { ok: true, ex };
@@ -55,10 +62,13 @@ const Logistics = (() => {
     st.stats.expedition++;
     Progression.notify('expedition', 1);
     G.gain(ex.reward);
-    /* 远征归来的舰娘加疲劳 */
+    /* 远征归来：获得经验（参照wiki：基础×旗舰1.5），疲劳+30 */
+    const expBase = Math.min(500, Math.round(ex.time * 2));
     for (const uid of st.fleet[fleetIdx]) {
       const s = st.ships[uid];
-      if (s) s.morale = Math.min(100, s.morale + 30);
+      if (!s) continue;
+      Progression.addShipExp(uid, Math.round(expBase * (st.fleet[fleetIdx][0] === uid ? 1.5 : 1)));
+      s.morale = Math.min(100, s.morale + 30);
     }
     return { ok: true, ex, reward: ex.reward };
   }
@@ -75,9 +85,9 @@ const Logistics = (() => {
       const needF = 1 - s.supply.fuel, needA = 1 - s.supply.ammo;
       fuel += Math.ceil(def.consum.fuel * 4 * needF);
       ammo += Math.ceil(def.consum.ammo * 4 * needA);
-      baux += (def.sizes || []).length * 3 * Math.min(1, needA);
+      baux += Math.ceil((def.sizes || []).length * 3 * Math.min(1, needA));
     }
-    return { fuel, ammo, baux };
+    return { fuel, ammo, baux, steel: 0 };
   }
 
   function supplyFleet(fleetIdx) {
@@ -90,6 +100,33 @@ const Logistics = (() => {
       const s = st.ships[uid];
       if (s) { s.supply.fuel = 1; s.supply.ammo = 1; }
     }
+    return { ok: true, cost };
+  }
+
+  /* 单舰补给（舰娘详情页使用，费用与舰队补给一致） */
+  function supplyShipCost(uid) {
+    const G = GameRef();
+    const st = G.state;
+    const s = st.ships[uid];
+    if (!s) return { fuel: 0, ammo: 0, baux: 0 };
+    const def = G.shipDef(s);
+    const needF = 1 - s.supply.fuel, needA = 1 - s.supply.ammo;
+    return {
+      fuel: Math.ceil(def.consum.fuel * 4 * needF),
+      ammo: Math.ceil(def.consum.ammo * 4 * needA),
+      baux: Math.ceil((def.sizes || []).length * 3 * Math.min(1, needA)),
+      steel: 0
+    };
+  }
+
+  function supplyShip(uid) {
+    const G = GameRef();
+    const st = G.state;
+    const cost = supplyShipCost(uid);
+    if (!G.canAfford(cost)) return { ok: false, msg: '资源不足，无法补给！' };
+    G.spend(cost);
+    const s = st.ships[uid];
+    if (s) { s.supply.fuel = 1; s.supply.ammo = 1; }
     return { ok: true, cost };
   }
 
@@ -162,7 +199,7 @@ const Logistics = (() => {
     return fleets;
   }
 
-  return { startExpedition, claimExpedition, checkExReq, supplyCost, supplyFleet, repairCost, startRepair, cancelRepair, practiceReady, PracticeGen };
+  return { startExpedition, claimExpedition, checkExReq, supplyCost, supplyFleet, supplyShipCost, supplyShip, repairCost, startRepair, cancelRepair, practiceReady, PracticeGen };
 })();
 
 if (typeof window !== 'undefined') window.Logistics = Logistics;
