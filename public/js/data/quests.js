@@ -107,7 +107,13 @@ const QUESTS = [
   { id: 'o24', type: 'once', name: '阿图岛防卫线', desc: '击破 3-3 阿图岛方向的海域血条。',
     cond: { kind: 'clear_map', param: '3-3', count: 1 }, reward: { ship: ['northcarolina'], steel: 800 } },
   { id: 'o25', type: 'once', name: '北方栖姬讨伐', desc: '击破 3-4 北方海域全域的海域血条。',
-    cond: { kind: 'clear_map', param: '3-4', count: 1 }, reward: { ship: ['saratoga'], screws: 20 } }
+    cond: { kind: 'clear_map', param: '3-4', count: 1 }, reward: { ship: ['saratoga'], screws: 20 } },
+
+  /* ---------------- 一次性（舰队解锁链） ---------------- */
+  { id: 'o26', type: 'once', name: '第三舰队，拔锚！', desc: '完成1次远征任务，扩充舰队编制。',
+    cond: { kind: 'expedition', count: 1 }, reward: { unlockFleet: 3, fuel: 300, ammo: 300 } },
+  { id: 'o27', type: 'once', name: '第四舰队，出航！', desc: '击破 2-1 图拉吉急袭的海域血条，获得新编队的资格。',
+    cond: { kind: 'clear_map', param: '2-1', count: 1 }, reward: { unlockFleet: 4, steel: 400, baux: 400 } }
 ];
 
 /* 领取奖励时合并（资源部分） */

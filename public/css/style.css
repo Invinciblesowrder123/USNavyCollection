@@ -364,6 +364,15 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .fleet-slot-sm:hover { border-color: var(--gold); background: rgba(232, 194, 74, .06); }
 .fleet-slot-sm .empty-ico { font-size: 20px; opacity: .45; }
 
+/* 未解锁舰队（编成页锁定态） */
+.locked-fleet {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 44px 20px; border-radius: 12px;
+  border: 1px dashed rgba(127, 147, 181, .5);
+  background: rgba(10, 20, 36, 0.4); text-align: center;
+}
+.locked-fleet .lock-ico { font-size: 44px; opacity: .8; filter: grayscale(.4); }
+
 /* 司令部状态：图标统计 + 状态胶囊 */
 .hq-stats .stat-item { transition: transform .12s, border-color .12s; }
 .hq-stats .stat-item:hover { transform: translateY(-2px); border-color: rgba(255, 215, 0, .55); }

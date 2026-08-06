@@ -49,7 +49,8 @@ const Game = (() => {
     version: 1,
     admiral: { name: '提督', level: 1, exp: 0 },
     resources: { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 },  // screws=改修资材（上限3000）, devMats=开发资材（上限3000）
-    fleet: { 1: [], 2: [] },           // 舰队1=出击主力(6)，舰队2=远征用(6)
+    fleet: { 1: [], 2: [], 3: [], 4: [] },  // 舰队1=出击主力(6)，舰队2~4=远征/出击用(6)；舰队3/4需任务解锁
+    fleetUnlock: { 3: false, 4: false },    // 舰队3/4解锁状态（1/2初始可用）
     ships: {},                          // uid -> shipInstance
     equipment: {},                      // uid -> equipInstance {uid,id,star}
     construction: [],                   // {start,end,recipe} 建造队列
@@ -287,6 +288,21 @@ const Game = (() => {
     return (state.fleet[fleetIdx] || []).some(uid => state.ships[uid] && state.ships[uid].id === shipId);
   }
 
+  /* 舰队是否已解锁（1/2 初始可用；3/4 需完成解锁任务） */
+  function isFleetUnlocked(fleetIdx) {
+    if (fleetIdx === 1 || fleetIdx === 2) return true;
+    return state.fleetUnlock && state.fleetUnlock[fleetIdx] === true;
+  }
+  /* 解锁舰队（任务奖励调用） */
+  function unlockFleet(fleetIdx) {
+    if (fleetIdx === 1 || fleetIdx === 2) return;
+    state.fleetUnlock[fleetIdx] = true;
+  }
+  /* 已解锁舰队编号列表（按 1→4 顺序） */
+  function unlockedFleets() {
+    return [1, 2, 3, 4].filter(isFleetUnlocked);
+  }
+
   /* 舰船总索敌（素索敌+装备索敌） */
   function shipLos(uid) { return shipStats(uid).los; }
   function fleetLos(fleetIdx) {
@@ -300,7 +316,8 @@ const Game = (() => {
     uidSeq = 1;
     state.admiral = { name: '提督', level: 1, exp: 0 };
     state.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 };
-    state.fleet = { 1: [], 2: [] };
+    state.fleet = { 1: [], 2: [], 3: [], 4: [] };
+    state.fleetUnlock = { 3: false, 4: false };
     state.ships = {};
     state.equipment = {};
     state.construction = [];
@@ -382,9 +399,15 @@ const Game = (() => {
       state.expMigrated = true;
     }
     if (!state.resources) state.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 };
-    if (!state.fleet || typeof state.fleet !== 'object') state.fleet = { 1: [], 2: [] };
+    if (!state.fleet || typeof state.fleet !== 'object') state.fleet = { 1: [], 2: [], 3: [], 4: [] };
     if (!Array.isArray(state.fleet[1])) state.fleet[1] = [];
     if (!Array.isArray(state.fleet[2])) state.fleet[2] = [];
+    if (!Array.isArray(state.fleet[3])) state.fleet[3] = [];
+    if (!Array.isArray(state.fleet[4])) state.fleet[4] = [];
+    /* 舰队3/4解锁状态（旧档无此字段 → 默认未解锁，需完成任务解锁） */
+    if (!state.fleetUnlock || typeof state.fleetUnlock !== 'object') state.fleetUnlock = { 3: false, 4: false };
+    if (state.fleetUnlock[3] !== true) state.fleetUnlock[3] = false;
+    if (state.fleetUnlock[4] !== true) state.fleetUnlock[4] = false;
     /* 破损存档修复：补全所有海域进度（缺失 → 出击页无法渲染海域列表） */
     if (!state.mapProgress || typeof state.mapProgress !== 'object') state.mapProgress = {};
     for (const m of MAPS) {
@@ -471,7 +494,7 @@ const Game = (() => {
     createShip, createEquip, destroyShip, destroyEquip, equipDefaults,
     shipDef, shipStats, fleetLos, fleetHasName, addAdmiralExp, resourceCap,
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
-    setTestMode, isTestMode
+    setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets
   };
 })();
 

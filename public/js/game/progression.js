@@ -310,6 +310,8 @@ const Progression = (() => {
     const q = QUESTS.find(x => x.id === qid);
     st.quests[qid].claimed = true;
     const r = addQuestReward(st, q);
+    /* 舰队解锁奖励（第三/第四舰队） */
+    if (q.reward.unlockFleet) G.unlockFleet(q.reward.unlockFleet);
     const ships = r.ship ? r.ship.map(id => { const s = G.createShip(id, 1); G.equipDefaults(s.uid); return s; }) : [];
     const eqs = r.equip ? r.equip.map(id => G.createEquip(id)) : [];
     return { ok: true, q, ships, eqs };
@@ -386,15 +388,17 @@ const Progression = (() => {
   function checkDynamic() {
     const G = GameRef();
     const st = G.state;
-    const fleetCount = (st.fleet[1] || []).length + (st.fleet[2] || []).length;
+    const fleetCount = [1, 2, 3, 4].reduce((n, f) => n + (st.fleet[f] || []).length, 0);
     notify('fleet_size', fleetCount >= 4 ? 1 : 0, 4);
     let planes = 0;
-    for (const uid of st.fleet[1] || []) {
-      const s = st.ships[uid];
-      if (!s) continue;
-      for (const euid of s.equipped) {
-        const e = st.equipment[euid];
-        if (e && EquipmentData[e.id] && [SLOT.FIGHTER, SLOT.ATTACKER, SLOT.BOMBER].includes(EquipmentData[e.id].slot)) planes++;
+    for (const f of [1, 2, 3, 4]) {
+      for (const uid of st.fleet[f] || []) {
+        const s = st.ships[uid];
+        if (!s) continue;
+        for (const euid of s.equipped) {
+          const e = st.equipment[euid];
+          if (e && EquipmentData[e.id] && [SLOT.FIGHTER, SLOT.ATTACKER, SLOT.BOMBER].includes(EquipmentData[e.id].slot)) planes++;
+        }
       }
     }
     notify('plane_count', planes >= 8 ? 1 : 0, 8);

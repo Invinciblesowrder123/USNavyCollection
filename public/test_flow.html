@@ -197,7 +197,24 @@
       if (dev10Btn) {
         dev10Btn.click();
         R(document.querySelector('#modal-root').innerHTML.includes('10连开发结果'), 'factory:dev10-modal');
-        document.querySelector('#modal-root').innerHTML = '';
+      document.querySelector('#modal-root').innerHTML = '';
+
+      /* 1.6 第三第四舰队 UI：编成4页签 + 锁定态 + 远征/出击页签只显示已解锁舰队 */
+      UI.go('formation');
+      const formHtml = document.querySelector('#screen').innerHTML;
+      R(formHtml.includes('第三舰队') && formHtml.includes('第四舰队'), 'formation:4fleetTabs');
+      R(formHtml.includes('🔒'), 'formation:lockedTabsShown');
+      UI.go('formation', 3);
+      R(document.querySelector('#screen').innerHTML.includes('尚未解锁'), 'formation:lockedTabBody');
+      UI.go('formation', 2);
+      R(document.querySelector('#screen').innerHTML.includes('第二舰队'), 'formation:fleet2Tab');
+      UI.go('logistics', 'expedition');
+      const exTabs = document.querySelectorAll('#screen [data-exf]').length;
+      R(exTabs === 1, 'logistics:exFleetTabsOnlyUnlocked', 'n=' + exTabs);
+      UI.go('sortie');
+      const sTabs = document.querySelectorAll('#screen [data-fleet]').length;
+      R(sTabs === 2, 'sortie:fleetTabsOnlyUnlocked', 'n=' + sTabs);
+
       }
       UI.go('factory', 'equip');
       const eqpHtml = document.querySelector('#screen').innerHTML;

@@ -18,6 +18,7 @@ const Sortie = (() => {
     const map = MAPS.find(m => m.id === mapId);
     if (!map) return { ok: false, msg: '海域不存在' };
     if (st.sortie) return { ok: false, msg: '舰队正在出击中！' };
+    if (!G.isFleetUnlocked(fleetIdx)) return { ok: false, msg: '该舰队尚未解锁！' };
     const fleet = st.fleet[fleetIdx];
     if (!fleet || !fleet.length) return { ok: false, msg: '舰队为空！' };
     for (const uid of fleet) {

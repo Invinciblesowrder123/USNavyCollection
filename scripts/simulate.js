@@ -774,6 +774,66 @@ assert('坏档迁移：开发资材默认10', Game.state.resources.devMats === 1
 assert('非管理员无法开启测试模式', Game.setTestMode(true) === undefined && !Game.isTestMode());
 Game.setTestMode(false);
 
+section('第三第四舰队（解锁任务/远征/出击/旧档迁移）');
+Game.newGame();
+Progression.initQuests();
+assert('初始4支舰队槽位', [1, 2, 3, 4].every(f => Array.isArray(Game.state.fleet[f])), JSON.stringify(Object.keys(Game.state.fleet)));
+assert('舰队1/2初始解锁', Game.isFleetUnlocked(1) && Game.isFleetUnlocked(2));
+assert('舰队3/4默认锁定', !Game.isFleetUnlocked(3) && !Game.isFleetUnlocked(4));
+assert('unlockedFleets=[1,2]', JSON.stringify(Game.unlockedFleets()) === '[1,2]', JSON.stringify(Game.unlockedFleets()));
+/* 锁定舰队：引擎侧拒绝远征/出击 */
+assert('锁定舰队3不能远征', !Logistics.startExpedition(3, 'ex1').ok);
+assert('锁定舰队4不能出击', !Sortie.start('1-1', 4).ok);
+/* 第三舰队解锁任务：完成1次远征（不算难，用第二舰队完成即可） */
+const uq3 = QUESTS.find(q => q.reward && q.reward.unlockFleet === 3);
+assert('存在第三舰队解锁任务(远征1次)', !!uq3 && uq3.cond.kind === 'expedition' && uq3.cond.count === 1, JSON.stringify(uq3));
+const exF2 = [];
+for (const id of ['fletcher', 'kidd']) {
+  const s = Game.createShip(id, 1);
+  Game.equipDefaults(s.uid);
+  exF2.push(s.uid);
+}
+Game.state.fleet[2] = exF2;
+const ex2 = Logistics.startExpedition(2, 'ex1');
+assert('第二舰队可派远征', ex2.ok, ex2.msg);
+Game.state.expeditions[2].end = Date.now() - 1;
+Logistics.claimExpedition(2);
+assert('远征完成计入解锁任务进度', (Game.state.quests[uq3.id] || {}).progress >= 1, 'p=' + (Game.state.quests[uq3.id] && Game.state.quests[uq3.id].progress));
+const cq3 = Progression.claimQuest(uq3.id);
+assert('领取后第三舰队解锁', cq3.ok && Game.isFleetUnlocked(3), JSON.stringify(cq3));
+assert('解锁任务资源奖励', Game.state.resources.fuel >= 300 && Game.state.resources.ammo >= 300);
+/* 解锁后第三舰队可远征/出击 */
+const f3 = exF2.slice();
+Game.state.fleet[3] = f3;
+const ex3 = Logistics.startExpedition(3, 'ex1');
+assert('解锁后舰队3可远征', ex3.ok, ex3.msg);
+Game.state.expeditions[3].end = Date.now() - 1;
+const c3 = Logistics.claimExpedition(3);
+assert('舰队3远征领取正常', c3.ok);
+const r3s = Sortie.start('1-1', 3);
+assert('解锁后舰队3可出击', r3s.ok, r3s.msg);
+Sortie.returnHome();
+/* 第四舰队解锁任务：击破 2-1 */
+const uq4 = QUESTS.find(q => q.reward && q.reward.unlockFleet === 4);
+assert('存在第四舰队解锁任务(击破2-1)', !!uq4 && uq4.cond.kind === 'clear_map' && uq4.cond.param === '2-1', JSON.stringify(uq4));
+Game.state.mapProgress['2-1'].cleared = true;
+Progression.notify('clear_map', 1, '2-1');
+assert('2-1击破计入解锁任务进度', (Game.state.quests[uq4.id] || {}).progress >= 1, 'p=' + (Game.state.quests[uq4.id] && Game.state.quests[uq4.id].progress));
+const cq4 = Progression.claimQuest(uq4.id);
+assert('领取后第四舰队解锁', cq4.ok && Game.isFleetUnlocked(4), JSON.stringify(cq4));
+assert('四舰队全部解锁', JSON.stringify(Game.unlockedFleets()) === '[1,2,3,4]');
+/* 旧档迁移：无 fleetUnlock 字段的旧档 → 舰队3/4锁定但槽位存在 */
+Game.newGame();
+Game.state.fleet[2] = f3.slice();
+delete Game.state.fleetUnlock;
+delete Game.state.fleet[3];
+delete Game.state.fleet[4];
+Game.loadData(Game.serialize());
+assert('旧档迁移：舰队3/4槽位补齐', Array.isArray(Game.state.fleet[3]) && Array.isArray(Game.state.fleet[4]));
+assert('旧档迁移：舰队3/4默认锁定', !Game.isFleetUnlocked(3) && !Game.isFleetUnlocked(4));
+Game.state.fleetUnlock[3] = true;
+assert('解锁标记可手动置位', Game.isFleetUnlocked(3));
+
 section('旧档迁移（提督经验曲线）');
 /* 旧曲线=1000×lv；旧Lv40 累计78万 → 新wiki曲线 Lv97 */
 Game.newGame();

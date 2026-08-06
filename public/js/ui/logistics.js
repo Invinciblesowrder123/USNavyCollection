@@ -7,6 +7,7 @@ const LogisticsUI = (() => {
 
   function logistics(root, arg) {
     let tab = arg || 'expedition';
+    let exFleet = 2;   // 远征页当前选中的舰队（2/3/4，仅已解锁）
     render();
 
     function render() {
@@ -34,7 +35,7 @@ const LogisticsUI = (() => {
       });
       let needRerender = false;
       if (tab === 'expedition') {
-        const ex = Game.state.expeditions[2];
+        const ex = Game.state.expeditions[exFleet];
         if (ex && now >= ex.end && !root.querySelector('[data-claimex]')) needRerender = true;
       } else if (tab === 'dock') {
         const jobs = Game.state.repairs.filter(Boolean).map(r => r.end);
@@ -47,16 +48,21 @@ const LogisticsUI = (() => {
     /* ============ 远征 ============ */
     function expPanel() {
       const st = Game.state;
+      const exFleets = Game.unlockedFleets().filter(f => f !== 1);
+      if (!exFleets.includes(exFleet)) exFleet = exFleets[0] || 2;
       root.insertAdjacentHTML('beforeend', `<div class="panel">
-        <h3>远征 <span class="dim">（第二舰队专用，出发后舰队锁定）</span></h3>
-        <div class="section-title">第二舰队状态</div>
+        <h3>远征 <span class="dim">（派出舰队远征，出发后舰队锁定）</span></h3>
+        <div class="tabs">
+          ${exFleets.map(f => `<button class="${exFleet === f ? 'active' : ''}" data-exf="${f}">第${['', '一', '二', '三', '四'][f]}舰队</button>`).join('')}
+        </div>
+        <div class="section-title">第${['', '一', '二', '三', '四'][exFleet]}舰队状态</div>
         <div class="flex" style="gap:8px">
-          ${(st.fleet[2] || []).map(uid => `<div style="width:12%">${UI.shipCard(uid)}</div>`).join('') || '<span class="dim">第二舰队为空，去编成界面配置吧</span>'}
+          ${(st.fleet[exFleet] || []).map(uid => `<div style="width:12%">${UI.shipCard(uid)}</div>`).join('') || `<span class="dim">第${['', '一', '二', '三', '四'][exFleet]}舰队为空，去编成界面配置吧</span>`}
         </div>
         <div class="section-title">远征任务</div>
         ${EXPEDITIONS.map(ex => {
-          const active = st.expeditions[2] && st.expeditions[2].exId === ex.id;
-          const left = st.expeditions[2] ? st.expeditions[2].end - Date.now() : 0;
+          const active = st.expeditions[exFleet] && st.expeditions[exFleet].exId === ex.id;
+          const left = st.expeditions[exFleet] ? st.expeditions[exFleet].end - Date.now() : 0;
           const rw = Object.entries(ex.reward).map(([k, v]) => `${({ fuel: '油', ammo: '弹', steel: '钢', baux: '铝', devMats: '开发资材' })[k]}+${v}`).join(' ');
           return `<div class="panel" style="margin:6px 0">
             <div class="flex" style="justify-content:space-between;align-items:center">
@@ -65,16 +71,19 @@ const LogisticsUI = (() => {
                 <div class="hint">${ex.desc} ｜ 条件：${ex.req.ships || 0}+舰 ｜ 奖励：${rw} ｜ 入手经验：${ex.exp}</div>
               </div>
               ${active
-                ? (left > 0 ? `<span class="countdown" data-until="${st.expeditions[2].end}">${Util.fmtTime(left)}</span>` : `<button class="btn btn-gold btn-sm" data-claimex>完成！领取</button>`)
+                ? (left > 0 ? `<span class="countdown" data-until="${st.expeditions[exFleet].end}">${Util.fmtTime(left)}</span>` : `<button class="btn btn-gold btn-sm" data-claimex>完成！领取</button>`)
                 : `<button class="btn btn-sm" data-ex="${ex.id}">派遣</button>`}
             </div></div>`;
         }).join('')}
-        <div class="hint">远征归来获得经验（旗舰1.5倍、可能随机2倍）；全员「闪」状态大幅提高大成功概率（大成功：资源与经验×2）。</div>
+        <div class="hint">远征归来获得经验（旗舰1.5倍、可能随机2倍）；全员「闪」状态大幅提高大成功概率（大成功：资源与经验×2）。远征中的舰队不能变更编成。</div>
       </div>`);
 
+      root.querySelectorAll('[data-exf]').forEach(b => {
+        b.addEventListener('click', () => { exFleet = parseInt(b.dataset.exf, 10); render(); });
+      });
       root.querySelectorAll('[data-ex]').forEach(b => {
         b.addEventListener('click', () => {
-          const r = Logistics.startExpedition(2, b.dataset.ex);
+          const r = Logistics.startExpedition(exFleet, b.dataset.ex);
           if (!r.ok) { UI.toast(r.msg); return; }
           UI.toast(`远征「${r.ex.name}」出发！${Util.fmtTime(r.ex.time * 1000)}后完成`);
           Game.save(); render();
@@ -82,7 +91,7 @@ const LogisticsUI = (() => {
       });
       const claimBtn = root.querySelector('[data-claimex]');
       if (claimBtn) claimBtn.addEventListener('click', () => {
-        const r = Logistics.claimExpedition(2);
+        const r = Logistics.claimExpedition(exFleet);
         if (!r.ok) { UI.toast(r.msg); return; }
         const rw = Object.entries(r.reward).map(([k, v]) => `${({ fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土', devMats: '开发资材' })[k]}+${v}`).join(' ');
         UI.toast(`远征「${r.ex.name}」${r.great ? '大成功！' : '成功！'}获得 ${rw}`);
@@ -168,17 +177,15 @@ const LogisticsUI = (() => {
     /* ============ 补给 ============ */
     function supplyPanel() {
       const st = Game.state;
-      const cost = Logistics.supplyCost(1);
-      const cost2 = Logistics.supplyCost(2);
+      const fleets = Game.unlockedFleets();
+      const costs = fleets.map(f => Logistics.supplyCost(f));
       root.insertAdjacentHTML('beforeend', `<div class="panel">
         <h3>补给</h3>
         <div class="stat-grid">
-          <div class="stat-item"><div class="label">第一舰队补给</div><div class="value">油${cost.fuel} 弹${cost.ammo} 铝${cost.baux}</div></div>
-          <div class="stat-item"><div class="label">第二舰队补给</div><div class="value">油${cost2.fuel} 弹${cost2.ammo} 铝${cost2.baux}</div></div>
+          ${fleets.map((f, i) => `<div class="stat-item"><div class="label">第${['', '一', '二', '三', '四'][f]}舰队补给</div><div class="value">油${costs[i].fuel} 弹${costs[i].ammo} 铝${costs[i].baux}</div></div>`).join('')}
         </div>
         <div class="btn-row">
-          <button class="btn btn-green" data-sup="1">补给第一舰队</button>
-          <button class="btn btn-green" data-sup="2">补给第二舰队</button>
+          ${fleets.map(f => `<button class="btn btn-green" data-sup="${f}">补给第${['', '一', '二', '三', '四'][f]}舰队</button>`).join('')}
         </div>
         <div class="hint">油弹决定出击战斗能力（参照 wiki 弹药补正）：弹药≥50%伤害100%，<50%按残弹率/50减半，0%无法炮击。每个战斗点消耗燃料20%、弹药20%（进入夜战弹药30%），请于出击前补给。航母补给会消耗铝土补充机队。</div>
       </div>`);

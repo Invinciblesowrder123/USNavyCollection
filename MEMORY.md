@@ -94,6 +94,8 @@ USNavyCollection/
 
 **战斗分段 v1（2026-08-06）**：夜战不再默认进行——出击昼战结束后弹「追击选择」（夜战突入/战斗结束，参照 wiki 战斗流程第13~14步），夜战突入追加消耗弹药10%（合计30%）；引擎拆分 `battle()`（昼战）+ `battleNight()`（追加夜战并重新结算），出击流程拆分 `prepareBattle`/`continueNight`/`settleBattle`；演习新增玩家阵型选择（敌方固定单纵阵）且同样支持夜战突入选择；`npm run sim` 831 项全过 + `scripts/test_night_split.js` 19 项全过。
 
+**第三第四舰队 v1（2026-08-06）**：舰队扩展为 4 支（`state.fleet` 1~4 + `state.fleetUnlock{3,4}`，1/2 初始解锁）；解锁任务「第三舰队，拔锚！」（一次性 o26：完成1次远征）与「第四舰队，出航！」（一次性 o27：击破 2-1），奖励字段 `reward.unlockFleet` 由 `Progression.claimQuest` 调 `Game.unlockFleet()`；锁定舰队引擎侧拒绝远征/出击（`isFleetUnlocked` 守卫）；编成页 4 页签+锁定态、远征页舰队选择器（2/3/4）、出击页舰队选择器（1/2/3/4）、补给页按解锁舰队展示；`npm run sim` 852 项全过 + E2E 70 项全过。
+
 见 `HEARTBEAT.md` 最新条目（本文件只保留决策，心跳文件记录流水）。
 
 ## 反遗忘检查清单

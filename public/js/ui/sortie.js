@@ -180,7 +180,7 @@ const SortieUI = (() => {
   }
 
   /* 地图详情面板：迷你海图预览 + 血条 + 出击 */
-  function mapDetailPanel(m) {
+  function mapDetailPanel(m, fleetIdx) {
     const st = Game.state;
     const mp = st.mapProgress[m.id];
     const total = mp.gauge + mp.kills;
@@ -189,8 +189,8 @@ const SortieUI = (() => {
     const brs = Array.isArray(m.branch) ? m.branch : (m.branch ? [m.branch] : []);
     const losNeed = brs.reduce((mx, b) => Math.max(mx, b.if.los || 0), 0);
     const ddNeed = brs.reduce((mx, b) => Math.max(mx, b.if.dd || 0), 0);
-    const los = Game.fleetLos(1);
-    const canGo = !st.sortie && st.fleet[1].length > 0;
+    const los = Game.fleetLos(fleetIdx);
+    const canGo = !st.sortie && (st.fleet[fleetIdx] || []).length > 0;
     return `<div class="map-detail">
       <div class="md-board">${mapBoard(m, null, { mini: true })}</div>
       <div class="md-title">${m.id} ${m.name} <span class="map-stars">${'★'.repeat(m.stars || 0)}</span>
@@ -213,7 +213,9 @@ const SortieUI = (() => {
 
   function mapList(root) {
     const st = Game.state;
-    const fleet = st.fleet[1];
+    const fleets = Game.unlockedFleets();
+    let selFleet = fleets.includes(1) ? 1 : (fleets[0] || 1);
+    const fleet = st.fleet[selFleet];
     let minFuel = 1, minAmmo = 1;
     for (const uid of fleet) {
       const s = st.ships[uid];
@@ -233,9 +235,12 @@ const SortieUI = (() => {
         <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0;border:none;padding:0">出击 —— 选择海域</h3>
           <div class="flex" style="align-items:center;gap:10px">
-            <span class="dim">第一舰队油弹：油 <b style="color:${minFuel < 0.5 ? 'var(--red)' : 'inherit'}">${Math.round(minFuel * 100)}%</b> ｜ 弹 <b style="color:${minAmmo < 0.5 ? 'var(--red)' : 'inherit'}">${Math.round(minAmmo * 100)}%</b>
+            <div class="tabs">
+              ${fleets.map(f => `<button class="${selFleet === f ? 'active' : ''}" data-fleet="${f}">第${['', '一', '二', '三', '四'][f]}舰队</button>`).join('')}
+            </div>
+            <span class="dim">第${['', '一', '二', '三', '四'][selFleet]}舰队油弹：油 <b style="color:${minFuel < 0.5 ? 'var(--red)' : 'inherit'}">${Math.round(minFuel * 100)}%</b> ｜ 弹 <b style="color:${minAmmo < 0.5 ? 'var(--red)' : 'inherit'}">${Math.round(minAmmo * 100)}%</b>
               ${lowSupply ? '<span style="color:var(--red)">（弹药<50%伤害减半！）</span>' : ''}</span>
-            <button class="btn btn-green btn-sm" data-supply>一键补给（油${Logistics.supplyCost(1).fuel} 弹${Logistics.supplyCost(1).ammo}）</button>
+            <button class="btn btn-green btn-sm" data-supply>一键补给（油${Logistics.supplyCost(selFleet).fuel} 弹${Logistics.supplyCost(selFleet).ammo}）</button>
           </div>
         </div>
         <div class="area-tabs">
@@ -243,15 +248,22 @@ const SortieUI = (() => {
         </div>
         <div class="sortie-mapview">
           ${areaMapPanel(selArea, sel.id)}
-          ${mapDetailPanel(sel)}
+          ${mapDetailPanel(sel, selFleet)}
         </div>
         <div class="hint">消耗规则（wiki）：每个战斗点消耗燃料20%、弹药20%（进入夜战弹药改为30%）；资源点/补给点不消耗油弹。弹药&lt;50%时伤害按残弹率/50减半，0%时无法炮击。</div>
       </div>`;
 
+      root.querySelectorAll('[data-fleet]').forEach(b => {
+        b.addEventListener('click', () => {
+          selFleet = parseInt(b.dataset.fleet, 10);
+          Game.save();
+          draw();
+        });
+      });
       root.querySelector('[data-supply]').addEventListener('click', () => {
-        const r = Logistics.supplyFleet(1);
+        const r = Logistics.supplyFleet(selFleet);
         if (!r.ok) { UI.toast(r.msg); return; }
-        UI.toast('第一舰队补给完毕！');
+        UI.toast(`第${['', '一', '二', '三', '四'][selFleet]}舰队补给完毕！`);
         Game.save();
         draw();
       });
@@ -275,10 +287,10 @@ const SortieUI = (() => {
       if (startBtn) {
         startBtn.addEventListener('click', () => {
           if (lowSupply) {
-            const ok = confirm(`第一舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！\n弹药<50%伤害减半，0%无法炮击。建议先补给再出击！\n\n仍然出击？`);
+            const ok = confirm(`第${['', '一', '二', '三', '四'][selFleet]}舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！\n弹药<50%伤害减半，0%无法炮击。建议先补给再出击！\n\n仍然出击？`);
             if (!ok) return;
           }
-          const r = Sortie.start(selMap, 1);
+          const r = Sortie.start(selMap, selFleet);
           if (!r.ok) { UI.toast(r.msg); return; }
           if (r.warn) UI.toast(r.warn);
           const daPo = Sortie.daPoShips();
@@ -345,7 +357,7 @@ const SortieUI = (() => {
     function nodeAction() {
       if (def.type === 'start') {
         return `<div class="btn-row"><button class="btn btn-gold" data-act="advance">前往下一节点</button>
-          <span class="hint" style="align-self:center">出击开始！索敌值 ${Game.fleetLos(1)}</span></div>`;
+          <span class="hint" style="align-self:center">出击开始！索敌值 ${Game.fleetLos(so.fleetIdx)}</span></div>`;
       }
       if (def.type === 'resource') return `<div class="hint">资源点。点击前进收集资源。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">收集资源并前进</button></div>`;
       if (def.type === 'supply') return `<div class="hint">补给点。恢复一半油弹。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">补给并前进</button></div>`;

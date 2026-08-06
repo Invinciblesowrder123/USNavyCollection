@@ -35,6 +35,7 @@ const Logistics = (() => {
   function startExpedition(fleetIdx, exId) {
     const G = GameRef();
     const st = G.state;
+    if (!G.isFleetUnlocked(fleetIdx)) return { ok: false, msg: '该舰队尚未解锁！' };
     const ex = EXPEDITIONS.find(e => e.id === exId);
     if (!ex) return { ok: false, msg: '远征不存在' };
     if (st.expeditions[fleetIdx]) return { ok: false, msg: '该舰队已在远征中！' };

@@ -81,7 +81,7 @@ const Homeport = (() => {
             <div class="btn-row">
               <button class="btn btn-green btn-sm" data-act="supply">补给</button>
               <button class="btn btn-sm" data-act="lock">${s.locked ? '解锁' : '锁定'}</button>
-              ${(st.fleet[1].includes(uid) || st.fleet[2].includes(uid)) ? `<button class="btn btn-sm" data-act="remove">移出舰队</button>` : ''}
+              ${([1, 2, 3, 4].some(f => (st.fleet[f] || []).includes(uid))) ? `<button class="btn btn-sm" data-act="remove">移出舰队</button>` : ''}
               ${rmInfo ? `<button class="btn btn-gold btn-sm" data-act="remodel">改造(Lv.${rmInfo.lvNeed}，${rmInfo.cost.fuel}油/${rmInfo.cost.ammo}弹/${rmInfo.cost.steel}钢)</button>` : ''}
               ${!modMax ? `<button class="btn btn-gold btn-sm" data-act="modernize">近代化改修</button>` : ''}
               ${modMax ? '<span class="dim">改修MAX</span>' : ''}
@@ -334,9 +334,7 @@ const Homeport = (() => {
     const sec = secUid ? st.ships[secUid] : null;
     const secDef = sec ? Game.shipDef(sec) : null;
     const claimable = QUESTS.filter(q => Progression.canClaim(q.id)).length;
-    const ex1Info = st.expeditions[1];
-    const ex2Info = st.expeditions[2];
-    const exActive = [ex1Info, ex2Info].filter(Boolean);
+    const exActive = Game.unlockedFleets().map(f => st.expeditions[f]).filter(Boolean);
     const repCount = st.repairs.filter(r => r).length;
     const repairInfo = st.repairs.map((r, i) => r ? `船坞${i + 1}:${Game.shipDef(st.ships[r.ship]).zh}` : `船坞${i + 1}:空`).join(' · ');
 
@@ -395,6 +393,7 @@ const Homeport = (() => {
           <span class="status-chip" title="${Util.esc(repairInfo)}">🔧 入渠：${repCount} 艘</span>
           <span class="status-chip">🔩 改修资材：<span class="screw">${st.resources.screws || 0}</span></span>
           <span class="status-chip">💡 开发资材：<span class="devmat">${st.resources.devMats || 0}</span></span>
+          <span class="status-chip">⚓ 舰队：${[1, 2, 3, 4].map(f => `第${f}队${Game.isFleetUnlocked(f) ? '✓' : '🔒'}`).join(' ')}</span>
         </div>
         <div class="hint">资源每30秒自然恢复（油弹钢+3 铝+1，上限=(提督等级+3)×250，参照 kcwiki「资源」），远征与任务是主要收入来源。日常任务「装备开发3次」每天+1开发资材、日常任务「装备的改修强化」每天+1改修资材。管理员可在顶栏开启「测试模式」（无限资源/瞬间建造/瞬间入渠）。</div>
       </div>`;
@@ -423,14 +422,40 @@ const Homeport = (() => {
   }
 
   /* ============ 编成 ============ */
+  /* 舰队解锁任务速查（用于锁定态提示） */
+  const FLEET_TAB_ZH = { 1: '第一舰队（出击）', 2: '第二舰队（远征）', 3: '第三舰队（远征）', 4: '第四舰队（远征）' };
+  function unlockQuestOf(fleetIdx) {
+    return QUESTS.find(q => q.reward && q.reward.unlockFleet === fleetIdx);
+  }
   function formation(root, arg) {
     const st = Game.state;
-    let fleetIdx = arg === 2 ? 2 : 1;
+    let fleetIdx = [1, 2, 3, 4].includes(arg) ? arg : 1;
     const MAX = 6;
 
     function render() {
       const fleet = st.fleet[fleetIdx];
-      const inOther = st.fleet[fleetIdx === 1 ? 2 : 1];
+      const unlocked = Game.isFleetUnlocked(fleetIdx);
+
+      if (!unlocked) {
+        const uq = unlockQuestOf(fleetIdx);
+        root.innerHTML = `
+          <div class="tabs">
+            ${[1, 2, 3, 4].map(f => `
+              <button class="${fleetIdx === f ? 'active' : ''}" data-f="${f}">${FLEET_TAB_ZH[f]}${Game.isFleetUnlocked(f) ? '' : ' 🔒'}</button>
+            `).join('')}
+          </div>
+          <div class="panel">
+            <h3>编成 第${fleetIdx}舰队</h3>
+            <div class="locked-fleet">
+              <div class="lock-ico">🔒</div>
+              <div class="hint" style="font-size:14px">第${fleetIdx}舰队尚未解锁！<br>完成任务「${UI.esc(uq ? uq.name : '')}」（${UI.esc(uq ? uq.desc : '')}）即可解锁。</div>
+            </div>
+          </div>`;
+        root.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => formation(root, parseInt(b.dataset.f, 10))));
+        return;
+      }
+
+      const inOther = [1, 2, 3, 4].filter(f => f !== fleetIdx).reduce((a, f) => a.concat(st.fleet[f] || []), []);
       const allShips = Object.values(st.ships).filter(s => !inOther.includes(s.uid));
       const list = allShips
         .filter(s => rosterType === 'ALL' || Game.shipDef(s).type === rosterType)
@@ -446,8 +471,9 @@ const Homeport = (() => {
 
       root.innerHTML = `
         <div class="tabs">
-          <button class="${fleetIdx === 1 ? 'active' : ''}" data-f="1">第一舰队（出击）</button>
-          <button class="${fleetIdx === 2 ? 'active' : ''}" data-f="2">第二舰队（远征）</button>
+          ${[1, 2, 3, 4].map(f => `
+            <button class="${fleetIdx === f ? 'active' : ''}" data-f="${f}">${FLEET_TAB_ZH[f]}${Game.isFleetUnlocked(f) ? '' : ' 🔒'}</button>
+          `).join('')}
         </div>
         <div class="panel">
           <h3>编成 第${fleetIdx}舰队 <span class="dim">索敌 ${los} ｜ 舰种：${UI.esc(types)}</span></h3>
@@ -598,7 +624,7 @@ const Homeport = (() => {
 
   function pickShipFor(fleetIdx, slotIdx, onDone) {
     const st = Game.state;
-    const inOther = st.fleet[fleetIdx === 1 ? 2 : 1];
+    const inOther = [1, 2, 3, 4].filter(f => f !== fleetIdx).reduce((a, f) => a.concat(st.fleet[f] || []), []);
     const base = Object.values(st.ships).filter(s => !st.fleet[fleetIdx].includes(s.uid) &&
       !inOther.includes(s.uid) && !Game.fleetHasName(fleetIdx, s.id));
     let m = null;
