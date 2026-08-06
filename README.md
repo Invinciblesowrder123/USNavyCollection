@@ -13,7 +13,8 @@
 
 | 版本 | 位置 | 说明 |
 |---|---|---|
-| **当前版（v0.1.1+）** | 仓库根目录 | 含账号系统（注册/登录/云存档）、改修工厂完善、立绘/UI 优化 |
+| **当前版** | 仓库根目录 | 经验系统v2 + 装备开发/解体v2 + 账号强化（管理员/HttpOnly Cookie） |
+| **快照（2026-08-06）** | `archive/USNavyCollection_20260806/` | 中间版本快照，独立 `.gitignore`，仅供对照回滚 |
 | **旧版备份（v0.1，2026-08-04）** | `archive/USNavyCollection_20260804/` | 上线前完整快照，独立 `.gitignore`，仅供对照回滚 |
 
 详细变更记录见 [VERSION_HISTORY.md](VERSION_HISTORY.md)。
