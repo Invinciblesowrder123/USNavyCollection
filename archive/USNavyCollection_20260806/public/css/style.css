@@ -1,0 +1,427 @@
+/* ============================================================
+ * 美舰收藏 全局样式（深海军主题）
+ * ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --navy: #0c1626;
+  --navy2: #122036;
+  --panel: #16263f;
+  --panel2: #1d314f;
+  --line: #2c4268;
+  --gold: #ffd700;
+  --text: #d8e2f0;
+  --dim: #7f93b5;
+  --red: #e05555;
+  --green: #5cc45c;
+  --blue: #5aa8e8;
+  --orange: #f0a050;
+}
+
+html, body { height: 100%; }
+body {
+  background: radial-gradient(ellipse at 50% -20%, #1a2c4a 0%, #0a1424 55%, #060d18 100%);
+  color: var(--text);
+  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  font-size: 14px;
+  min-height: 100%;
+}
+
+#app { max-width: 1080px; margin: 0 auto; padding: 0 12px 30px; }
+
+/* ---------- 顶栏 ---------- */
+#topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #122a4a, #0d1c33);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--gold);
+  border-radius: 0 0 8px 8px;
+  flex-wrap: wrap; gap: 8px;
+}
+.logo { color: var(--gold); font-weight: bold; font-size: 17px; letter-spacing: 1px; }
+.admiral { color: var(--dim); font-size: 12px; margin-left: 10px; }
+.top-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.resbar { display: flex; gap: 12px; font-size: 13px; }
+.resbar .res { display: inline-flex; align-items: center; gap: 4px; }
+.res .ico { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.ico-fuel { background: #d8a048; } .ico-ammo { background: #c8d0e0; }
+.ico-steel { background: #98a8b8; } .ico-baux { background: #98d8c8; }
+.ico-screw { background: #e8c24a; }
+.ico-devmat { background: #c88ae8; }
+.debug-btn {
+  background: var(--panel2); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 3px 8px; font-size: 11px; cursor: pointer;
+}
+.debug-btn:hover { border-color: var(--gold); }
+.debug-btn.on { color: var(--gold); border-color: var(--gold); background: rgba(232, 194, 74, 0.12); }
+.acc { font-size: 11px; }
+
+/* ---------- 登录 / 注册 ---------- */
+body.unauth #topbar, body.unauth #navbar { display: none; }
+.login-wrap { display: flex; justify-content: center; align-items: center; min-height: 72vh; }
+.login-box { width: 360px; text-align: center; }
+.login-box h2 { color: var(--gold); letter-spacing: 3px; margin-bottom: 8px; font-size: 22px; }
+.login-box .dim { font-size: 12px; line-height: 1.7; }
+.login-tabs { display: flex; gap: 8px; margin: 16px 0 4px; }
+.login-tabs button {
+  flex: 1; padding: 8px; background: var(--panel);
+  border: 1px solid var(--line); color: var(--text);
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.login-tabs button:hover { border-color: var(--gold); }
+.login-tabs button.active {
+  background: linear-gradient(180deg, #e8c24a, #b8912a);
+  color: #1a1404; border-color: #d4ae38; font-weight: bold;
+}
+.login-box input {
+  width: 100%; padding: 10px 12px; margin-top: 12px;
+  background: rgba(6, 13, 24, 0.7); border: 1px solid var(--line);
+  border-radius: 6px; color: var(--text); font-size: 14px; outline: none;
+}
+.login-box input:focus { border-color: var(--gold); }
+.login-err { color: var(--red); font-size: 12px; min-height: 18px; margin-top: 8px; }
+.login-remember {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 12px; font-size: 12px; color: var(--dim);
+  cursor: pointer; user-select: none;
+}
+.login-remember input { width: auto; margin: 0; }
+.login-box .btn-row { justify-content: center; }
+
+/* ---------- 改修工厂 ---------- */
+.star-line { color: var(--gold); font-weight: bold; font-size: 12px; letter-spacing: 1px; }
+.screw { color: var(--gold); }
+.improve-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px; margin: 6px 0;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: rgba(10, 20, 36, 0.5);
+}
+.improve-row .grow { min-width: 220px; }
+.improve-row.improve-locked { opacity: 0.45; }
+.improve-row .btn-row { flex-wrap: wrap; gap: 4px; }
+
+/* ---------- 装备开发（开发池预览） ---------- */
+.devmat { color: #c88ae8; }
+.dev-pool-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+.dev-pool-table th {
+  text-align: left; padding: 5px 8px; color: var(--dim);
+  border-bottom: 1px solid var(--line); font-weight: normal; font-size: 11px;
+}
+.dev-pool-table td { padding: 4px 8px; border-bottom: 1px solid rgba(120, 150, 190, 0.12); }
+.dev-pool-table tr.dev-fail td { border-bottom: none; color: #b0a48c; }
+.dev-pool-table .num { text-align: right; color: var(--gold); }
+
+/* ---------- 装备仓库 ---------- */
+.equip-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+  padding: 5px 8px; margin: 3px 0;
+  border: 1px solid var(--line); border-radius: 5px;
+  background: rgba(10, 20, 36, 0.4);
+  font-size: 12px;
+}
+.equip-row .grow { min-width: 200px; }
+
+/* ---------- 近代化改修素材选择 ---------- */
+.mat-card {
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 8px; margin: 4px;
+  cursor: pointer; background: rgba(10, 20, 36, 0.5);
+  user-select: none;
+}
+.mat-card:hover { border-color: var(--gold); }
+.mat-card.selected { border-color: var(--gold); background: rgba(232, 194, 74, 0.12); }
+.mat-card .mat-val { font-size: 11px; color: var(--dim); }
+.preview-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.preview-table td, .preview-table th {
+  border: 1px solid var(--line); padding: 3px 8px; font-size: 12px; text-align: center;
+}
+.preview-table .up { color: #7fe07f; }
+
+/* ---------- 导航（顶部一级菜单置顶UI） ---------- */
+#navbar {
+  display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap;
+  justify-content: center;
+}
+#navbar button {
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: transform .12s, box-shadow .12s;
+}
+#navbar button:hover { border-color: var(--gold); color: var(--gold); transform: scale(1.05); box-shadow: 0 3px 10px rgba(0,0,0,0.35); }
+#navbar button.active {
+  background: linear-gradient(180deg, #e8c24a, #b8912a);
+  color: #1a1404; border-color: #d4ae38; font-weight: bold;
+}
+#navbar button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------- 屏幕容器 ---------- */
+#screen { min-height: 420px; }
+.panel {
+  background: linear-gradient(180deg, rgba(29,49,79,0.9), rgba(18,32,54,0.92));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.panel h3 {
+  color: var(--gold); font-size: 15px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--line); padding-bottom: 6px;
+}
+.section-title { color: var(--blue); font-size: 14px; margin: 12px 0 8px; }
+.dim { color: var(--dim); }
+.hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+
+/* ---------- 舰船卡片 ---------- */
+.ship-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--panel);
+  transition: transform .12s;
+}
+.ship-card:hover { transform: translateY(-2px); border-color: var(--gold); }
+
+/* ---------- 立绘占位符（舰种占位，后续替换为真实立绘） ---------- */
+.portrait-ph {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  border-bottom: 1px solid var(--line);
+  text-align: center; padding: 4px; overflow: hidden;
+}
+.portrait-ph .type-mark { color: var(--gold); font-size: 13px; font-weight: bold; }
+.portrait-ph .type-sub { color: var(--dim); font-size: 10px; }
+.ship-card .portrait-ph .type-mark { font-size: 11px; }
+.ship-card .portrait-ph .type-sub { font-size: 9px; }
+.ship-card .portrait-ph { font-size: 11px; }
+.ship-card .card-info {
+  padding: 4px 6px; font-size: 11px; background: rgba(10,20,36,0.9);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.ship-card .lv { color: var(--gold); }
+.ship-card .hpbar { height: 4px; background: #3a1c1c; }
+.ship-card .hpbar > div { height: 100%; background: linear-gradient(90deg,#4a4, #8e8); transition: width .3s; }
+.ship-card .hpbar > div.danger { background: linear-gradient(90deg,#a44, #e66); }
+.ship-card .flag-badge {
+  position: absolute; top: 4px; left: 4px; z-index: 2;
+  background: rgba(10,20,36,0.85); color: var(--gold);
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--gold);
+}
+.ship-card .state-badge {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  background: rgba(10,20,36,0.85); font-size: 10px; padding: 1px 5px; border-radius: 3px;
+}
+.state-badge.repair { color: var(--blue); border: 1px solid var(--blue); }
+.state-badge.expedition { color: var(--orange); border: 1px solid var(--orange); }
+.state-badge.broken { color: var(--red); border: 1px solid var(--red); }
+.state-badge.morale { color: #7fe07f; }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-block;
+  background: linear-gradient(180deg, #2a4a7a, #1a3460);
+  border: 1px solid #3a5a90;
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn:hover { border-color: var(--gold); color: var(--gold); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-gold { background: linear-gradient(180deg, #e8c24a, #b8912a); color: #1a1404; border-color: #d4ae38; font-weight: bold; }
+.btn-gold:hover { filter: brightness(1.1); color: #1a1404; }
+.btn-red { background: linear-gradient(180deg, #7a3030, #521f1f); border-color: #a04040; }
+.btn-green { background: linear-gradient(180deg, #2f7a3a, #1f5225); border-color: #3fa04a; }
+.btn-sm { padding: 3px 9px; font-size: 12px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* ---------- 表格 ---------- */
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th, table.data td {
+  padding: 6px 8px; border-bottom: 1px solid rgba(44,66,104,0.5); text-align: left;
+}
+table.data th { color: var(--dim); font-weight: normal; font-size: 12px; }
+table.data tr:hover td { background: rgba(90,168,232,0.08); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- 统计条 ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.stat-item { background: rgba(10,20,36,0.6); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.stat-item .label { font-size: 11px; color: var(--dim); }
+.stat-item .value { font-size: 15px; color: var(--text); font-weight: bold; }
+
+/* ---------- 母港（秘书舰 / 舰队 / 状态） ---------- */
+/* 秘书舰面板 */
+.secretary-panel { display: flex; gap: 16px; align-items: center; }
+.secretary-ph { width: 150px; flex-shrink: 0; border-radius: 6px; border: 1px solid var(--line); }
+.secretary-info { flex: 1; min-width: 0; }
+.secretary-info h3 { margin-bottom: 6px; }
+.secretary-line {
+  margin-top: 10px; padding: 8px 12px;
+  background: rgba(10, 20, 36, 0.6); border-left: 3px solid var(--gold);
+  border-radius: 0 6px 6px 0; color: var(--text); font-size: 13px;
+}
+.secretary-info .btn-row { margin-top: 12px; }
+
+/* 第一舰队网格 */
+.fleet-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.fleet-cell { display: flex; flex-direction: column; }
+.fleet-cell .ship-card { flex: 1; }
+.card-actions { display: flex; gap: 4px; margin-top: 5px; }
+.card-actions .btn { flex: 1; padding: 3px 4px; font-size: 11px; }
+.fleet-slot-sm {
+  border: 1px dashed var(--line); border-radius: 8px; min-height: 190px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--dim); font-size: 12px;
+  background: rgba(10, 20, 36, 0.35);
+}
+
+/* 状态栏 */
+.status-line { margin-top: 10px; color: var(--text); font-size: 12.5px; }
+
+@media (max-width: 900px) {
+  .fleet-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ---------- 舰队槽位 ---------- */
+.fleet-slot {
+  width: 15%;
+  border: 1px dashed var(--line); border-radius: 8px; min-height: 210px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--dim); cursor: pointer; padding: 8px;
+  background: rgba(10,20,36,0.35);
+}
+.fleet-slot.filled { border-style: solid; border-color: var(--panel2); background: transparent; align-items: stretch; }
+.fleet-slot:hover { border-color: var(--gold); }
+.fleet-slot.drag-over { border-color: var(--gold); background: rgba(232,194,74,0.15); }
+.ship-card.dragging { opacity: 0.45; }
+
+/* ---------- 入渠中的舰娘（紧凑卡片，槽位锁定） ---------- */
+.dock-card .portrait-ph { height: 100px; aspect-ratio: auto; font-size: 11px; cursor: default; }
+
+/* ---------- 母港拖拽区（拖回此处脱出舰队） ---------- */
+.roster-area {
+  min-height: 200px;
+  padding: 8px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  transition: border-color .12s, background .12s;
+}
+.roster-area.drag-over { border-color: var(--blue); background: rgba(90,168,232,0.08); }
+
+/* ---------- 模态框 ---------- */
+#modal-root .modal-mask {
+  position: fixed; inset: 0; background: rgba(2,6,12,0.75); z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+}
+#modal-root .modal {
+  background: linear-gradient(180deg, #1a2c4a, #0e1b30);
+  border: 1px solid #3a5a90; border-radius: 10px;
+  max-width: 860px; width: 94%; max-height: 88vh; overflow: auto;
+  padding: 18px;
+}
+#modal-root .modal h3 { color: var(--gold); margin-bottom: 12px; }
+.modal-close { float: right; cursor: pointer; color: var(--dim); font-size: 18px; }
+.modal-close:hover { color: var(--red); }
+
+/* ---------- 战斗 ---------- */
+.battlefield { display: flex; flex-direction: column; gap: 14px; }
+.battle-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.battle-ship {
+  width: 104px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  background: var(--panel); text-align: center;
+}
+.battle-ship .portrait-ph { height: 96px; aspect-ratio: auto; font-size: 11px; }
+.battle-ship .bname { font-size: 10px; padding: 2px 0; background: rgba(10,20,36,0.9); }
+.battle-ship .bhp { height: 5px; background: #3a1c1c; }
+.battle-ship .bhp > div { height: 100%; transition: width .4s; }
+.battle-ship .bhp > div.ok { background: #5cc45c; }
+.battle-ship .bhp > div.mid { background: #f0b050; }
+.battle-ship .bhp > div.danger { background: #e05555; }
+.battle-ship.dead { opacity: 0.4; }
+.enemy-row .battle-ship img { filter: hue-rotate(200deg) saturate(1.2); }
+.enemy-row .battle-ship .portrait-ph { background: linear-gradient(180deg, #4a1a2a, #2a0f18); color: #ff9090; border-color: #5a2030; }
+#battleLog {
+  background: rgba(4,10,18,0.9); border: 1px solid var(--line); border-radius: 6px;
+  height: 220px; overflow-y: auto; padding: 8px 10px; font-size: 12.5px; line-height: 1.7;
+}
+#battleLog .line { opacity: 0; animation: linein .25s forwards; }
+@keyframes linein { to { opacity: 1; } }
+#battleLog .sink { color: var(--red); }
+#battleLog .ci { color: var(--gold); }
+#battleLog .phase { color: var(--blue); }
+
+/* ---------- 海域地图 ---------- */
+.map-wrap { position: relative; height: 320px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 40%, #12325a 0%, #081527 70%); }
+.map-node {
+  position: absolute; width: 44px; height: 44px; transform: translate(-50%, -50%);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--line); background: #1d314f; font-size: 18px; cursor: default;
+}
+.map-node.battle { border-color: #d06060; }
+.map-node.boss { border-color: #e05555; background: radial-gradient(circle, #5a1a1a, #2a0a0a); color: #ff8080; }
+.map-node.resource { border-color: #5cc45c; color: #7fe07f; }
+.map-node.supply { border-color: #5aa8e8; color: #8fd0ff; }
+.map-node.current { box-shadow: 0 0 0 4px rgba(255,215,0,0.5); border-color: var(--gold); }
+.map-node.cleared { opacity: 0.45; }
+.map-edge { position: absolute; height: 3px; background: rgba(44,66,104,0.8); transform-origin: left center; }
+
+/* ---------- 任务 ---------- */
+.quest-card {
+  border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;
+  background: rgba(10,20,36,0.5); display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.quest-card .qname { font-weight: bold; }
+.quest-card .qdesc { color: var(--dim); font-size: 12px; margin-top: 2px; }
+.quest-card .qprog { color: var(--blue); font-size: 12px; }
+.quest-card.claimed { opacity: 0.5; }
+.quest-card .qrewards { font-size: 11px; color: var(--orange); }
+
+/* ---------- 其他 ---------- */
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.tabs button {
+  background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+  padding: 5px 14px; cursor: pointer; border-radius: 4px 4px 0 0;
+}
+.tabs button.active { background: var(--panel2); color: var(--gold); border-bottom-color: var(--gold); }
+.countdown { font-family: Consolas, monospace; color: var(--blue); }
+.resource-formula { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+.resource-formula input {
+  width: 100%; background: #0a1424; color: var(--text); border: 1px solid var(--line);
+  padding: 5px 6px; border-radius: 4px; text-align: center;
+}
+.resource-formula label { display: block; font-size: 11px; color: var(--dim); text-align: center; }
+.preset-recipe { display: inline-block; margin: 2px; padding: 3px 8px; font-size: 11px; border: 1px solid var(--line);
+  border-radius: 4px; cursor: pointer; color: var(--dim); background: rgba(10,20,36,0.5); }
+.preset-recipe:hover { color: var(--gold); border-color: var(--gold); }
+.eq-slot {
+  border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; font-size: 12px;
+  display: inline-block; margin: 2px; background: rgba(10,20,36,0.5); cursor: pointer;
+}
+.eq-slot:hover { border-color: var(--gold); }
+.toast {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  background: #1d314f; border: 1px solid var(--gold); color: var(--text);
+  padding: 10px 22px; border-radius: 6px; z-index: 200; font-size: 14px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+}
+.flex { display: flex; gap: 12px; flex-wrap: wrap; }
+.grow { flex: 1; }
+.text-center { text-align: center; }
+.big-rank { font-size: 30px; font-weight: bold; color: var(--gold); }

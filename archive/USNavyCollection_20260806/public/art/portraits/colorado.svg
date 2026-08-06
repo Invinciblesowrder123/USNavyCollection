@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="360" viewBox="0 0 240 360">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c3a5e"/>
+      <stop offset="1" stop-color="#0e1f33"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="240" height="360" fill="url(#bg)"/>
+  <rect width="240" height="360" fill="url(#glow)"/>
+  <!-- 装饰线 -->
+  <rect x="0" y="0" width="240" height="6" fill="#ffd700"/>
+  <path d="M0,40 Q240,28 240,40 L240,0 L0,0 Z" fill="#0a1420" opacity="0.35"/>
+  <!-- 舰级徽章 -->
+  <g transform="translate(16,14)">
+    <rect width="42" height="20" rx="3" fill="#0a1420" opacity="0.75" stroke="#ffd700" stroke-width="1"/>
+    <text x="21" y="15" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffd700" font-family="Arial">BB</text>
+  </g>
+  <!-- 稀有度 -->
+  <text x="228" y="26" font-size="12" text-anchor="end" fill="#ffd700" font-family="Arial">★★★☆☆</text>
+  <!-- 人物 -->
+  <path d="M74,80 Q66,104 68,132 Q70,148 84,146 Q90,116 98,96 Q100,64 120,52 Q148,58 154,88 Q156,108 162,130 Q168,146 178,140 Q174,118 170,100 Q166,60 120,44 Q82,56 74,80 Z" fill="#e8d8b0"/>
+        <path d="M160,92 Q176,120 178,158 Q178,188 166,210 Q158,222 152,210 Q162,182 160,150 Q158,118 150,96 Z" fill="#e8d8b0"/>
+  
+  <!-- 头部 -->
+  <ellipse cx="120" cy="118" rx="46" ry="52" fill="#f2d9b8"/>
+  <!-- 耳朵 -->
+  <ellipse cx="74" cy="122" rx="6" ry="11" fill="#ecc8a4"/>
+  <ellipse cx="166" cy="122" rx="6" ry="11" fill="#ecc8a4"/>
+  <!-- 颈 -->
+  <path d="M106,168 Q120,176 134,168 L134,180 Q120,186 106,180 Z" fill="#f2d9b8"/>
+  <!-- 制服领 -->
+  <path d="M86,196 Q120,210 154,196 L150,232 Q120,246 90,232 Z" fill="#e8ecf2"/>
+  <path d="M120,204 L120,238" stroke="#e0c060" stroke-width="6"/>
+  <path d="M92,196 L120,208 L148,196" stroke="#9aa8b8" stroke-width="3" fill="none"/>
+  <!-- 军衔领章 -->
+  <rect x="92" y="200" width="20" height="8" rx="2" fill="#e0c060"/>
+  <rect x="128" y="200" width="20" height="8" rx="2" fill="#e0c060"/>
+  <circle cx="102" cy="204" r="2.2" fill="#fff"/>
+  <circle cx="138" cy="204" r="2.2" fill="#fff"/>
+  
+  <!-- 眼睛 -->
+  <ellipse cx="100" cy="118" rx="7.5" ry="8.5" fill="#fff"/>
+  <ellipse cx="100" cy="118" rx="7.5" ry="8.5" fill="#fff"/>
+  <circle cx="100" cy="119" r="4.6" fill="#27425e"/>
+  <circle cx="100" cy="119" r="4.6" fill="#27425e"/>
+  <circle cx="101.8" cy="116.6" r="1.4" fill="#fff"/>
+  <circle cx="101.8" cy="116.6" r="1.4" fill="#fff"/>
+  <!-- 眉 -->
+  <path d="M92,105 Q100,100 108,105" stroke="#5a4030" stroke-width="2" fill="none"/>
+  <path d="M92,105 Q100,100 108,105" stroke="#5a4030" stroke-width="2" fill="none"/>
+  <!-- 嘴 -->
+  <path d="M114,141 Q120,144 126,141" stroke="#b06060" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <!-- 腮红 -->
+  <ellipse cx="86" cy="132" rx="6" ry="3.5" fill="#f0a8a8" opacity="0.5"/>
+  <ellipse cx="114" cy="132" rx="6" ry="3.5" fill="#f0a8a8" opacity="0.5"/>
+  <!-- 舰船侧影水印 -->
+  <g transform="translate(0,0)" fill="#000" opacity="0.45">
+    <path d="M30,290 L40,268 L52,268 L56,258 L118,258 L126,268 L176,268 L186,258 L226,258 L230,280 L214,290 Z"/>
+  </g>
+  <!-- 底部信息条 -->
+  <rect x="0" y="324" width="240" height="36" fill="#0a1420" opacity="0.85"/>
+  <rect x="0" y="324" width="240" height="2.5" fill="#ffd700"/>
+  <text x="120" y="342" font-size="13" font-weight="bold" text-anchor="middle" fill="#ffffff" font-family="Arial">COLORADO</text>
+  <text x="120" y="356" font-size="10" text-anchor="middle" fill="#e0c060" font-family="'Microsoft YaHei', sans-serif">科罗拉多 · 战列舰 · 科罗拉多级</text>
+</svg>

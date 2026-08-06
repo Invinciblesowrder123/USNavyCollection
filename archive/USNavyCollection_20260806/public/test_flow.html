@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>UI Flow Test</title></head>
+<body>
+<div id="result">RUNNING</div>
+<header id="topbar"><div class="top-left"><span id="admiralInfo"></span></div><div id="resBar"></div></header>
+<nav id="navbar"></nav>
+<main id="screen"></main>
+<div id="toast"></div>
+<div id="modal-root"></div>
+<script src="js/core/utils.js"></script>
+<script src="js/data/equipment.js"></script>
+<script src="js/data/ships.js"></script>
+<script src="js/data/maps.js"></script>
+<script src="js/data/quests.js"></script>
+<script src="js/core/state.js"></script>
+<script src="js/game/battle.js"></script>
+<script src="js/game/factory.js"></script>
+<script src="js/game/improve.js"></script>
+<script src="js/game/logistics.js"></script>
+<script src="js/game/progression.js"></script>
+<script src="js/game/sortie.js"></script>
+<script src="js/ui/common.js"></script>
+<script src="js/ui/homeport.js"></script>
+<script src="js/ui/sortie.js"></script>
+<script src="js/ui/factory.js"></script>
+<script src="js/ui/logistics.js"></script>
+<script src="js/ui/quests.js"></script>
+<script>
+  window.__errors = [];
+  window.onerror = function (msg, src, line) { window.__errors.push(msg + ' @' + (src || '').split('/').pop() + ':' + line); };
+  window.__results = [];
+  const R = (ok, name, extra) => { window.__results.push((ok ? 'PASS' : 'FAIL') + ' ' + name + (extra ? ' :: ' + extra : '')); };
+
+  function boot() {
+    try {
+      Game.load();
+      Progression.initQuests();
+      Progression.resetDue();
+
+      /* 1. 屏幕渲染 */
+      const screens = [['home'], ['formation'], ['factory'], ['logistics', 'expedition'], ['logistics', 'dock'], ['logistics', 'supply'], ['logistics', 'practice'], ['quests'], ['sortie']];
+      for (const s of screens) {
+        UI.go(s[0], s[1]);
+        R(document.querySelector('#screen').innerHTML.length > 50, 'screen:' + s.join('/'));
+      }
+
+      /* 1.5 舰娘详情弹窗（母港点击舰艇 → 属性/立绘/装备槽 → 装卸装备） */
+      UI.go('home');
+      const homeCards = document.querySelectorAll('#screen .ship-card');
+      R(homeCards.length >= 2, 'shipdetail:cards', 'n=' + homeCards.length);
+      homeCards[0].click();
+      const dtlHtml = document.querySelector('#modal-root').innerHTML;
+      R(dtlHtml.includes('耐久') && dtlHtml.includes('装备') && dtlHtml.includes('data-slot'), 'shipdetail:modal', dtlHtml.slice(0, 60));
+      const dtlSlot = document.querySelector('#modal-root [data-slot]');
+      if (dtlSlot) {
+        dtlSlot.click();
+        const pickerHtml = document.querySelector('#modal-root').innerHTML;
+        R(pickerHtml.includes('选择装备'), 'shipdetail:equipPicker', pickerHtml.slice(0, 60));
+        const pick = document.querySelector('#modal-root [data-eq]');
+        R(!!pick, 'shipdetail:pickable', pick && pick.textContent.slice(0, 20));
+      }
+      document.querySelector('#modal-root').innerHTML = '';
+
+      /* 2. 资源注入 + 强舰队 */
+      Game.gain({ fuel: 20000, ammo: 20000, steel: 20000, baux: 20000 });
+      const strongIds = ['enterprise', 'iowa', 'essex', 'fletcher', 'atlanta', 'saratoga'];
+      const fleet = [];
+      for (const id of strongIds) {
+        const s = Game.createShip(id, 60);
+        s.kai = 1;
+        Game.equipDefaults(s.uid);
+        s.supply = { fuel: 1, ammo: 1 };
+        s.hp = Game.shipStats(s.uid).hpMax;
+        fleet.push(s.uid);
+      }
+      Game.state.fleet[1] = fleet;
+      Game.state.fleet[2] = [fleet.pop(), fleet.pop()];
+
+      /* 3. 完整出击 1-1（血条=3次击破，循环3次） */
+      let cleared = false;
+      for (let run = 0; run < 3 && !cleared; run++) {
+        const st1 = Sortie.start('1-1', 1);
+        R(st1.ok, 'sortie:start', JSON.stringify(st1));
+        let guard = 0, battles = 0, bossFought = false;
+        while (Game.state.sortie && guard++ < 12) {
+          const r = Sortie.advance('单纵阵', true);
+          R(r.ok, 'sortie:advance-' + (r.type || '?'), JSON.stringify(r.msg));
+          if (r.type === 'battle' || r.type === 'boss') {
+            battles++;
+            Progression.applyBattleResult(1, r.result, false);
+            if (r.type === 'boss') { bossFought = true; if (r.cleared) cleared = true; }
+            /* 战斗演出渲染冒烟测试 */
+            UI.go('sortie');
+            SortieUI.renderBattle(document.querySelector('#screen'), r, function () {});
+            document.querySelector('#screen').innerHTML = '';
+          }
+          const nxt = Sortie.moveToNext();
+          if (!nxt) break;
+        }
+        Sortie.returnHome();
+        R(battles > 0, 'sortie:battles', 'count=' + battles);
+        R(bossFought, 'sortie:bossFought');
+      }
+      R(cleared, 'sortie:1-1cleared');
+
+      /* 4. 建造/开发/远征/入渠 UI 冒烟（直接逻辑） */
+      const b = Factory.startBuild({ fuel: 400, ammo: 400, steel: 500, baux: 500 });
+      R(b.ok, 'factory:build', JSON.stringify(b));
+      Game.state.construction[0].end = Date.now() - 1;
+      const cb = Factory.claimBuild(0);
+      R(cb.ok, 'factory:claimBuild');
+      /* 开发：即时结算（wiki：秘书舰系×资源池） */
+      Game.state.admiral.level = 40;
+      Game.state.resources.devMats = 10;
+      const d = Factory.develop({ fuel: 20, ammo: 60, steel: 10, baux: 110 }, Game.state.fleet[1][0]);
+      R(d.ok, 'factory:develop', JSON.stringify(d && { ok: d.ok, success: d.success, id: d.eq && d.eq.id }));
+      R(Game.state.resources.devMats === 9 || Game.state.resources.devMats === 10, 'factory:devMats', 'devMats=' + Game.state.resources.devMats);
+      R(Factory.developPreview({ fuel: 10, ammo: 251, steel: 250, baux: 10 }, null).pool === 'AMMO', 'devPool:ammo');
+      const ex = Logistics.startExpedition(2, 'ex1');
+      R(ex.ok, 'logistics:expedition', JSON.stringify(ex));
+      Game.state.expeditions[2].end = Date.now() - 1;
+      const cex = Logistics.claimExpedition(2);
+      R(cex.ok, 'logistics:claimExpedition');
+      const s0 = Game.state.ships[Game.state.fleet[1][0]];
+      s0.hp = 1;
+      const rc = Logistics.repairCost(s0.uid);
+      const rr = Logistics.startRepair(0, s0.uid);
+      R(rr.ok, 'logistics:repair', JSON.stringify(rr));
+      Game.state.repairs[0].end = Date.now() - 1;
+      Game.finishTimers(Date.now());
+      R(Game.state.ships[s0.uid].hp > 1, 'logistics:repairDone', 'hp=' + Game.state.ships[s0.uid].hp);
+
+      /* 5. 演习 */
+      const pr = Logistics.practiceReady();
+      const res = Battle.battle(Game.state.fleet[1], pr.fleets[0].ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
+      R(typeof res.rank === 'string' && res.rank.length === 1, 'practice:battle', res.rank);
+      Progression.applyBattleResult(1, res, true);
+
+      /* 6. 任务 */
+      Progression.notify('sortie', 3);
+      const cq = Progression.claimQuest('d1');
+      R(cq.ok, 'quest:claim', JSON.stringify(cq.q && cq.q.id));
+
+      /* 7. 改造 */
+      s0.lv = 90;
+      const rm = Progression.remodel(s0.uid);
+      R(rm.ok, 'remodel:kai2', JSON.stringify(rm));
+
+      /* 8. 改修工厂 + 近代化（冒烟） */
+      Game.state.improve.count = 0;
+      const vestal = Game.createShip('vestal', 1);
+      Game.state.fleet[1].unshift(vestal.uid);
+      R(Improve.secretaryIsVestal(), 'improve:unlock');
+      Game.state.resources.screws = 50;
+      const eqI = Game.createEquip('gun5in_30');
+      const ri = Improve.improve(eqI.uid, false);
+      R(ri.ok && ri.success && eqI.star === 1, 'improve:run', JSON.stringify(ri));
+      R(Game.state.resources.screws === 49, 'improve:screwsCost', 'screws=' + Game.state.resources.screws);
+      UI.go('factory', 'improve');
+      R(document.querySelector('#screen').innerHTML.includes('改修工厂') && document.querySelector('#screen').innerHTML.includes('5inch单装炮'), 'screen:improve');
+      const tgt = Game.createShip('mahan', 1);
+      const matP = Game.createShip('mahan', 1);
+      const pvM = Progression.modernizePreview(tgt.uid, [matP.uid]);
+      R(pvM.ok && pvM.shown.fp === 1, 'modernize:preview', JSON.stringify(pvM));
+      const rmM = Progression.modernize(tgt.uid, [Game.createShip('benson', 1).uid]);
+      R(rmM.ok, 'modernize:synthesize', JSON.stringify(rmM));
+      /* 顶部一级菜单 + 工厂近代化改修页签 */
+      R(document.querySelectorAll('#navbar button').length === 9, 'nav:topmenu', 'n=' + document.querySelectorAll('#navbar button').length);
+      UI.go('factory', 'modernize');
+      R(document.querySelector('#screen').innerHTML.includes('近代化改修') && document.querySelector('#screen').innerHTML.includes('剩余可改修'), 'screen:factory-modernize');
+      document.querySelector('#screen').querySelector('[data-mod-target]').click();
+      R(document.querySelector('#modal-root').innerHTML.includes('选择素材舰'), 'modernize:modalFromFactory');
+      /* 装备开发面板（开发池预览）+ 装备仓库（解体）冒烟 */
+      UI.go('factory', 'dev');
+      const devHtml = document.querySelector('#screen').innerHTML;
+      R(devHtml.includes('装备开发') && devHtml.includes('开发资材') && devHtml.includes('当前开发池'), 'screen:factory-dev');
+      R(devHtml.includes('开发失败'), 'screen:dev-fail-share');
+      UI.go('factory', 'equip');
+      const eqpHtml = document.querySelector('#screen').innerHTML;
+      R(eqpHtml.includes('装备仓库') && eqpHtml.includes('库存'), 'screen:factory-equip');
+      const spare = Object.keys(Game.state.equipment).find(eu => !Object.values(Game.state.ships).some(s => (s.equipped || []).includes(eu)));
+      const scrapR = Factory.scrapEquip(spare);
+      R(scrapR.ok && !Game.state.equipment[spare], 'factory:scrapEquip', JSON.stringify(scrapR.gain));
+
+      document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
+    } catch (e) {
+      window.__errors.push('FATAL ' + e.message + ' ' + (e.stack || '').split('\n')[1]);
+      document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
+    }
+  }
+  setTimeout(boot, 300);
+</script>
+</body>
+</html>
