@@ -205,8 +205,8 @@ const SortieUI = (() => {
     const delay = Math.round(220 * pace);
     const flight = Math.max(175, Math.round(delay * 0.58));
     const flightTorp = Math.round(flight * 1.3);
-    /* 开幕空袭整体演出略长（防空过后集中呈现轰炸机群） */
-    const flightAir = 900;
+    /* 开幕空袭整体演出（防空过后集中呈现轰炸机群） */
+    const flightAir = 460;
 
     const shipEl = (side, idx) => (side && idx >= 0)
       ? root.querySelector(`#${side === 'A' ? 'rowA' : 'rowB'} [data-ship="${idx}"]`) : null;
@@ -372,7 +372,7 @@ const SortieUI = (() => {
         setTimeout(() => {
           if (st.hit) impact(tgtEl, 'air', st.dmg, st.sink);
           else missFx(tgtEl, 'air');
-        }, impactAt + Math.random() * 240);
+        }, impactAt + Math.random() * 160);
       }
     }
 
@@ -456,9 +456,9 @@ const SortieUI = (() => {
       const midY = (ra.bottom + rb.top) / 2;
       const spanX = b.width * 0.5;
       const loseSide = ev.atkS === 'B' ? 'B' : 'A';     // 损失较重的一侧派出更多机群
-      const nA = loseSide === 'A' ? Math.min(3 + Math.floor((ev.dmg || 4) / 4), 6) : 3;
-      const nB = loseSide === 'B' ? Math.min(3 + Math.floor((ev.dmg || 4) / 4), 6) : 3;
-      const t = Math.round(flight * 0.6);
+      const nA = loseSide === 'A' ? Math.min(2 + Math.floor((ev.dmg || 4) / 5), 4) : 2;
+      const nB = loseSide === 'B' ? Math.min(2 + Math.floor((ev.dmg || 4) / 5), 4) : 2;
+      const t = Math.max(140, Math.round(flight * 0.4));
       const puffAt = (x, y) => {
         const puff = mkEl('flak-puff');
         put(puff, x, y);
@@ -475,7 +475,7 @@ const SortieUI = (() => {
           const tx = b.left + b.width * 0.3 + Math.random() * spanX, ty = midY - 16 - Math.random() * 24;
           requestAnimationFrame(() => fly(pl, tx, ty, t, 'cubic-bezier(.5,.3,.6,1)'));
           setTimeout(() => { pl.remove(); puffAt(tx, ty); }, t);
-        }, k * 45);
+        }, k * 35);
       }
       /* 敌方机群向上迎击 */
       for (let k = 0; k < nB; k++) {
@@ -487,11 +487,58 @@ const SortieUI = (() => {
           const tx = b.left + b.width * 0.3 + Math.random() * spanX, ty = midY + 16 + Math.random() * 24;
           requestAnimationFrame(() => fly(pl, tx, ty, t, 'cubic-bezier(.5,.3,.6,1)'));
           setTimeout(() => { pl.remove(); puffAt(tx, ty); }, t);
-        }, k * 45);
+        }, k * 35);
       }
     }
 
-    /* ---- S2 对空炮火：防空炮仰射机群 + 黑烟 ---- */
+    /* ---- S2 对空炮火（批量）：多舰防空炮并行仰射机群 + 黑烟 ---- */
+    function flakBulkAnim(ev) {
+      const list = ev.shots || [];
+      if (!list.length) return;
+      const t = Math.max(110, Math.round(flight * 0.32));
+      const skyOf = tgtEl => {
+        const tb = tgtEl.getBoundingClientRect();
+        const rb = root.querySelector('#rowB').getBoundingClientRect();
+        const ra = root.querySelector('#rowA').getBoundingClientRect();
+        const midY = (ra.bottom + rb.top) / 2;
+        const sideDown = tgtEl.closest('#rowB') ? -1 : 1;   // 敌机从中线附近俯冲而来
+        return { x: tb.left + tb.width / 2 + (Math.random() - 0.5) * 70, y: midY + sideDown * (18 + Math.random() * 40) };
+      };
+      const n = Math.min(list.length, 5);
+      for (let k = 0; k < n; k++) {
+        const st = list[k];
+        const fromEl = shipEl(st.atkS, st.atkI);
+        const tgtEl = shipEl(st.tgtS, st.tgtI);
+        const from = fromEl ? centerOf(fromEl) : fallbackPoint(null);
+        const sky = tgtEl ? skyOf(tgtEl) : fallbackPoint(fromEl);
+        for (let m = 0; m < 2; m++) {
+          setTimeout(() => {
+            const f2 = { x: from.x + (Math.random() - 0.5) * 30, y: from.y + (Math.random() - 0.5) * 24 };
+            const t2 = { x: sky.x + (Math.random() - 0.5) * 40, y: sky.y + (Math.random() - 0.5) * 30 };
+            const ang = Math.atan2(t2.y - f2.y, t2.x - f2.x) * 180 / Math.PI;
+            const len = Math.hypot(t2.x - f2.x, t2.y - f2.y);
+            const tr = mkEl('tracer');
+            put(tr, f2.x, f2.y);
+            tr.style.transform = `rotate(${ang}deg)`;
+            tr.style.width = '0px';
+            document.body.appendChild(tr);
+            requestAnimationFrame(() => {
+              tr.style.width = len + 'px';
+              tr.style.transition = `width ${t}ms linear`;
+            });
+            setTimeout(() => {
+              tr.remove();
+              const puff = mkEl('flak-puff');
+              put(puff, t2.x, t2.y);
+              document.body.appendChild(puff);
+              setTimeout(() => puff.remove(), 550);
+            }, t);
+          }, k * 35 + m * 60);
+        }
+      }
+    }
+
+    /* ---- S2 对空炮火（单次，旧格式回退） ---- */
     function flakAnim(ev, atkEl, tgtEl) {
       const from = atkEl ? centerOf(atkEl) : fallbackPoint(null);
       /* 炮口指向空中的敌机机群（目标舰上空、两行之间），而非舰体本身 */
@@ -503,8 +550,8 @@ const SortieUI = (() => {
         const sideDown = tgtEl.closest('#rowB') ? -1 : 1;   // 敌机从中线附近俯冲而来
         return { x: tb.left + tb.width / 2 + (Math.random() - 0.5) * 70, y: midY + sideDown * (18 + Math.random() * 40) };
       })() : fallbackPoint(atkEl);
-      const n = Math.min(Math.max(ev.dmg || 3, 3), 5);
-      const t = Math.round(flight * 0.45);
+      const n = Math.min(Math.max(ev.dmg || 3, 3), 4);
+      const t = Math.max(120, Math.round(flight * 0.35));
       for (let k = 0; k < n; k++) {
         setTimeout(() => {
           const f2 = { x: from.x + (Math.random() - 0.5) * 32, y: from.y + (Math.random() - 0.5) * 26 };
@@ -527,7 +574,7 @@ const SortieUI = (() => {
               document.body.appendChild(puff);
               setTimeout(() => puff.remove(), 550);
             }, t);
-        }, k * 40);
+        }, k * 30);
       }
     }
 
@@ -540,16 +587,16 @@ const SortieUI = (() => {
         case 'air': (ev.strikes ? airStrikeBulkAnim(ev) : airAnim(ev, atkEl, tgtEl)); break;
         case 'asw': aswAnim(ev, atkEl, tgtEl); break;
         case 'airfight': airFightAnim(ev); break;
-        case 'flak': flakAnim(ev, atkEl, tgtEl); break;
+        case 'flak': (ev.shots ? flakBulkAnim(ev) : flakAnim(ev, atkEl, tgtEl)); break;
       }
     }
     const evDur = ev => {
       switch (ev.kind) {
         case 'torp': case 'open_torp': return flightTorp + 250;
-        case 'air': return ev.strikes ? flightAir + 620 : flightAir + 300;
+        case 'air': return ev.strikes ? flightAir + 350 : flightAir + 260;
         case 'asw': return 540;
-        case 'airfight': return Math.round(flight * 0.6) + 220 + Math.min(ev.dmg || 4, 12) * 45;
-        case 'flak': return Math.round(flight * 0.45) + 180 + Math.min(Math.max(ev.dmg || 3, 3), 5) * 40;
+        case 'airfight': return Math.max(140, Math.round(flight * 0.4)) + 130 + Math.min(ev.dmg || 4, 10) * 25;
+        case 'flak': return ev.shots ? (Math.max(110, Math.round(flight * 0.32)) + 230) : (Math.max(120, Math.round(flight * 0.35)) + 150 + Math.min(Math.max(ev.dmg || 3, 3), 4) * 30);
         default: return flight + 230;
       }
     };
@@ -588,6 +635,7 @@ const SortieUI = (() => {
       let wait = delay;
       if (typeof e === 'string') {
         const isPhase = e.includes('——') || e.includes('进入夜战') || e.includes('航空战') || e.includes('交战形态') || e.includes('索敌');
+        const isAir = e.includes('空袭') || e.includes('空战') || e.includes('对空');
         const line = document.createElement('div');
         line.className = 'line' + (e.includes('击沉') ? ' sink'
           : (e.includes('发动') || e.includes('空袭') || e.includes('Cut-in')) ? ' ci'
@@ -595,7 +643,7 @@ const SortieUI = (() => {
         line.textContent = e;
         logEl.appendChild(line);
         logEl.scrollTop = logEl.scrollHeight;
-        wait = delay + (isPhase ? 90 : 0);
+        wait = isPhase ? delay + 90 : isAir ? Math.round(delay * 0.8) : delay;
       } else if (e.snap) {
         updateBars(e.snap);
         wait = Math.round(delay * 0.45);

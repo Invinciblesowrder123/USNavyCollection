@@ -283,8 +283,8 @@ const Battle = (() => {
     return Math.max(1, Math.floor(hp * 0.5 + Util.ri(0, Math.max(0, hp - 1)) * 0.3));
   }
 
-  function dealDamage(log, atk, def, dmg, prefix, extra) {
-    if (dmg <= 0) { log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，被装甲完全弹开！`); return; }
+  function dealDamage(log, atk, def, dmg, prefix, extra, quiet) {
+    if (dmg <= 0) { if (!quiet) log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，被装甲完全弹开！`); return; }
     atk.dealt += dmg;
     if (def.isPlayer && dmg >= def.hp) {
       /* 我方舰娘防沉保护（旗舰/非红脸僚舰扣50%~80%；红脸僚舰扣至1） */
@@ -293,7 +293,7 @@ const Battle = (() => {
       log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，命中！造成巨大伤害！「${def.name}」大破！（防沉保护）`);
     } else {
       def.hp -= dmg;
-      log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，命中！造成 ${dmg} 伤害。`);
+      if (!quiet) log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，命中！造成 ${dmg} 伤害。`);
       if (def.hp <= 0 && def.alive) { def.alive = false; log.push(`${def.name} 被击沉了！`); }
     }
   }
@@ -307,17 +307,17 @@ const Battle = (() => {
     return Util.pick(escorts);
   }
 
-  /* 统一的伤害入口：先判定旗舰援护，再结算 */
-  function applyDamage(log, atk, def, dmg, prefix, extra, defSide, defForm) {
+  /* 统一的伤害入口：先判定旗舰援护，再结算；quiet=仅静默常规命中行（批量空袭用） */
+  function applyDamage(log, atk, def, dmg, prefix, extra, defSide, defForm, quiet) {
     if (dmg > 0 && defSide && defSide.length && def === defSide[0]) {
       const prot = findProtector(defSide, defForm);
       if (prot) {
         log.push(`${prefix}${atk.name}${extra || ''}攻击旗舰 ${def.name}，僚舰「${prot.name}」挺身掩护！（旗舰援护）`);
-        dealDamage(log, atk, prot, dmg, prefix, extra);
+        dealDamage(log, atk, prot, dmg, prefix, extra, quiet);
         return;
       }
     }
-    dealDamage(log, atk, def, dmg, prefix, extra);
+    dealDamage(log, atk, def, dmg, prefix, extra, quiet);
   }
 
   /* HP 快照（供 UI 演出） */
@@ -374,17 +374,18 @@ const Battle = (() => {
   }
 
   /* ============ S2 对空炮火迎击（wiki：每格攻击机由一名舰娘迎击；比例+固定击坠各50%；我方+1保底；对空CI追加固定击坠）
-   * 击坠数不超过该格现有搭载（避免出现「击坠数大于敌机总数」的虚数）；
-   * 固定击坠倍率 0.15（低于原 0.25），使空袭机群在 S1/S2 后仍有存活，保证舰攻/舰爆开幕空袭伤害可见 */
-  function aaShootdown(attackers, defenders, isMySide, aaBonus, log, evFn) {
+   * 击坠数不超过该格现有搭载；固定击坠倍率 0.15（低于原 0.25），使空袭机群在 S1/S2 后仍有存活；
+   * 返回 { total, shots }，shots 供 UI 一次性批量演出防空弹幕 */
+  function aaShootdown(attackers, defenders, isMySide, aaBonus, log) {
     let total = 0;
+    const shots = [];
     for (const a of attackers) {
       if (!a.alive) continue;
       for (const sl of a.slots) {
         if (sl.size <= 0 || !sl.plane) continue;
         if (sl.eq && sl.eq.slot === SLOT.FIGHTER) continue;   // 舰战不参与S2
         const defs = defenders.filter(x => x.alive);
-        if (!defs.length) return total;
+        if (!defs.length) return { total, shots };
         const interceptor = Util.pick(defs);
         const wAA = interceptor.stats.aa;
         const fleetAA = defs.reduce((s, x) => s + x.stats.aa, 0) * aaBonus;
@@ -400,17 +401,18 @@ const Battle = (() => {
         down += (isMySide ? 1 : 0) + ci;   // 我方对空迎击+1保底，敌方无保底
         down = Math.min(down, sl.size);    // 击坠不超过现有搭载
         sl.size -= down;
-        if (down > 0 && evFn) evFn('flak', interceptor, a, true, down, null, false);
+        if (down > 0) shots.push({ interceptor, a, down });
         total += down;
       }
     }
-    return total;
+    return { total, shots };
   }
 
   /* ============ 开幕空袭（批量结算）：双方防空(S2)结算完毕后，一次性结算全部空袭伤害，
-   * 返回打击列表供 UI 一次性演出；命中/未命中均入列（未命中仅演出投弹落水） ============ */
+   * 命中行静默并汇总为一行，返回打击列表供 UI 一次性演出 ============ */
   function airStrike(log, attackers, defenders, sideLabel, defSide, defForm) {
     const strikes = [];
+    let hitN = 0, missN = 0, totalDmg = 0;
     for (const s of attackers) {
       if (!s.alive) continue;
       for (const sl of s.slots) {
@@ -436,13 +438,20 @@ const Battle = (() => {
           }
           ap = threshold(ap, THRESHOLD.AIR);
           const dmg = calcDamage(ap, t.stats.arm, 0.1);
-          /* 空袭同样触发旗舰援护与防沉保护（wiki） */
+          /* 空袭同样触发旗舰援护与防沉保护（wiki）；常规命中行静默，汇总输出 */
           const wasAlive = t.alive;
-          applyDamage(log, s, t, dmg, `${sideLabel}空袭！`, ' 的机队轰炸', defSide, defForm);
+          applyDamage(log, s, t, dmg, `${sideLabel}空袭！`, ' 的机队轰炸', defSide, defForm, true);
           r.hit = true; r.dmg = dmg; r.sink = wasAlive && !t.alive;
+          hitN++; totalDmg += dmg;
+        } else {
+          missN++;
         }
         strikes.push(r);
       }
+    }
+    if (strikes.length) {
+      if (hitN > 0) log.push(`${sideLabel}空袭：${hitN} 次命中，共造成 ${totalDmg} 伤害。${missN ? `（${missN} 次未命中）` : ''}`);
+      else log.push(`${sideLabel}空袭：机群全部投弹未命中。`);
     }
     return strikes;
   }
@@ -495,6 +504,25 @@ const Battle = (() => {
         strikes: mapped
       } });
     };
+    /* 对空炮火批量演出事件：一次事件携带全部迎击弹幕，UI 并行演出 */
+    const evFlak = shots => {
+      if (!shots.length) return;
+      const map = x => ({
+        dmg: x.down,
+        atkS: sideOf(sideA, x.interceptor) >= 0 ? 'A' : 'B',
+        atkI: Math.max(sideOf(sideA, x.interceptor), sideOf(sideB, x.interceptor)),
+        tgtS: sideOf(sideA, x.a) >= 0 ? 'A' : 'B',
+        tgtI: Math.max(sideOf(sideA, x.a), sideOf(sideB, x.a))
+      });
+      const mapped = shots.map(map);
+      const first = mapped[0];
+      log.push({ event: {
+        kind: 'flak', hit: true, dmg: shots.reduce((s, x) => s + x.down, 0),
+        special: null, sink: false,
+        atkS: first.atkS, atkI: first.atkI, tgtS: null, tgtI: -1,
+        shots: mapped
+      } });
+    };
 
     L(`敌军阵型：${formationB}。我军选择：${formationA}。`);
     let airSup = false;
@@ -517,9 +545,12 @@ const Battle = (() => {
         if (s1a > 0) ev('airfight', sideA[0] || null, null, true, s1a, null, false);
         if (s1b > 0) ev('airfight', sideB[0] || null, null, true, s1b, null, false);
         /* S2 对空炮火迎击（互击对方攻击机；轮型对空补正1.6/复纵1.2） */
-        const s2a = aaShootdown(sideB, sideA, true, fA.aa, log, ev);
-        const s2b = aaShootdown(sideA, sideB, false, fB.aa, log, ev);
-        if (s2a + s2b > 0) L(`对空炮火：击落敌机 ${s2a} 架，被击落 ${s2b} 架。`);
+        const s2a = aaShootdown(sideB, sideA, true, fA.aa, log);
+        const s2b = aaShootdown(sideA, sideB, false, fB.aa, log);
+        if (s2a.total + s2b.total > 0) L(`对空炮火：击落敌机 ${s2a.total} 架，被击落 ${s2b.total} 架。`);
+        /* 对空炮火弹幕：一次性批量演出 */
+        evFlak(s2a.shots);
+        evFlak(s2b.shots);
         /* 开幕空袭：防空结算后一次性结算 + 一次性演出 */
         evAir(airStrike(log, sideA, sideB, '我军', sideB, formBName));
         evAir(airStrike(log, sideB, sideA, '敌军', sideA, formAName));
@@ -527,7 +558,8 @@ const Battle = (() => {
       } else {
         L('索敌失败！无法参加航空战，制空权自动丧失！');
         /* 我方舰载机不离舰不参与航空战；敌方空袭仍会被我方对空炮火迎击 */
-        aaShootdown(sideB, sideA, true, fA.aa, log, ev);
+        const s2a = aaShootdown(sideB, sideA, true, fA.aa, log);
+        evFlak(s2a.shots);
         evAir(airStrike(log, sideB, sideA, '敌军', sideA, formAName));
         pushSnap();
       }

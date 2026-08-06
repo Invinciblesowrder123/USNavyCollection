@@ -126,6 +126,10 @@ body.unauth #topbar, body.unauth #navbar { display: none; }
 }
 .equip-row .grow { min-width: 200px; }
 
+/* ---------- 批量开发结果 ---------- */
+.dev-batch-result { padding: 4px 0 8px; line-height: 1.8; font-size: 13px; }
+.dev-batch-result b { color: var(--gold); }
+
 /* ---------- 近代化改修素材选择 ---------- */
 .mat-card {
   border: 1px solid var(--line); border-radius: 6px;

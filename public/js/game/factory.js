@@ -119,6 +119,29 @@ const Factory = (() => {
     return { ok: true, success: true, eq, pv };
   }
 
+  /* ---- 批量开发（10连）：资源按份数整批校验，开发资材成功时逐个消耗、不足提前停止 ---- */
+  function developBatch(recipe, secretaryUid, count = 10) {
+    const G = GameRef();
+    const st = G.state;
+    count = Math.min(20, Math.max(1, Math.floor(count) || 10));
+    const total = {
+      fuel: (recipe.fuel || 0) * count, ammo: (recipe.ammo || 0) * count,
+      steel: (recipe.steel || 0) * count, baux: (recipe.baux || 0) * count
+    };
+    if (!G.canAfford(total)) return { ok: false, msg: `资源不足！${count}连需要 ${total.fuel}/${total.ammo}/${total.steel}/${total.baux}` };
+    const sec = st.ships[secretaryUid];
+    if (!sec) return { ok: false, msg: '需要设置秘书舰（第一舰队旗舰）才能开发。' };
+    const out = { ok: true, count, attempts: 0, success: 0, fail: 0, eqs: [], devMatsUsed: 0, stopped: false };
+    for (let i = 0; i < count; i++) {
+      if ((st.resources.devMats || 0) < 1) { out.stopped = true; break; }
+      const r = develop(recipe, secretaryUid);
+      out.attempts++;
+      if (r.ok && r.success) { out.success++; out.eqs.push(r.eq); out.devMatsUsed++; }
+      else out.fail++;
+    }
+    return out;
+  }
+
   /* ---- 装备解体（参照 wiki：解体装备回收资源；装备中的装备需先卸下） ---- */
   function scrapEquip(euid) {
     const G = GameRef();
@@ -144,7 +167,7 @@ const Factory = (() => {
     return { ok: true, locked: eq.locked };
   }
 
-  return { startBuild, claimBuild, develop, developPreview, scrapEquip, toggleEquipLock, DEV_MATS_CAP };
+  return { startBuild, claimBuild, develop, developBatch, developPreview, scrapEquip, toggleEquipLock, DEV_MATS_CAP };
 })();
 
 if (typeof window !== 'undefined') window.Factory = Factory;

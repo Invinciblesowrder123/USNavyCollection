@@ -123,9 +123,10 @@ const FactoryUI = (() => {
         </div>
         <div class="btn-row">
           <button class="btn btn-gold" data-act="dev" ${devMats < 1 || !sec ? 'disabled' : ''}>开发（消耗1开发资材，${sec ? '' : '需秘书舰'}）</button>
+          <button class="btn btn-gold" data-act="dev10" ${devMats < 1 || !sec ? 'disabled' : ''}>10连开发 ×10</button>
         </div>
         <div id="devPoolPreview">${devPoolHtml()}</div>
-        <div class="hint">规则：投入四项资源（必消耗）+ 1开发资材（成功才消耗）。最高资源决定开发池（油/钢 &gt; 弹药 &gt; 铝）；提督等级≥装备稀有度×3 且 四项资源≥最低资源要求才会成功。开发不论成败均计入每日任务。</div>
+        <div class="hint">规则：投入四项资源（必消耗）+ 1开发资材（成功才消耗）。最高资源决定开发池（油/钢 &gt; 弹药 &gt; 铝）；提督等级≥装备稀有度×3 且 四项资源≥最低资源要求才会成功。开发不论成败均计入每日任务。10连开发按份数整批校验资源，开发资材按成功数逐个消耗、不足时提前停止。</div>
       </div>`;
     }
 
@@ -315,6 +316,28 @@ const FactoryUI = (() => {
           UI.toast(r.msg);
           render();
         }
+      });
+      const dev10Btn = root.querySelector('[data-act="dev10"]');
+      if (dev10Btn) dev10Btn.addEventListener('click', () => {
+        const rv = readRecipe('df');
+        const recipe = { fuel: rv[0].v, ammo: rv[1].v, steel: rv[2].v, baux: rv[3].v };
+        const sec = Game.state.ships[Game.state.fleet[1][0]];
+        const r = Factory.developBatch(recipe, sec ? sec.uid : null, 10);
+        if (!r.ok) { UI.toast(r.msg); return; }
+        Game.save();
+        const groups = {};
+        for (const eq of r.eqs) groups[eq.id] = (groups[eq.id] || 0) + 1;
+        const listHtml = Object.keys(groups).map(id => `${UI.esc(EquipmentData[id].zh)}×${groups[id]}`).join('、');
+        const m = UI.modal(`
+          <span class="modal-close" data-close>×</span>
+          <h3>10连开发结果</h3>
+          <div class="dev-batch-result">
+            <div>成功 <b>${r.success}</b> 件 ｜ 失败 <b>${r.fail}</b> 件 ｜ 消耗开发资材 <b>${r.devMatsUsed}</b> 个</div>
+            ${r.eqs.length ? `<div class="section-title">获得装备</div><div>${listHtml}</div>` : ''}
+            ${r.stopped ? `<div class="hint" style="color:#ff9a9a">开发资材不足，本次共进行 ${r.attempts} 次后停止。</div>` : ''}
+          </div>
+          <div class="btn-row"><button class="btn btn-gold" data-close>好</button></div>`);
+        m.root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { m.close(); render(); }));
       });
       root.querySelectorAll('[data-claim]').forEach(b => {
         b.addEventListener('click', () => {

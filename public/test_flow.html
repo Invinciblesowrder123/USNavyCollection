@@ -176,6 +176,13 @@
       const devHtml = document.querySelector('#screen').innerHTML;
       R(devHtml.includes('装备开发') && devHtml.includes('开发资材') && devHtml.includes('当前开发池'), 'screen:factory-dev');
       R(devHtml.includes('开发失败'), 'screen:dev-fail-share');
+      R(devHtml.includes('10连开发'), 'screen:dev10-button');
+      const dev10Btn = document.querySelector('#screen [data-act="dev10"]');
+      if (dev10Btn) {
+        dev10Btn.click();
+        R(document.querySelector('#modal-root').innerHTML.includes('10连开发结果'), 'factory:dev10-modal');
+        document.querySelector('#modal-root').innerHTML = '';
+      }
       UI.go('factory', 'equip');
       const eqpHtml = document.querySelector('#screen').innerHTML;
       R(eqpHtml.includes('装备仓库') && eqpHtml.includes('库存'), 'screen:factory-equip');

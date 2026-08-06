@@ -172,6 +172,30 @@ Progression.notify('develop', 1);
 const cq6 = Progression.claimQuest('d6');
 assert('日常开发任务可领取(+1开发资材)', cq6.ok && Game.state.resources.devMats === devMats0 - 2 + 1, 'devMats=' + Game.state.resources.devMats);
 
+/* 批量开发（10连） */
+section('批量开发（10连）');
+Game.state.admiral.level = 40;
+Game.state.resources.devMats = 50;
+Game.gain({ fuel: 20000, ammo: 20000, steel: 20000, baux: 20000 });
+const _bri = Util.ri, _bw = Util.weighted;
+Util.ri = (a, b) => b;
+Util.weighted = t => { let best = null, bv = -1; for (const k in t) if (t[k] > bv) { bv = t[k]; best = k; } return best; };
+const bFuel = Game.state.resources.fuel;
+const batch = Factory.developBatch({ fuel: 20, ammo: 60, steel: 10, baux: 110 }, cvSec.uid, 10);
+assert('10连全部成功(确定性随机)', batch.ok && batch.success === 10 && batch.eqs.length === 10 && batch.fail === 0, JSON.stringify({ s: batch.success, f: batch.fail }));
+assert('10连消耗10开发资材', Game.state.resources.devMats === 40, 'devMats=' + Game.state.resources.devMats);
+assert('10连资源消耗×10', Game.state.resources.fuel === bFuel - 200, 'fuel=' + Game.state.resources.fuel);
+assert('10连获得装备可入仓库', batch.eqs.every(eq => Game.state.equipment[eq.uid]), 'n=' + batch.eqs.length);
+/* 开发资材不足时提前停止 */
+Game.state.resources.devMats = 3;
+const batch2 = Factory.developBatch({ fuel: 20, ammo: 60, steel: 10, baux: 110 }, cvSec.uid, 10);
+assert('资材不足提前停止(仅3次)', batch2.ok && batch2.stopped && batch2.attempts === 3 && batch2.success === 3, JSON.stringify({ attempts: batch2.attempts, stopped: batch2.stopped }));
+assert('提前停止后资材为0', Game.state.resources.devMats === 0);
+/* 资源不足整批被拒 */
+const batch3 = Factory.developBatch({ fuel: 99999, ammo: 60, steel: 10, baux: 110 }, cvSec.uid, 10);
+assert('资源不足10连被拒', !batch3.ok && batch3.msg.includes('资源不足'), batch3.msg);
+Util.ri = _bri; Util.weighted = _bw;
+
 section('装备解体（wiki：解体回收资源，装备中/上锁不可解体）');
 const eqS = Game.createEquip('aa_20mm');
 const rScrap = Factory.scrapEquip(eqS.uid);
@@ -365,7 +389,8 @@ const exStart = Logistics.startExpedition(2, 'ex1');
 Game.state.expeditions[2].end = Date.now() - 1;
 Logistics.claimExpedition(2);
 const exFlagExp = Game.state.ships[exFleet[0]].exp, exOtherExp = Game.state.ships[exFleet[1]].exp;
-assert('远征经验：基础30×(旗舰1.5×随机2倍×大成功2倍)', exFlagExp > 0 && exOtherExp > 0 && exFlagExp % 15 === 0 && exOtherExp % 15 === 0 && exFlagExp >= exOtherExp,
+/* 随机2倍/大成功2倍按舰独立判定，僚舰可高于旗舰（旗舰60×1.5×1 vs 僚舰30×2），仅校验公式形状 */
+assert('远征经验：基础30×(旗舰1.5×随机2倍×大成功2倍)', exFlagExp > 0 && exOtherExp > 0 && exFlagExp % 15 === 0 && exOtherExp % 15 === 0 && exFlagExp >= exOtherExp / 2,
   `flag=${exFlagExp} other=${exOtherExp}`);
 /* 旗舰大破禁出击 */
 Game.state.fleet[1] = strongFleet;
