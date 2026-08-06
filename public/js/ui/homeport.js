@@ -340,31 +340,36 @@ const Homeport = (() => {
     const repCount = st.repairs.filter(r => r).length;
     const repairInfo = st.repairs.map((r, i) => r ? `船坞${i + 1}:${Game.shipDef(st.ships[r.ship]).zh}` : `船坞${i + 1}:空`).join(' · ');
 
+    root.className = 'home-screen';
     root.innerHTML = `
       ${secDef ? `
-      <div class="panel secretary-panel">
-        ${UI.portraitImg(sec.id, 'secretary-ph')}
+      <div class="panel panel-deco secretary-panel">
+        <div class="sec-frame">
+          ${UI.portraitImg(sec.id, 'portrait')}
+          <div class="sec-type-badge">${SHIP_TYPE_ZH[secDef.type]}</div>
+        </div>
         <div class="secretary-info">
-          <h3>${UI.esc(secDef.zh)} <span class="dim">${UI.esc(secDef.en)}</span> <span class="dim">${SHIP_TYPE_ZH[secDef.type]}</span></h3>
-          <div class="dim">秘书舰 · Lv.${sec.lv}${sec.kai === 1 ? '（改）' : sec.kai >= 2 ? '（改二）' : ''} ${UI.stateBadges(secUid)}</div>
+          <div class="sec-plaque">${UI.esc(secDef.zh)}<span>${UI.esc(secDef.en)}</span></div>
+          <div class="sec-sub">秘书舰 · Lv.${sec.lv}${sec.kai === 1 ? '（改）' : sec.kai >= 2 ? '（改二）' : ''}<span class="sec-badges">${UI.stateBadges(secUid)}</span></div>
           <div class="secretary-line">“${Util.esc(secDef.line || '今天的海，也很平静呢。')}”</div>
-          <div class="btn-row">
-            <button class="btn btn-gold" data-go="sortie">出击</button>
-            <button class="btn" data-go="formation">编成</button>
+          <div class="btn-row secretary-actions">
+            <button class="btn btn-gold" data-go="sortie">⚔ 出击</button>
+            <button class="btn" data-go="formation">⚓ 编成</button>
           </div>
         </div>
       </div>` : ''}
 
-      <div class="panel">
-        <h3>第一舰队 <span class="dim">（点击舰娘查看详情；可快速补给）</span></h3>
+      <div class="panel panel-deco fleet-panel">
+        <h3 class="panel-title"><span class="title-ico">⚓</span>第一舰队<span class="title-sub">（点击舰娘查看详情 · 可快速补给）</span><span class="title-line"></span></h3>
         <div class="fleet-grid">
           ${Array.from({ length: 6 }, (_, i) => {
             const uid = fleet[i];
-            if (!uid) return `<div class="fleet-slot-sm">空位 ${i + 1}</div>`;
+            if (!uid) return `<div class="fleet-slot-sm"><span class="empty-ico">◌</span><span>空位 ${i + 1}</span></div>`;
             return `<div class="fleet-cell">
+              <div class="fleet-pos">${i + 1}</div>
               ${UI.shipCard(uid, { fleetIdx: 1 })}
               <div class="card-actions">
-                <button class="btn btn-sm btn-green" data-supply="${uid}">补给</button>
+                <button class="btn btn-sm btn-green" data-supply="${uid}">⛽ 补给</button>
               </div>
             </div>`;
           }).join('')}
@@ -372,24 +377,24 @@ const Homeport = (() => {
         <div class="hint">舰队不满6艘？去「编成」界面编入更多舰娘。舰娘强化（近代化改修）请前往「工厂 → 近代化改修」。</div>
       </div>
 
-      <div class="panel">
-        <h3>司令部状态</h3>
-        <div class="stat-grid">
-          <div class="stat-item"><div class="label">提督等级</div><div class="value num">Lv.${st.admiral.level}</div></div>
-          <div class="stat-item"><div class="label">提督头衔</div><div class="value num" style="color:var(--gold)">${Game.admiralTitle(st.admiral.level)}</div></div>
-          <div class="stat-item"><div class="label">总出击</div><div class="value num">${st.stats.sortie}</div></div>
-          <div class="stat-item"><div class="label">总胜利</div><div class="value num">${st.stats.win}</div></div>
-          <div class="stat-item"><div class="label">击沉敌舰</div><div class="value num">${st.stats.sink}</div></div>
-          <div class="stat-item"><div class="label">远征完成</div><div class="value num">${st.stats.expedition}</div></div>
-          <div class="stat-item"><div class="label">演习次数</div><div class="value num">${st.stats.practice}</div></div>
-          <div class="stat-item"><div class="label">可领取任务</div><div class="value num" style="color:${claimable ? 'var(--gold)' : ''}">${claimable}</div></div>
-          <div class="stat-item"><div class="label">舰队索敌</div><div class="value num">${Game.fleetLos(1)}</div></div>
+      <div class="panel panel-deco hq-panel">
+        <h3 class="panel-title"><span class="title-ico">🏛</span>司令部状态<span class="title-line"></span></h3>
+        <div class="stat-grid hq-stats">
+          <div class="stat-item"><div class="label">👑 提督等级</div><div class="value num">Lv.${st.admiral.level}</div></div>
+          <div class="stat-item"><div class="label">🎖 提督头衔</div><div class="value num" style="color:var(--gold)">${Game.admiralTitle(st.admiral.level)}</div></div>
+          <div class="stat-item"><div class="label">🔭 舰队索敌</div><div class="value num">${Game.fleetLos(1)}</div></div>
+          <div class="stat-item"><div class="label">⚔ 总出击</div><div class="value num">${st.stats.sortie}</div></div>
+          <div class="stat-item"><div class="label">🏆 总胜利</div><div class="value num">${st.stats.win}</div></div>
+          <div class="stat-item"><div class="label">💥 击沉敌舰</div><div class="value num">${st.stats.sink}</div></div>
+          <div class="stat-item"><div class="label">🚢 远征完成</div><div class="value num">${st.stats.expedition}</div></div>
+          <div class="stat-item"><div class="label">🥊 演习次数</div><div class="value num">${st.stats.practice}</div></div>
+          <div class="stat-item"><div class="label">📋 可领取任务</div><div class="value num" style="color:${claimable ? 'var(--gold)' : ''}">${claimable}</div></div>
         </div>
         <div class="status-line">
-          远征：${exActive.length ? exActive.map(e => `<span class="countdown" data-until="${e.end}">${Util.fmtTime(e.end - Date.now())}</span>`).join(' / ') + ' 进行中' : '空闲'}
-          ｜ 入渠：${repCount} 艘（${repairInfo}）
-          ｜ 改修资材：<span class="screw">${st.resources.screws || 0}</span>
-          ｜ 开发资材：<span class="devmat">${st.resources.devMats || 0}</span>
+          <span class="status-chip">🚢 远征：${exActive.length ? exActive.map(e => `<span class="countdown" data-until="${e.end}">${Util.fmtTime(e.end - Date.now())}</span>`).join(' / ') + ' 进行中' : '<span class="dim">空闲</span>'}</span>
+          <span class="status-chip" title="${Util.esc(repairInfo)}">🔧 入渠：${repCount} 艘</span>
+          <span class="status-chip">🔩 改修资材：<span class="screw">${st.resources.screws || 0}</span></span>
+          <span class="status-chip">💡 开发资材：<span class="devmat">${st.resources.devMats || 0}</span></span>
         </div>
         <div class="hint">资源每30秒自然恢复（油弹钢+3 铝+1，上限=(提督等级+3)×250，参照 kcwiki「资源」），远征与任务是主要收入来源。日常任务「装备开发3次」每天+1开发资材、日常任务「装备的改修强化」每天+1改修资材。管理员可在顶栏开启「测试模式」（无限资源/瞬间建造/瞬间入渠）。</div>
       </div>`;

@@ -16,6 +16,7 @@ const UI = (() => {
     currentTick = null;
     const root = screenRoot();
     root.innerHTML = '';
+    root.className = '';
     Screens[name](root, arg);
     refreshNav();
   }
