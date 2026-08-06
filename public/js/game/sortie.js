@@ -124,7 +124,24 @@ const Sortie = (() => {
       return { ok: true, type: 'supply', advance: true };
     }
 
-    /* ---- 战斗 ---- */
+    /* ---- 战斗（分两段流程：昼战 → 追击选择 → 夜战；UI 可走 prepareBattle→continueNight→settleBattle） ---- */
+    const prep = prepareBattle(formation);
+    if (!prep.ok) return prep;
+    if (allowNight !== false) continueNight(prep);
+    return settleBattle(prep);
+  }
+
+  /* 昼战阶段（不结算）：执行进击检查并只进行昼战，返回 { ok, type, result, isBoss, doomed }，
+   * 由 UI 在「追击选择」（wiki 战斗流程：战斗结束/夜战突入）后调用 settleBattle 统一结算 */
+  function prepareBattle(formation) {
+    const G = GameRef();
+    const st = G.state;
+    const map = currentMap();
+    if (!map) return { ok: false, msg: '未在出击中' };
+    const so = st.sortie;
+    const def = nodeDef(map, so.node);
+    const fleet = st.fleet[so.fleetIdx];
+
     /* 进击检查：旗舰大破禁进击；阵亡舰不能出战 */
     const flag = st.ships[fleet[0]];
     if (flag && flag.hp > 0 && flag.hp <= Math.floor(G.shipDef(flag).stats[0] * 0.25)) {
@@ -133,15 +150,34 @@ const Sortie = (() => {
     if (fleet.some(u => st.ships[u] && st.ships[u].hp <= 0)) {
       return { ok: false, msg: '舰队中有舰娘无法战斗，请先入渠修理！' };
     }
-    /* 大破进击的僚舰将在本次战斗结束后轰沉 */
+    /* 大破进击的僚舰将在本次战斗结束后轰沉（开战前快照） */
     const doomed = daPoShips();
     const enemyKey = def.enemy || 'F01';
     const enemyFleet = ENEMY_FLEETS[enemyKey];
     const isBoss = def.type === 'boss';
     const result = Battle.battle(fleet, enemyFleet.ships, formation, enemyFleet.formation, {
-      allowNight: allowNight !== false,
-      losReq: 0, fleetIdx: so.fleetIdx
+      allowNight: false, losReq: 0, fleetIdx: so.fleetIdx
     });
+    return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, doomed };
+  }
+
+  /* 夜战突入：在昼战结果上追加夜战并重新结算（消耗弹药30%，参照wiki） */
+  function continueNight(prep) {
+    prep.result = Battle.battleNight(prep.result);
+    return prep;
+  }
+
+  /* 战斗结算：油弹/疲劳消耗、hp写回、大破进击轰沉、提督经验、掉落、血条、统计 */
+  function settleBattle(prep) {
+    const G = GameRef();
+    const st = G.state;
+    const map = currentMap();
+    if (!map) return { ok: false, msg: '未在出击中' };
+    const so = st.sortie;
+    const def = nodeDef(map, so.node);
+    const fleet = st.fleet[so.fleetIdx];
+    const result = prep.result;
+    const isBoss = prep.isBoss;
 
     /* 消耗：油弹（wiki：普通战斗点 油20%/弹20%，进入夜战 弹30%），疲劳-15 */
     let ammoZero = false;
@@ -164,7 +200,7 @@ const Sortie = (() => {
     }
 
     /* 大破进击的僚舰轰沉 */
-    for (const uid of doomed) {
+    for (const uid of prep.doomed) {
       const s = st.ships[uid];
       if (!s) continue;
       result.log.push(`「${s.id}」大破进击，在战斗后轰沉了……`);
@@ -279,7 +315,7 @@ const Sortie = (() => {
     return { fuel: Math.ceil(fuel), ammo: Math.ceil(ammo) };
   }
 
-  return { start, advance, moveToNext, currentMap, nextNodes, atBoss, retreat, returnHome, nodeDef, sortieConsumption, daPoShips, flagshipDaPo };
+  return { start, advance, prepareBattle, continueNight, settleBattle, moveToNext, currentMap, nextNodes, atBoss, retreat, returnHome, nodeDef, sortieConsumption, daPoShips, flagshipDaPo };
 })();
 
 if (typeof window !== 'undefined') window.Sortie = Sortie;

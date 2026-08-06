@@ -219,13 +219,28 @@ const LogisticsUI = (() => {
           const idx = parseInt(b.dataset.prac, 10);
           if (idx < (pr.used || 0)) { UI.toast('今日演习次数用尽'); return; }
           const f = pr.fleets[idx];
-          const result = Battle.battle(Game.state.fleet[1], f.ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
-          pr.used = idx + 1;
-          const res = Progression.applyBattleResult(1, result, true);
-          Game.state.stats.practice++;
-          Game.save();
-          const wrapped = { ok: true, result, isBoss: false, drop: null, cleared: false };
-          SortieUI.renderBattle(root, wrapped, () => render(), { practice: true, gains: res.gains, adm: res.adm, onBack: () => render() });
+          /* 演习：玩家自由选择阵型（wiki「演习」），敌方固定单纵阵；昼战结束后可选择是否夜战突入 */
+          SortieUI.openFormationSelect(formation => {
+            const result = Battle.battle(Game.state.fleet[1], f.ships, formation, '单纵阵', { allowNight: false, fleetIdx: 1 });
+            pr.used = idx + 1;
+            Game.save();
+            const wrapped = { ok: true, result, isBoss: false, drop: null, cleared: false };
+            const rbOpts = {
+              practice: true,
+              splitNight: true,
+              nightAvailable: () => wrapped.result.mySide.some(s => s.alive) && wrapped.result.enemySide.some(s => s.alive),
+              doNight: () => { wrapped.result = Battle.battleNight(wrapped.result); },
+              finish: () => {
+                const res = Progression.applyBattleResult(1, wrapped.result, true);
+                Game.state.stats.practice++;
+                Game.save();
+                rbOpts.gains = res.gains;
+                rbOpts.adm = res.adm;
+              },
+              onBack: () => render()
+            };
+            SortieUI.renderBattle(root, wrapped, () => render(), rbOpts);
+          });
         });
       });
     }

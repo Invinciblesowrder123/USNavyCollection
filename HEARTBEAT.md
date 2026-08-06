@@ -232,3 +232,61 @@
 - 归档快照 `archive/USNavyCollection_20260806_v2/`：本次起包含完整 `public/js/data/`（旧快照 20260804/20260806 存在漏拷该目录的历史问题，本次起修正），已提交并推送
 - `VERSION_HISTORY.md` 版本表新增快照行 + 当前版变更记录（海域扩充/出击UI重构章节）
 - 提交：`a9e180a`（chore 归档快照）/ `18da9bb`（feat 海域扩充+出击UI重构），已推送 `origin/main`（3650150..18da9bb）
+
+---
+
+## 2026-08-06 — 编成/工厂/近代化列表 筛选排序改造
+
+**完成：**
+- 编成界面母港舰娘列表（`homeport.js` formation）：新增舰种筛选 chips（全部+已拥有舰种，按 `SHIP_TYPE_ZH` 顺序）+ 排序（等级 高→低/低→高、入手 新→旧/旧→新，默认等级高→低）+ 数量统计；筛选/排序状态存模块级变量，切换舰队标签/离开页面不重置；空筛选结果显示「没有符合筛选条件的舰娘」
+- 数据层（`state.js`）：`createShip` 新增 `obtainedAt: Date.now()`（建造/任务/掉落均经此函数）；旧存档无此字段时排序回退 uid 序号，无需迁移
+- 舰娘详情页：操作栏新增「近代化改修」按钮（改修MAX 隐藏）直接打开素材选择浮窗，完成后详情刷新；原"前往工厂"提示改为消耗规则说明
+- 工厂·近代化改修页（`factory.js` modernizePanel）：目标舰列表同样新增舰种筛选+排序+数量统计（独立状态 modType/modSort）；顺带修复 `.preset-recipe` 点击处理器限定 `[data-p]`，避免新筛选 chips 触发 `undefined.split` 报错
+- 近代化改修素材选择浮窗（openModernize）：同样新增筛选/排序（独立状态 matType/matSort）；已选素材被筛选隐藏仍保留在合成预览
+- 编成「选择舰娘编入第N舰队」浮窗（pickShipFor）：新增筛选/排序，与母港列表共享 rosterType/rosterSort；重构为 render/wire 模式
+- 排序比较器重构为参数化 `shipCmp(key, dir)`，三处列表共用
+- 验证：`npm run sim` 443 项全过；headless Edge + 真实存档（空位→浮窗 27 艘候选→编入成功）零报错
+
+**下一步（后续迭代候选）：**
+- [ ] 活动海域（贴条/削甲/友军/多段血条）
+- [ ] 图鉴收集率、更多海域（EO 图 1-5/2-5/3-5）
+- [ ] 音乐/音效、战斗动画增强
+- [ ] 浏览器 E2E 脚本化（自动化运行 test_flow）
+
+---
+
+## 2026-08-06 — 事故记录：编成空位选舰失效 + index.html 编码损坏（详见 `../20260806_编成筛选事故报告.md`）
+
+**故障一：点击空位无法打开选舰浮窗**
+- 现象：编成界面点击空位无任何反应。
+- 根因：重构 pickShipFor 为 render/wire 模式时花括号错位，`render();` 被放入 `wire()` 内部，函数从未被调用 → 浮窗永不创建且无报错；`node --check` 语法通过但逻辑缺失。
+- 修复：`render();` 移回 pickShipFor 函数体；用 DOM 桩测试 + headless Edge（CDP）+ 真实存档复现并验证（空位→浮窗→编入 全流程通过）。
+- 教训：重构后必须做功能级验证，语法检查不够。
+
+**故障二：页面乱码、游戏全崩（"鈽?缇庤埌鏀惰棌"）**
+- 现象：Ctrl+F5 后页面只剩乱码，游戏无法加载。
+- 根因：为强制浏览器放弃旧缓存，用 PowerShell 5.1 给 index.html 加 `?v=` 版本参数；`Get-Content` 未指定 `-Encoding`（中文系统默认 GBK）把无 BOM 的 UTF-8 文件读成乱码，`Set-Content -Encoding UTF8` 写回后中文双重损坏，且损坏字节混入 `>` 字符破坏 HTML 标签结构 → 全页崩溃。
+- 修复：`git checkout -- public/index.html` 从最新提交 `3650150` 恢复；**注意**该操作一并还原了工作副本中未提交的 `#sub-modal-root` 容器行（装备选择器次级浮窗所需），已手动补回；改用 UTF-8 安全方式重新追加版本参数（21 script + 1 css）；`server.js` 静态响应加 `Cache-Control: no-cache`（需重启服务器生效）。
+- 验证：headless Edge + admin 真实存档——页面中文正常、33 艘舰加载、空位选舰全流程零报错；`npm run sim` 443/443 通过。
+- 教训：Windows PS 5.1 读写文本必须显式指定编码；含中文文件禁用 PS 文本管道修改；`git checkout --` 前先 `git diff` 确认；改文件后做编码校验与浏览器实测。
+
+**遗留：** 重启服务器进程使 no-cache 头生效；建议将本次改动及时提交 git（当前工作区含大量未提交修改）；建议将 headless 浏览器回归固化为自动化脚本。
+
+---
+
+## 2026-08-06 战斗迭代：夜战追击选择 + 演习阵型选择（参照 kcwiki「战斗」「夜战」）
+
+**完成：**
+- 夜战不再默认进行：出击昼战演出结束后弹「追击选择」弹窗（夜战突入/战斗结束，参照 wiki 战斗流程第13~14步「追击选择→夜战」）；夜战突入追加消耗弹药10%（合计30%，油弹消耗按最终结果结算）；双方任何一方昼战后无存活舰船则直接结算、不弹窗
+- 引擎（`game/battle.js`）：抽出 `nightPhase`/`settle`（结算含评价/MVP/战果），`battle()` 在 `allowNight:false` 时只做昼战并返回含阵型名的昼战结果；新增 `battleNight(dayResult)` 在共享日志上追加夜战并重新结算（评价只升不降）；演出事件助手 `makeEventHelpers` 供昼夜两段共用，UI 可从昼战播放位置无缝续播夜战
+- 出击流程（`game/sortie.js`）：`advance` 拆为 `prepareBattle`（昼战，含进击检查与大破进击快照）→ `continueNight`（夜战突入）→ `settleBattle`（油弹/疲劳/轰沉/经验/掉落/血条统一结算）；`advance()` 保留原签名供模拟脚本使用
+- 出击 UI（`ui/sortie.js`）：`renderBattle` 新增 `splitNight`/`nightAvailable`/`doNight`/`finish` 选项；跳过演出后仍可弹出追击选择、夜战段可继续跳过
+- 演习（`ui/logistics.js`）：开战前弹出玩家阵型选择（`SortieUI.openFormationSelect`），敌方固定单纵阵（wiki：演习由玩家自由选阵型）；同样支持夜战突入选择，经验在最终结算时按最终评价发放
+- 测试：`npm run sim` 831 项全过；新增 `scripts/test_night_split.js` 19 项全过（昼战分段/夜战续接/共享日志/评价不劣化/演习阵型/20%与30%弹药消耗分支）
+- 文档：MEMORY.md 增加 ADR 决策与进度条目
+
+**下一步（后续迭代候选）：**
+- [ ] 活动海域（贴条/削甲/友军/多段血条）
+- [ ] 图鉴收集率、更多海域（EO 图 1-5/2-5/3-5）
+- [ ] 音乐/音效、战斗动画增强
+- [ ] 浏览器 E2E 脚本化（自动化运行 test_flow）

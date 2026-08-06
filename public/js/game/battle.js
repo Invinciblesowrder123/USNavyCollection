@@ -327,6 +327,62 @@ const Battle = (() => {
     return { snap: { A: sideA.map(mk), B: sideB.map(mk) } };
   }
 
+  /* 演出事件记录器（随日志顺序插入 {event} 对象，供 UI 播放动画；不影响字符串日志兼容）
+   * 昼战与夜战（battleNight）共用同一套日志/事件，保证分段播放时索引连续 */
+  function makeEventHelpers(log, sideA, sideB) {
+    const sideOf = (arr, x) => (x == null ? null : arr.indexOf(x));
+    const ev = (kind, atk, tgt, hit, dmg, special, sink) => {
+      log.push({ event: {
+        kind, hit: !!hit, dmg: dmg || 0, special: special || null, sink: !!sink,
+        atkS: atk ? (sideOf(sideA, atk) >= 0 ? 'A' : 'B') : null,
+        atkI: atk ? Math.max(sideOf(sideA, atk), sideOf(sideB, atk)) : -1,
+        tgtS: tgt ? (sideOf(sideA, tgt) >= 0 ? 'A' : 'B') : null,
+        tgtI: tgt ? Math.max(sideOf(sideA, tgt), sideOf(sideB, tgt)) : -1
+      } });
+    };
+    /* 空袭批量演出事件：一次事件携带全部打击结果，UI 一次性演出 */
+    const evAir = list => {
+      if (!list.length) return;
+      const map = x => ({
+        hit: x.hit, dmg: x.dmg, sink: x.sink,
+        atkS: x.s ? (sideOf(sideA, x.s) >= 0 ? 'A' : 'B') : null,
+        atkI: x.s ? Math.max(sideOf(sideA, x.s), sideOf(sideB, x.s)) : -1,
+        tgtS: x.t ? (sideOf(sideA, x.t) >= 0 ? 'A' : 'B') : null,
+        tgtI: x.t ? Math.max(sideOf(sideA, x.t), sideOf(sideB, x.t)) : -1
+      });
+      const mapped = list.map(map);
+      const first = mapped[0];
+      log.push({ event: {
+        kind: 'air', hit: list.some(x => x.hit),
+        dmg: list.reduce((s, x) => s + x.dmg, 0),
+        sink: list.some(x => x.sink), special: null,
+        atkS: first.atkS, atkI: first.atkI, tgtS: null, tgtI: -1,
+        strikes: mapped
+      } });
+    };
+    /* 对空炮火批量演出事件：一次事件携带全部迎击弹幕，UI 并行演出 */
+    const evFlak = shots => {
+      if (!shots.length) return;
+      const map = x => ({
+        dmg: x.down,
+        atkS: sideOf(sideA, x.interceptor) >= 0 ? 'A' : 'B',
+        atkI: Math.max(sideOf(sideA, x.interceptor), sideOf(sideB, x.interceptor)),
+        tgtS: sideOf(sideA, x.a) >= 0 ? 'A' : 'B',
+        tgtI: Math.max(sideOf(sideA, x.a), sideOf(sideB, x.a))
+      });
+      const mapped = shots.map(map);
+      const first = mapped[0];
+      log.push({ event: {
+        kind: 'flak', hit: true, dmg: shots.reduce((s, x) => s + x.down, 0),
+        special: null, sink: false,
+        atkS: first.atkS, atkI: first.atkI, tgtS: null, tgtI: -1,
+        shots: mapped
+      } });
+    };
+    const pushSnap = () => log.push(snapshot(sideA, sideB));
+    return { ev, evAir, evFlak, pushSnap };
+  }
+
   /* ============ 昼战特殊攻击判定（wiki：制空优势/确保+水侦；主主1.5、主弹1.3、主电1.2、主副1.1、连击1.2×2） ============ */
   function resolveDayAttack(s, airSup) {
     if (s.stats.fp <= 0 || !s.alive) return null;
@@ -457,6 +513,107 @@ const Battle = (() => {
     return strikes;
   }
 
+  /* ============ 夜战（wiki：昼战结束后由玩家选择「夜战突入」或「战斗结束」；
+   * 夜战单轮·位置交替·我方先手·大破罚站·空母无法夜战；不受交战形态影响） ============ */
+  function nightPhase(log, sideA, sideB, formAName, formBName, ev, pushSnap) {
+    const fA = FORMATIONS[formAName], fB = FORMATIONS[formBName];
+    const myAlive = sideA.filter(x => x.alive);
+    const enAlive = sideB.filter(x => x.alive);
+    if (!(myAlive.length && enAlive.length)) {
+      if (enAlive.length) log.push('我军已无力再战，夜战中止。');
+      return false;
+    }
+    log.push('—— 进入夜战！——');
+    const nightAct = (s, defSide, defForm) => {
+      if (!s.alive || isDaPo(s)) return;              // 大破不能夜战
+      if (isCV(s)) { log.push(`夜战：${s.name}（空母）未装备夜间航空兵装，无法攻击。`); return; }
+      const t = pickTarget(defSide, s);
+      if (!t) return;
+      if (isSub(t) && !s.hasASW) { log.push(`夜战：${s.name} 的攻击对潜水中的 ${t.name} 无效。`); return; }
+      const ch = hitChance(s, t, formAName, formBName, 1, false);
+      if (Math.random() > ch) { log.push(`夜战：${s.name} 攻击 ${t.name}，未命中。`); ev('night', s, t, false, 0, null, false); return; }
+      const atk = resolveNightAttack(s);
+      if (!atk) return;
+      for (let k = 0; k < atk.n; k++) {
+        if (!defSide.some(x => x.alive)) break;
+        const tt = pickTarget(defSide, s);
+        if (!tt) break;
+        const ap = threshold((s.stats.fp + s.stats.tp) * (s.isPlayer ? fA.night : fB.night) * atk.mult * dmgMult(s, 'shell'), THRESHOLD.NIGHT);
+        const dmg = Math.max(0, Math.round(calcDamage(ap, tt.stats.arm, critChance(ch) + 0.05) * ammoBonus(s)));
+        const wasAlive = tt.alive;
+        applyDamage(log, s, tt, dmg, '夜战：', atk.name ? `发动${atk.name}！` : '', defSide, defForm);
+        ev('night', s, tt, true, dmg, atk.name || null, wasAlive && !tt.alive);
+        pushSnap();
+      }
+    };
+    let i = 0, j = 0;
+    while (i < myAlive.length || j < enAlive.length) {
+      if (i < myAlive.length) nightAct(myAlive[i++], sideB, formBName);
+      if (j < enAlive.length) nightAct(enAlive[j++], sideA, formAName);
+    }
+    return true;
+  }
+
+  /* ============ 结算（胜利判定/MVP/战果统计；夜战追加后由 battleNight 重新结算） ============ */
+  function settle(log, sideA, sideB, nightUsed, formAName, formBName) {
+    const enemyTotal = sideB.length;
+    const enemyKilled = sideB.filter(s => !s.alive).length;
+    const myLost = sideA.filter(s => !s.alive).length;
+    const myDaPo = sideA.filter(isDaPo).length;
+    const enemyHpTotal = sideB.reduce((s, x) => s + x.stats.hpMax, 0);
+    const myHpTotal = sideA.reduce((s, x) => s + x.stats.hpMax, 0);
+    const myDamage = sideA.reduce((s, x) => s + x.dealt, 0);
+    const enDamage = sideB.reduce((s, x) => s + x.dealt, 0);
+    const gaugeA = myHpTotal ? Util.clamp(myDamage / enemyHpTotal, 0, 1) : 0;
+    const gaugeB = enemyHpTotal ? Util.clamp(enDamage / myHpTotal, 0, 1) : 0;
+
+    /* 胜利判定（wiki：无己方被击沉为前提；S含被击沉→B；A=击沉多数；B=击沉旗舰/战果2.5倍等） */
+    const enFlagKilled = sideB[0] && !sideB[0].alive;
+    let rank = 'D';
+    let perfect = false;
+    if (enemyKilled === enemyTotal) {
+      if (myLost > 0) rank = 'B';
+      else { rank = 'S'; perfect = myHpTotal > 0 && enDamage === 0; }
+    } else if (enemyTotal >= 2 && enemyKilled >= (A_SINKS[enemyTotal] || 2)) {
+      rank = 'A';
+    } else if (!myLost && enFlagKilled) {
+      rank = 'B';
+    } else if (!myLost && gaugeA >= gaugeB * 2.5) {
+      rank = 'B';
+    } else if (myLost > 0 && enFlagKilled && myLost < enemyKilled) {
+      rank = 'B';
+    } else if (!myLost && gaugeA >= gaugeB) {
+      rank = 'C';
+    } else if (gaugeA === 0 && gaugeB >= 0.75) {
+      rank = 'E';
+    } else {
+      rank = 'D';
+    }
+
+    /* MVP（wiki：最高总伤害；平手随机但旗舰强制；全员0伤害强制旗舰；E评价无MVP） */
+    let mvpUid = null;
+    if (rank !== 'E') {
+      const deal = sideA.filter(s => s.dealt > 0);
+      if (!deal.length) mvpUid = sideA[0] ? sideA[0].uid : null;
+      else {
+        const max = Math.max(...deal.map(s => s.dealt));
+        const tops = deal.filter(s => s.dealt === max);
+        mvpUid = (sideA[0] && tops.some(s => s.uid === sideA[0].uid)) ? sideA[0].uid : Util.pick(tops).uid;
+      }
+    }
+
+    const rankLabel = { S: perfect ? '完全胜利 S' : '胜利 S', A: '胜利 A', B: '战术胜利 B', C: '战术败北 C', D: '败北 D', E: '败北 E' }[rank];
+    log.push(`战斗结束：${rankLabel}！（击沉敌舰 ${enemyKilled}/${enemyTotal}）`);
+
+    return {
+      rank, perfect, log, mySide: sideA, enemySide: sideB,
+      enemyKilled, enemyTotal, myLost, myDaPo, nightUsed,
+      victory: rank === 'S' || rank === 'A' || rank === 'B',
+      mvpUid, enemyHpTotal, myHpTotal, gaugeA, gaugeB,
+      formAName, formBName
+    };
+  }
+
   /* ============ 主战斗入口 ============ */
   /* fleetA: 玩家舰队uid数组, fleetB: 敌舰模板key数组 */
   function battle(fleetA, fleetB, formationA, formationB, opts = {}) {
@@ -470,60 +627,11 @@ const Battle = (() => {
     const fB = FORMATIONS[formationB] || FORMATIONS['单纵阵'];
     const formAName = fA.name, formBName = fB.name;
     const losOk = (opts.losReq == null) || (G.fleetLos(opts.fleetIdx) >= opts.losReq);
-    const pushSnap = () => log.push(snapshot(sideA, sideB));
     if (sideA.length) sideA[0].isFlag = true;
     if (sideB.length) sideB[0].isFlag = true;
 
     /* 演出事件记录器（随日志顺序插入 {event} 对象，供 UI 播放动画；不影响字符串日志兼容） */
-    const sideOf = (arr, x) => (x == null ? null : arr.indexOf(x));
-    const ev = (kind, atk, tgt, hit, dmg, special, sink) => {
-      log.push({ event: {
-        kind, hit: !!hit, dmg: dmg || 0, special: special || null, sink: !!sink,
-        atkS: atk ? (sideOf(sideA, atk) >= 0 ? 'A' : 'B') : null,
-        atkI: atk ? Math.max(sideOf(sideA, atk), sideOf(sideB, atk)) : -1,
-        tgtS: tgt ? (sideOf(sideA, tgt) >= 0 ? 'A' : 'B') : null,
-        tgtI: tgt ? Math.max(sideOf(sideA, tgt), sideOf(sideB, tgt)) : -1
-      } });
-    };
-    /* 空袭批量演出事件：一次事件携带全部打击结果，UI 一次性演出 */
-    const evAir = list => {
-      if (!list.length) return;
-      const map = x => ({
-        hit: x.hit, dmg: x.dmg, sink: x.sink,
-        atkS: x.s ? (sideOf(sideA, x.s) >= 0 ? 'A' : 'B') : null,
-        atkI: x.s ? Math.max(sideOf(sideA, x.s), sideOf(sideB, x.s)) : -1,
-        tgtS: x.t ? (sideOf(sideA, x.t) >= 0 ? 'A' : 'B') : null,
-        tgtI: x.t ? Math.max(sideOf(sideA, x.t), sideOf(sideB, x.t)) : -1
-      });
-      const mapped = list.map(map);
-      const first = mapped[0];
-      log.push({ event: {
-        kind: 'air', hit: list.some(x => x.hit),
-        dmg: list.reduce((s, x) => s + x.dmg, 0),
-        sink: list.some(x => x.sink), special: null,
-        atkS: first.atkS, atkI: first.atkI, tgtS: null, tgtI: -1,
-        strikes: mapped
-      } });
-    };
-    /* 对空炮火批量演出事件：一次事件携带全部迎击弹幕，UI 并行演出 */
-    const evFlak = shots => {
-      if (!shots.length) return;
-      const map = x => ({
-        dmg: x.down,
-        atkS: sideOf(sideA, x.interceptor) >= 0 ? 'A' : 'B',
-        atkI: Math.max(sideOf(sideA, x.interceptor), sideOf(sideB, x.interceptor)),
-        tgtS: sideOf(sideA, x.a) >= 0 ? 'A' : 'B',
-        tgtI: Math.max(sideOf(sideA, x.a), sideOf(sideB, x.a))
-      });
-      const mapped = shots.map(map);
-      const first = mapped[0];
-      log.push({ event: {
-        kind: 'flak', hit: true, dmg: shots.reduce((s, x) => s + x.down, 0),
-        special: null, sink: false,
-        atkS: first.atkS, atkI: first.atkI, tgtS: null, tgtI: -1,
-        shots: mapped
-      } });
-    };
+    const { ev, evAir, evFlak, pushSnap } = makeEventHelpers(log, sideA, sideB);
 
     L(`敌军阵型：${formationB}。我军选择：${formationA}。`);
     L(`索敌：${losOk ? '成功' : '失败'}！`);
@@ -765,105 +873,29 @@ const Battle = (() => {
       }
     })();
 
-    /* ---- 夜战（单轮·位置交替·我方先手·大破罚站·空母无法夜战） ---- */
+    /* ---- 夜战（wiki：昼战结束后由玩家选择「夜战突入」或「战斗结束」；UI 分两段流程） ---- */
     let nightUsed = false;
     if (opts.allowNight !== false) {
-      const myAlive = sideA.filter(x => x.alive);
-      const enAlive = sideB.filter(x => x.alive);
-      if (myAlive.length && enAlive.length) {
-        L('—— 进入夜战！——');
-        nightUsed = true;
-        const nightAct = (s, defSide, defForm) => {
-          if (!s.alive || isDaPo(s)) return;              // 大破不能夜战
-          if (isCV(s)) { L(`夜战：${s.name}（空母）未装备夜间航空兵装，无法攻击。`); return; }
-          const t = pickTarget(defSide, s);
-          if (!t) return;
-          if (isSub(t) && !s.hasASW) { L(`夜战：${s.name} 的攻击对潜水中的 ${t.name} 无效。`); return; }
-          const ch = hitChance(s, t, formAName, formBName, 1, false);
-          if (Math.random() > ch) { L(`夜战：${s.name} 攻击 ${t.name}，未命中。`); ev('night', s, t, false, 0, null, false); return; }
-          const atk = resolveNightAttack(s);
-          if (!atk) return;
-          for (let k = 0; k < atk.n; k++) {
-            if (!defSide.some(x => x.alive)) break;
-            const tt = pickTarget(defSide, s);
-            if (!tt) break;
-            const ap = threshold((s.stats.fp + s.stats.tp) * (s.isPlayer ? fA.night : fB.night) * atk.mult * dmgMult(s, 'shell'), THRESHOLD.NIGHT);
-            const dmg = Math.max(0, Math.round(calcDamage(ap, tt.stats.arm, critChance(ch) + 0.05) * ammoBonus(s)));
-            const wasAlive = tt.alive;
-            applyDamage(log, s, tt, dmg, '夜战：', atk.name ? `发动${atk.name}！` : '', defSide, defForm);
-            ev('night', s, tt, true, dmg, atk.name || null, wasAlive && !tt.alive);
-            pushSnap();
-          }
-        };
-        let i = 0, j = 0;
-        while (i < myAlive.length || j < enAlive.length) {
-          if (i < myAlive.length) nightAct(myAlive[i++], sideB, formBName);
-          if (j < enAlive.length) nightAct(enAlive[j++], sideA, formAName);
-        }
-      } else if (enAlive.length) {
-        L('我军已无力再战，夜战中止。');
-      }
+      nightUsed = nightPhase(log, sideA, sideB, formAName, formBName, ev, pushSnap);
     }
 
     /* ---- 结算 ---- */
-    const enemyTotal = sideB.length;
-    const enemyKilled = sideB.filter(s => !s.alive).length;
-    const myLost = sideA.filter(s => !s.alive).length;
-    const myDaPo = sideA.filter(isDaPo).length;
-    const enemyHpTotal = sideB.reduce((s, x) => s + x.stats.hpMax, 0);
-    const myHpTotal = sideA.reduce((s, x) => s + x.stats.hpMax, 0);
-    const myDamage = sideA.reduce((s, x) => s + x.dealt, 0);
-    const enDamage = sideB.reduce((s, x) => s + x.dealt, 0);
-    const gaugeA = myHpTotal ? Util.clamp(myDamage / enemyHpTotal, 0, 1) : 0;
-    const gaugeB = enemyHpTotal ? Util.clamp(enDamage / myHpTotal, 0, 1) : 0;
-
-    /* 胜利判定（wiki：无己方被击沉为前提；S含被击沉→B；A=击沉多数；B=击沉旗舰/战果2.5倍等） */
-    const enFlagKilled = sideB[0] && !sideB[0].alive;
-    let rank = 'D';
-    let perfect = false;
-    if (enemyKilled === enemyTotal) {
-      if (myLost > 0) rank = 'B';
-      else { rank = 'S'; perfect = myHpTotal > 0 && enDamage === 0; }
-    } else if (enemyTotal >= 2 && enemyKilled >= (A_SINKS[enemyTotal] || 2)) {
-      rank = 'A';
-    } else if (!myLost && enFlagKilled) {
-      rank = 'B';
-    } else if (!myLost && gaugeA >= gaugeB * 2.5) {
-      rank = 'B';
-    } else if (myLost > 0 && enFlagKilled && myLost < enemyKilled) {
-      rank = 'B';
-    } else if (!myLost && gaugeA >= gaugeB) {
-      rank = 'C';
-    } else if (gaugeA === 0 && gaugeB >= 0.75) {
-      rank = 'E';
-    } else {
-      rank = 'D';
-    }
-
-    /* MVP（wiki：最高总伤害；平手随机但旗舰强制；全员0伤害强制旗舰；E评价无MVP） */
-    let mvpUid = null;
-    if (rank !== 'E') {
-      const deal = sideA.filter(s => s.dealt > 0);
-      if (!deal.length) mvpUid = sideA[0] ? sideA[0].uid : null;
-      else {
-        const max = Math.max(...deal.map(s => s.dealt));
-        const tops = deal.filter(s => s.dealt === max);
-        mvpUid = (sideA[0] && tops.some(s => s.uid === sideA[0].uid)) ? sideA[0].uid : Util.pick(tops).uid;
-      }
-    }
-
-    const rankLabel = { S: perfect ? '完全胜利 S' : '胜利 S', A: '胜利 A', B: '战术胜利 B', C: '战术败北 C', D: '败北 D', E: '败北 E' }[rank];
-    L(`战斗结束：${rankLabel}！（击沉敌舰 ${enemyKilled}/${enemyTotal}）`);
-
-    return {
-      rank, perfect, log, mySide: sideA, enemySide: sideB,
-      enemyKilled, enemyTotal, myLost, myDaPo, nightUsed,
-      victory: rank === 'S' || rank === 'A' || rank === 'B',
-      mvpUid, enemyHpTotal, myHpTotal, gaugeA, gaugeB
-    };
+    return settle(log, sideA, sideB, nightUsed, formAName, formBName);
   }
 
-  return { battle, FORMATIONS, ENGAGEMENT, airState, makeEnemyShip, isDaPo, ammoBonus };
+  /* ============ 夜战突入（追击选择）：在昼战结果基础上追加夜战并重新结算
+   * 昼战结果（allowNight:false）持有存活的战斗对象与共享日志，追加后返回新的结算结果；
+   * 日志数组为同一引用，UI 可从昼战播放位置继续播放夜战段 ============ */
+  function battleNight(dayResult) {
+    const log = dayResult.log;
+    const sideA = dayResult.mySide, sideB = dayResult.enemySide;
+    const formAName = dayResult.formAName, formBName = dayResult.formBName;
+    const { ev, pushSnap } = makeEventHelpers(log, sideA, sideB);
+    const nightUsed = nightPhase(log, sideA, sideB, formAName, formBName, ev, pushSnap);
+    return settle(log, sideA, sideB, nightUsed, formAName, formBName);
+  }
+
+  return { battle, battleNight, FORMATIONS, ENGAGEMENT, airState, makeEnemyShip, isDaPo, ammoBonus };
 })();
 
 if (typeof window !== 'undefined') window.Battle = Battle;

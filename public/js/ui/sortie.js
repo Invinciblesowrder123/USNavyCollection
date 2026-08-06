@@ -332,7 +332,9 @@ const SortieUI = (() => {
               if (!confirm(`警告：${names} 处于大破状态！大破进击将可能导致轰沉！确定进击？`)) return;
             }
             openFormationSelect(formation => {
-              doBattle(formation, true);
+              const prep = Sortie.prepareBattle(formation);
+              if (!prep.ok) { UI.toast(prep.msg); return; }
+              doBattle(prep);
             });
           }
           else doAdvance();
@@ -368,17 +370,24 @@ const SortieUI = (() => {
       sortieActive(root);
     }
 
-    function doBattle(formation, allowNight) {
-      const r = Sortie.advance(formation, allowNight);
-      if (!r.ok) { UI.toast(r.msg); return; }
-      renderBattle(root, r, () => {
+    /* 出击战斗：昼战演出 → 追击选择（夜战突入/战斗结束，wiki 战斗流程）→ 统一结算 */
+    function doBattle(prep) {
+      renderBattle(root, prep, () => {
         /* 战斗后 */
-        const st2 = Game.state;
-        if (r.cleared) UI.toast('海域攻略完成！★');
+        if (prep.cleared) UI.toast('海域攻略完成！★');
         const atBossNode = Sortie.atBoss();
         const nxt = atBossNode ? null : Sortie.moveToNext();
         Game.save();
         sortieActive(root);
+      }, {
+        splitNight: true,
+        nightAvailable: () => prep.result.mySide.some(s => s.alive) && prep.result.enemySide.some(s => s.alive),
+        doNight: () => { Sortie.continueNight(prep); },
+        finish: () => {
+          const r = Sortie.settleBattle(prep);
+          if (r.ok) { prep.drop = r.drop; prep.cleared = r.cleared; prep.admExp = r.admExp; }
+          else UI.toast(r.msg);
+        }
       });
     }
 
@@ -857,13 +866,13 @@ const SortieUI = (() => {
     let skipped = false;
     const skipBtn = root.querySelector('#fxSkip');
     skipBtn.addEventListener('click', () => {
-      if (skipped || pos >= N) return;
+      if (skipped || pos >= entries.length) return;
       skipped = true;
       clearTimeout(timerId);
       root.querySelectorAll('.proj-shell,.proj-torp,.proj-plane,.bomb,.dc,.explosion,.dmg-num,.splash,.tracer,.flak-puff,.miss-txt')
         .forEach(el => el.remove());
       root.querySelectorAll('.battle-ship.firing,.battle-ship.hit').forEach(el => el.classList.remove('firing', 'hit'));
-      while (pos < N) {
+      while (pos < entries.length) {
         const e = entries[pos++];
         if (typeof e === 'string') {
           const line = document.createElement('div');
@@ -873,7 +882,7 @@ const SortieUI = (() => {
         } else if (e.snap) updateBars(e.snap);
       }
       logEl.scrollTop = logEl.scrollHeight;
-      showResult();
+      finalize();
     });
 
     /* ---- 顺序播放器 ---- */
@@ -881,7 +890,7 @@ const SortieUI = (() => {
     if (window.__battleFxDebug) { window.__pos = 0; window.__battleN = N; }
     const step = () => {
       if (window.__battleFxDebug) window.__pos = pos;
-      if (pos >= N) { showResult(); return; }
+      if (pos >= entries.length) { finalize(); return; }
       const e = entries[pos++];
       let wait = delay;
       if (typeof e === 'string') {
@@ -948,6 +957,46 @@ const SortieUI = (() => {
       Game.save();
     }
 
+    /* ---- 追击选择（wiki 战斗流程：昼战结束 → 「战斗结束」或「夜战突入」→ 夜战） ----
+     * splitNight 模式：昼战日志播放完毕后弹出选择；选择夜战后在共享日志上继续播放夜战段并重新结算 */
+    let nightChosen = false;
+    let decided = false;
+    let finished = false;
+    const finishBattle = () => {
+      if (finished) return;
+      finished = true;
+      if (opts.finish) opts.finish();
+      showResult();
+    };
+    const finalize = () => {
+      if (opts.splitNight && !nightChosen && opts.nightAvailable && opts.nightAvailable()) {
+        const html = `
+          <span class="modal-close" data-close>×</span>
+          <h3>追击选择</h3>
+          <div class="hint" style="margin:6px 0">昼战结束。是否<b>夜战突入</b>？<br><span class="dim">夜战突入将追加消耗弹药10%（合计30%），且存在大破风险。</span></div>
+          <div class="btn-row">
+            <button class="btn btn-gold" data-night>夜战突入</button>
+            <button class="btn" data-end>战斗结束</button>
+          </div>`;
+        const m = UI.modal(html, () => { if (!decided) finishBattle(); });
+        m.root.querySelector('[data-night]').addEventListener('click', () => {
+          decided = true;
+          m.close();
+          nightChosen = true;
+          if (opts.doNight) opts.doNight();
+          skipped = false;                       // 夜战段允许继续跳过演出
+          step();
+        });
+        m.root.querySelector('[data-end]').addEventListener('click', () => {
+          decided = true;
+          m.close();
+          finishBattle();
+        });
+      } else {
+        finishBattle();
+      }
+    };
+
     step();
   }
 
@@ -962,7 +1011,7 @@ const SortieUI = (() => {
     </div>`;
   }
 
-  return { mapList, sortieActive, renderBattle };
+  return { mapList, sortieActive, renderBattle, openFormationSelect };
 })();
 
 UI.Screens.sortie = (root, arg) => {
