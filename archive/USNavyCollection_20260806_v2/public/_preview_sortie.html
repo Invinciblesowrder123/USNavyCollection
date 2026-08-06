@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>sortie preview</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="background:#0a1626">
+  <div id="app">
+    <main id="screen" style="max-width:1080px;margin:0 auto;padding:12px"></main>
+  </div>
+  <script src="js/core/utils.js"></script>
+  <script src="js/data/equipment.js"></script>
+  <script src="js/data/ships.js"></script>
+  <script src="js/data/maps.js"></script>
+  <script src="js/data/quests.js"></script>
+  <script src="js/core/state.js"></script>
+  <script src="js/game/battle.js"></script>
+  <script src="js/game/factory.js"></script>
+  <script src="js/game/improve.js"></script>
+  <script src="js/game/logistics.js"></script>
+  <script src="js/game/progression.js"></script>
+  <script src="js/game/sortie.js"></script>
+  <script src="js/ui/common.js"></script>
+  <script src="js/ui/sortie.js"></script>
+  <script>
+    window.addEventListener('load', function () {
+      Game.newGame();
+      var ids = ['iowa', 'enterprise', 'fletcher', 'atlanta', 'benson', 'mahan'];
+      var fleet = [];
+      for (var i = 0; i < ids.length; i++) {
+        var s = Game.createShip(ids[i], 60);
+        s.kai = 1;
+        Game.equipDefaults(s.uid);
+        fleet.push(s.uid);
+      }
+      Game.state.fleet[1] = fleet;
+      /* 制造部分攻略进度：1-1 已攻略、1-2 击破1次、2-3 击破2次 */
+      Game.state.mapProgress['1-1'].cleared = true;
+      Game.state.mapProgress['1-1'].gauge = 0;
+      Game.state.mapProgress['1-1'].kills = 3;
+      Game.state.mapProgress['1-2'].kills = 1;
+      Game.state.mapProgress['1-2'].gauge = 3;
+      Game.state.mapProgress['2-3'].kills = 2;
+      Game.state.mapProgress['2-3'].gauge = 3;
+      SortieUI.mapList(document.getElementById('screen'));
+    });
+  </script>
+</body>
+</html>

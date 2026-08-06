@@ -1,0 +1,782 @@
+/* ============================================================
+ * 美舰收藏 全局样式（深海军主题）
+ * ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --navy: #0c1626;
+  --navy2: #122036;
+  --panel: #16263f;
+  --panel2: #1d314f;
+  --line: #2c4268;
+  --gold: #ffd700;
+  --text: #d8e2f0;
+  --dim: #7f93b5;
+  --red: #e05555;
+  --green: #5cc45c;
+  --blue: #5aa8e8;
+  --orange: #f0a050;
+}
+
+html, body { height: 100%; }
+body {
+  background: radial-gradient(ellipse at 50% -20%, #1a2c4a 0%, #0a1424 55%, #060d18 100%);
+  color: var(--text);
+  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  font-size: 14px;
+  min-height: 100%;
+}
+
+#app { max-width: 1080px; margin: 0 auto; padding: 0 12px 30px; }
+
+/* ---------- 顶栏 ---------- */
+#topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #122a4a, #0d1c33);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--gold);
+  border-radius: 0 0 8px 8px;
+  flex-wrap: wrap; gap: 8px;
+}
+.logo { color: var(--gold); font-weight: bold; font-size: 17px; letter-spacing: 1px; }
+.admiral { color: var(--dim); font-size: 12px; margin-left: 10px; }
+.top-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.resbar { display: flex; gap: 12px; font-size: 13px; }
+.resbar .res { display: inline-flex; align-items: center; gap: 4px; }
+.res .ico { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.ico-fuel { background: #d8a048; } .ico-ammo { background: #c8d0e0; }
+.ico-steel { background: #98a8b8; } .ico-baux { background: #98d8c8; }
+.ico-screw { background: #e8c24a; }
+.ico-devmat { background: #c88ae8; }
+.debug-btn {
+  background: var(--panel2); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 3px 8px; font-size: 11px; cursor: pointer;
+}
+.debug-btn:hover { border-color: var(--gold); }
+.debug-btn.on { color: var(--gold); border-color: var(--gold); background: rgba(232, 194, 74, 0.12); }
+.acc { font-size: 11px; }
+
+/* ---------- 登录 / 注册 ---------- */
+body.unauth #topbar, body.unauth #navbar { display: none; }
+.login-wrap { display: flex; justify-content: center; align-items: center; min-height: 72vh; }
+.login-box { width: 360px; text-align: center; }
+.login-box h2 { color: var(--gold); letter-spacing: 3px; margin-bottom: 8px; font-size: 22px; }
+.login-box .dim { font-size: 12px; line-height: 1.7; }
+.login-tabs { display: flex; gap: 8px; margin: 16px 0 4px; }
+.login-tabs button {
+  flex: 1; padding: 8px; background: var(--panel);
+  border: 1px solid var(--line); color: var(--text);
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.login-tabs button:hover { border-color: var(--gold); }
+.login-tabs button.active {
+  background: linear-gradient(180deg, #e8c24a, #b8912a);
+  color: #1a1404; border-color: #d4ae38; font-weight: bold;
+}
+.login-box input {
+  width: 100%; padding: 10px 12px; margin-top: 12px;
+  background: rgba(6, 13, 24, 0.7); border: 1px solid var(--line);
+  border-radius: 6px; color: var(--text); font-size: 14px; outline: none;
+}
+.login-box input:focus { border-color: var(--gold); }
+.login-err { color: var(--red); font-size: 12px; min-height: 18px; margin-top: 8px; }
+.login-remember {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 12px; font-size: 12px; color: var(--dim);
+  cursor: pointer; user-select: none;
+}
+.login-remember input { width: auto; margin: 0; }
+.login-box .btn-row { justify-content: center; }
+
+/* ---------- 改修工厂 ---------- */
+.star-line { color: var(--gold); font-weight: bold; font-size: 12px; letter-spacing: 1px; }
+.screw { color: var(--gold); }
+.improve-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px; margin: 6px 0;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: rgba(10, 20, 36, 0.5);
+}
+.improve-row .grow { min-width: 220px; }
+.improve-row.improve-locked { opacity: 0.45; }
+.improve-row .btn-row { flex-wrap: wrap; gap: 4px; }
+
+/* ---------- 装备开发（开发池预览） ---------- */
+.devmat { color: #c88ae8; }
+.dev-pool-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+.dev-pool-table th {
+  text-align: left; padding: 5px 8px; color: var(--dim);
+  border-bottom: 1px solid var(--line); font-weight: normal; font-size: 11px;
+}
+.dev-pool-table td { padding: 4px 8px; border-bottom: 1px solid rgba(120, 150, 190, 0.12); }
+.dev-pool-table tr.dev-fail td { border-bottom: none; color: #b0a48c; }
+.dev-pool-table .num { text-align: right; color: var(--gold); }
+
+/* ---------- 装备仓库 ---------- */
+.equip-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+  padding: 5px 8px; margin: 3px 0;
+  border: 1px solid var(--line); border-radius: 5px;
+  background: rgba(10, 20, 36, 0.4);
+  font-size: 12px;
+}
+.equip-row .grow { min-width: 200px; }
+
+/* ---------- 批量开发结果 ---------- */
+.dev-batch-result { padding: 4px 0 8px; line-height: 1.8; font-size: 13px; }
+.dev-batch-result b { color: var(--gold); }
+
+/* ---------- 近代化改修素材选择 ---------- */
+.mat-card {
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 8px; margin: 4px;
+  cursor: pointer; background: rgba(10, 20, 36, 0.5);
+  user-select: none;
+}
+.mat-card:hover { border-color: var(--gold); }
+.mat-card.selected { border-color: var(--gold); background: rgba(232, 194, 74, 0.12); }
+.mat-card .mat-val { font-size: 11px; color: var(--dim); }
+.preview-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.preview-table td, .preview-table th {
+  border: 1px solid var(--line); padding: 3px 8px; font-size: 12px; text-align: center;
+}
+.preview-table .up { color: #7fe07f; }
+
+/* ---------- 导航（顶部一级菜单置顶UI） ---------- */
+#navbar {
+  display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap;
+  justify-content: center;
+}
+#navbar button {
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: transform .12s, box-shadow .12s;
+}
+#navbar button:hover { border-color: var(--gold); color: var(--gold); transform: scale(1.05); box-shadow: 0 3px 10px rgba(0,0,0,0.35); }
+#navbar button.active {
+  background: linear-gradient(180deg, #e8c24a, #b8912a);
+  color: #1a1404; border-color: #d4ae38; font-weight: bold;
+}
+#navbar button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------- 屏幕容器 ---------- */
+#screen { min-height: 420px; }
+.panel {
+  background: linear-gradient(180deg, rgba(29,49,79,0.9), rgba(18,32,54,0.92));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.panel h3 {
+  color: var(--gold); font-size: 15px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--line); padding-bottom: 6px;
+}
+.section-title { color: var(--blue); font-size: 14px; margin: 12px 0 8px; }
+.dim { color: var(--dim); }
+.hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+
+/* ---------- 舰船卡片 ---------- */
+.ship-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--panel);
+  transition: transform .12s;
+}
+.ship-card:hover { transform: translateY(-2px); border-color: var(--gold); }
+
+/* ---------- 立绘占位符（舰种占位，后续替换为真实立绘） ---------- */
+.portrait-ph {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  border-bottom: 1px solid var(--line);
+  text-align: center; padding: 4px; overflow: hidden;
+}
+.portrait-ph .type-mark { color: var(--gold); font-size: 13px; font-weight: bold; }
+.portrait-ph .type-sub { color: var(--dim); font-size: 10px; }
+.ship-card .portrait-ph .type-mark { font-size: 11px; }
+.ship-card .portrait-ph .type-sub { font-size: 9px; }
+.ship-card .portrait-ph { font-size: 11px; }
+.ship-card .card-info {
+  padding: 4px 6px; font-size: 11px; background: rgba(10,20,36,0.9);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.ship-card .lv { color: var(--gold); }
+.ship-card .hpbar { height: 4px; background: #3a1c1c; }
+.ship-card .hpbar > div { height: 100%; background: linear-gradient(90deg,#4a4, #8e8); transition: width .3s; }
+.ship-card .hpbar > div.danger { background: linear-gradient(90deg,#a44, #e66); }
+.ship-card .flag-badge {
+  position: absolute; top: 4px; left: 4px; z-index: 2;
+  background: rgba(10,20,36,0.85); color: var(--gold);
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--gold);
+}
+.ship-card .state-badge {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  background: rgba(10,20,36,0.85); font-size: 10px; padding: 1px 5px; border-radius: 3px;
+}
+.state-badge.repair { color: var(--blue); border: 1px solid var(--blue); }
+.state-badge.expedition { color: var(--orange); border: 1px solid var(--orange); }
+.state-badge.broken { color: var(--red); border: 1px solid var(--red); }
+.state-badge.morale { color: #7fe07f; }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-block;
+  background: linear-gradient(180deg, #2a4a7a, #1a3460);
+  border: 1px solid #3a5a90;
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn:hover { border-color: var(--gold); color: var(--gold); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-gold { background: linear-gradient(180deg, #e8c24a, #b8912a); color: #1a1404; border-color: #d4ae38; font-weight: bold; }
+.btn-gold:hover { filter: brightness(1.1); color: #1a1404; }
+.btn-red { background: linear-gradient(180deg, #7a3030, #521f1f); border-color: #a04040; }
+.btn-green { background: linear-gradient(180deg, #2f7a3a, #1f5225); border-color: #3fa04a; }
+.btn-sm { padding: 3px 9px; font-size: 12px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* ---------- 表格 ---------- */
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th, table.data td {
+  padding: 6px 8px; border-bottom: 1px solid rgba(44,66,104,0.5); text-align: left;
+}
+table.data th { color: var(--dim); font-weight: normal; font-size: 12px; }
+table.data tr:hover td { background: rgba(90,168,232,0.08); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- 统计条 ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.stat-item { background: rgba(10,20,36,0.6); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.stat-item .label { font-size: 11px; color: var(--dim); }
+.stat-item .value { font-size: 15px; color: var(--text); font-weight: bold; }
+
+/* ---------- 母港（秘书舰 / 舰队 / 状态） ---------- */
+/* 秘书舰面板 */
+.secretary-panel { display: flex; gap: 16px; align-items: center; }
+.secretary-ph { width: 150px; flex-shrink: 0; border-radius: 6px; border: 1px solid var(--line); }
+.secretary-info { flex: 1; min-width: 0; }
+.secretary-info h3 { margin-bottom: 6px; }
+.secretary-line {
+  margin-top: 10px; padding: 8px 12px;
+  background: rgba(10, 20, 36, 0.6); border-left: 3px solid var(--gold);
+  border-radius: 0 6px 6px 0; color: var(--text); font-size: 13px;
+}
+.secretary-info .btn-row { margin-top: 12px; }
+
+/* 第一舰队网格 */
+.fleet-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.fleet-cell { display: flex; flex-direction: column; }
+.fleet-cell .ship-card { flex: 1; }
+.card-actions { display: flex; gap: 4px; margin-top: 5px; }
+.card-actions .btn { flex: 1; padding: 3px 4px; font-size: 11px; }
+.fleet-slot-sm {
+  border: 1px dashed var(--line); border-radius: 8px; min-height: 190px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--dim); font-size: 12px;
+  background: rgba(10, 20, 36, 0.35);
+}
+
+/* 状态栏 */
+.status-line { margin-top: 10px; color: var(--text); font-size: 12.5px; }
+
+@media (max-width: 900px) {
+  .fleet-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ---------- 舰队槽位 ---------- */
+.fleet-slot {
+  width: 15%;
+  border: 1px dashed var(--line); border-radius: 8px; min-height: 210px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--dim); cursor: pointer; padding: 8px;
+  background: rgba(10,20,36,0.35);
+}
+.fleet-slot.filled { border-style: solid; border-color: var(--panel2); background: transparent; align-items: stretch; }
+.fleet-slot:hover { border-color: var(--gold); }
+.fleet-slot.drag-over { border-color: var(--gold); background: rgba(232,194,74,0.15); }
+.ship-card.dragging { opacity: 0.45; }
+
+/* ---------- 入渠中的舰娘（紧凑卡片，槽位锁定） ---------- */
+.dock-card .portrait-ph { height: 100px; aspect-ratio: auto; font-size: 11px; cursor: default; }
+
+/* ---------- 母港拖拽区（拖回此处脱出舰队） ---------- */
+.roster-area {
+  min-height: 200px;
+  padding: 8px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  transition: border-color .12s, background .12s;
+}
+.roster-area.drag-over { border-color: var(--blue); background: rgba(90,168,232,0.08); }
+
+/* ---------- 模态框 ---------- */
+#modal-root .modal-mask {
+  position: fixed; inset: 0; background: rgba(2,6,12,0.75); z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+}
+#modal-root .modal {
+  background: linear-gradient(180deg, #1a2c4a, #0e1b30);
+  border: 1px solid #3a5a90; border-radius: 10px;
+  max-width: 860px; width: 94%; max-height: 88vh; overflow: auto;
+  padding: 18px;
+}
+#modal-root .modal h3 { color: var(--gold); margin-bottom: 12px; }
+/* 次级浮窗（叠在主弹窗之上，如装备选择器） */
+#sub-modal-root .sub-modal-mask {
+  position: fixed; inset: 0; background: rgba(2,6,12,0.55); z-index: 150;
+  display: flex; align-items: center; justify-content: center;
+}
+#sub-modal-root .modal {
+  background: linear-gradient(180deg, #1a2c4a, #0e1b30);
+  border: 1px solid #c8a050; border-radius: 10px;
+  max-width: 720px; width: 92%; max-height: 84vh; overflow: auto;
+  padding: 18px;
+}
+#sub-modal-root .modal h3 { color: var(--gold); margin-bottom: 12px; }
+.modal-close { float: right; cursor: pointer; color: var(--dim); font-size: 18px; }
+.modal-close:hover { color: var(--red); }
+
+/* ---------- 装备选择器（按装备种类分组单列） ---------- */
+.eq-picker .eq-cat-title {
+  color: var(--blue); font-size: 13px; margin: 10px 0 4px; font-weight: bold;
+  border-bottom: 1px solid rgba(120,150,190,0.25); padding-bottom: 2px;
+}
+.eq-pick-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  border: 1px solid var(--line); border-radius: 5px; padding: 6px 10px; margin: 3px 0;
+  font-size: 13px; background: rgba(10,20,36,0.5); cursor: pointer;
+}
+.eq-pick-item:hover { border-color: var(--gold); background: rgba(232,194,74,0.08); }
+.eq-pick-item .eq-stat { color: var(--dim); font-size: 11px; }
+
+/* ---------- 战斗 ---------- */
+.battlefield { display: flex; flex-direction: column; gap: 10px; position: relative; }
+#bf.night .battle-row { filter: brightness(.62) saturate(.8) hue-rotate(8deg); transition: filter .6s; }
+#bf.night .battle-mid {
+  height: 22px; border-radius: 6px; background: radial-gradient(ellipse at 50% 50%, rgba(24,34,96,.55), rgba(2,4,18,.85));
+}
+.battle-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.battle-mid { height: 22px; }
+.battle-ship {
+  width: 104px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  background: var(--panel); text-align: center; position: relative;
+}
+.battle-ship .ship-icon {
+  height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: linear-gradient(180deg, #16325c, #0b1a30);
+}
+.battle-ship .type-code {
+  font-size: 26px; font-weight: 800; letter-spacing: 1px; color: #cfe0f2;
+  text-shadow: 0 0 10px rgba(120,180,255,.65); transition: transform .16s ease, color .2s ease;
+}
+.battle-ship .type-name { font-size: 10px; color: #9fb4c8; }
+.battle-ship .ship-icon.type-DD  { background: linear-gradient(180deg, #203a55, #101f33); }
+.battle-ship .ship-icon.type-CL  { background: linear-gradient(180deg, #1c4a6b, #0e2438); }
+.battle-ship .ship-icon.type-CLT { background: linear-gradient(180deg, #1c5a6b, #0e3038); }
+.battle-ship .ship-icon.type-CA  { background: linear-gradient(180deg, #45286b, #231238); }
+.battle-ship .ship-icon.type-CAV { background: linear-gradient(180deg, #3d2a6b, #1e1238); }
+.battle-ship .ship-icon.type-BB  { background: linear-gradient(180deg, #6b1e2c, #380e14); }
+.battle-ship .ship-icon.type-BBV { background: linear-gradient(180deg, #5e2a1c, #32160e); }
+.battle-ship .ship-icon.type-CV  { background: linear-gradient(180deg, #6b5a1c, #38300e); }
+.battle-ship .ship-icon.type-CVB { background: linear-gradient(180deg, #6b4a1c, #38260e); }
+.battle-ship .ship-icon.type-CVL { background: linear-gradient(180deg, #5a6b1c, #2e380e); }
+.battle-ship .ship-icon.type-SS  { background: linear-gradient(180deg, #1c5a3a, #0e3020); }
+.battle-ship .ship-icon.type-SSV { background: linear-gradient(180deg, #1c4a5a, #0e2830); }
+.battle-ship .ship-icon.type-DE  { background: linear-gradient(180deg, #2a5a6b, #143038); }
+.battle-ship .ship-icon.type-AV  { background: linear-gradient(180deg, #3d5a2a, #1e3014); }
+.battle-ship .ship-icon.type-AS  { background: linear-gradient(180deg, #4a4a5a, #262630); }
+.battle-ship .bname { font-size: 10px; padding: 2px 0; background: rgba(10,20,36,0.9); }
+.battle-ship .bhp { height: 5px; background: #3a1c1c; }
+.battle-ship .bhp > div { height: 100%; transition: width .4s; }
+.battle-ship .bhp > div.ok { background: #5cc45c; }
+.battle-ship .bhp > div.mid { background: #f0b050; }
+.battle-ship .bhp > div.danger { background: #e05555; }
+.battle-ship.dead { opacity: 0.55; }
+.enemy-row .battle-ship .ship-icon { filter: hue-rotate(175deg) saturate(1.15); }
+.battle-ship.dead .ship-icon { filter: grayscale(.9) brightness(.45); }
+.battle-ship.dead .bname { color: #6a7a8a; }
+/* 炮击闪光与受击演出 */
+.battle-ship.firing .type-code { transform: scale(1.16); color: #ffd27a; text-shadow: 0 0 14px rgba(255,210,120,.95); }
+.battle-ship.firing::after {
+  content: ''; position: absolute; left: 50%; top: 38%; width: 30px; height: 30px; margin: -15px;
+  background: radial-gradient(circle, #fff 0%, #ffd27a 40%, rgba(255,140,0,0) 72%);
+  border-radius: 50%; animation: muzzle .32s ease-out forwards; pointer-events: none; z-index: 5;
+}
+@keyframes muzzle { 0% { opacity: 1; transform: scale(.35); } 100% { opacity: 0; transform: scale(2.1); } }
+.battle-ship.hit { animation: hitShake .42s linear; }
+.battle-ship.hit::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  background: radial-gradient(circle, rgba(255,90,40,.8), rgba(255,60,30,.3) 55%, transparent 78%);
+  animation: hitFlash .45s ease-out forwards;
+}
+@keyframes hitShake {
+  0%,100% { transform: translate(0,0); }
+  15% { transform: translate(-7px,3px) rotate(-1.2deg); }
+  35% { transform: translate(6px,-4px) rotate(1deg); }
+  55% { transform: translate(-5px,2px) rotate(-.8deg); }
+  75% { transform: translate(4px,-2px); }
+}
+@keyframes hitFlash { 0% { opacity: 1; } 100% { opacity: 0; } }
+#battleLog {
+  background: rgba(4,10,18,0.9); border: 1px solid var(--line); border-radius: 6px;
+  height: 220px; overflow-y: auto; padding: 8px 10px; font-size: 12.5px; line-height: 1.7;
+}
+#battleLog .line { opacity: 0; animation: linein .25s forwards; }
+@keyframes linein { to { opacity: 1; } }
+#battleLog .sink { color: var(--red); }
+#battleLog .ci { color: var(--gold); }
+#battleLog .phase { color: var(--blue); }
+
+/* ---------- 战斗演出特效 ---------- */
+.proj-shell {
+  position: fixed; z-index: 600; width: 10px; height: 10px; margin: -5px; border-radius: 50%;
+  background: radial-gradient(circle, #fff7c0 0%, #ffb52e 45%, #c84500 100%);
+  box-shadow: 0 0 10px rgba(255,170,60,.95); pointer-events: none; will-change: transform;
+}
+.proj-shell.night {
+  background: radial-gradient(circle, #fff 0%, #ffe9a8 40%, #ff9d2e 100%);
+  box-shadow: 0 0 14px rgba(255,230,150,1);
+}
+.proj-torp {
+  position: fixed; z-index: 600; width: 30px; height: 8px; margin: -4px -15px; pointer-events: none;
+  background: linear-gradient(180deg, #5b6b7d, #222c38); border-radius: 50%;
+  border: 1px solid #93a7bb; box-shadow: 0 0 8px rgba(120,180,230,.75); will-change: transform;
+}
+.proj-torp::after {
+  content: ''; position: absolute; right: 100%; top: 50%; width: 46px; height: 2px;
+  background: repeating-linear-gradient(90deg, rgba(170,215,255,.85) 0 7px, transparent 7px 12px);
+}
+.proj-plane {
+  position: fixed; z-index: 610; width: 20px; height: 20px; margin: -10px; text-align: center;
+  font-size: 17px; line-height: 20px; color: #e8eef7; pointer-events: none; will-change: transform;
+  filter: drop-shadow(0 0 5px rgba(255,255,255,.65));
+}
+.bomb {
+  position: fixed; z-index: 615; width: 6px; height: 10px; margin: -5px -3px; pointer-events: none;
+  background: radial-gradient(#ffe08a, #a56300); border-radius: 2px 2px 5px 5px; will-change: transform;
+}
+.dc {
+  position: fixed; z-index: 615; width: 12px; height: 12px; margin: -6px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #9fb8cf, #3b4d63); pointer-events: none; will-change: transform;
+}
+.explosion {
+  position: fixed; z-index: 620; width: 58px; height: 58px; margin: -29px; pointer-events: none;
+  background: radial-gradient(circle, #fff 0%, #ffe08a 28%, #ff8c1a 55%, rgba(190,50,0,0) 78%);
+  border-radius: 50%; animation: boom .55s ease-out forwards;
+}
+.explosion.air { width: 74px; height: 74px; margin: -37px; }
+.explosion.torp {
+  width: 46px; height: 86px; margin: -43px -23px; border-radius: 50%;
+  background: radial-gradient(ellipse, #ffffff 0%, #bfe3ff 35%, rgba(70,150,220,.65) 60%, rgba(30,90,170,0) 80%);
+  animation: waterCol .6s ease-out forwards;
+}
+.explosion.asw {
+  background: radial-gradient(circle, #eaf7ff 0%, #7fc4ee 45%, rgba(50,130,210,0) 75%);
+}
+.explosion.big {
+  width: 130px; height: 130px; margin: -65px;
+  background: radial-gradient(circle, #fff 0%, #ffd27a 22%, #ff6a1a 50%, rgba(200,40,0,0) 80%);
+  box-shadow: 0 0 40px rgba(255,120,40,.8); animation: boom .85s ease-out forwards;
+}
+@keyframes boom { 0% { transform: scale(.15); opacity: 1; } 55% { opacity: .95; } 100% { transform: scale(1.7); opacity: 0; } }
+@keyframes waterCol { 0% { transform: scale(.3,.6); opacity: 1; } 55% { opacity: .9; } 100% { transform: scale(1.4,1.7); opacity: 0; } }
+.dmg-num {
+  position: fixed; z-index: 630; font-weight: 700; font-size: 16px; color: #ffd27a;
+  text-shadow: 0 0 6px rgba(0,0,0,.95), 0 1px 2px #000; pointer-events: none; white-space: nowrap;
+  animation: dmgUp .95s ease-out forwards;
+}
+.dmg-num.big { font-size: 22px; color: #ff9d5c; }
+@keyframes dmgUp {
+  0% { opacity: 1; transform: translateY(0) scale(.85); }
+  18% { transform: translateY(-10px) scale(1.12); }
+  100% { opacity: 0; transform: translateY(-52px) scale(1); }
+}
+.miss-txt {
+  position: fixed; z-index: 630; font-size: 12px; color: #9fb4c8;
+  text-shadow: 0 0 5px rgba(0,0,0,.9); pointer-events: none; white-space: nowrap;
+  animation: dmgUp 1s ease-out forwards;
+}
+.splash {
+  position: fixed; z-index: 620; width: 34px; height: 34px; margin: -17px; border-radius: 50%;
+  border: 2px solid rgba(150,205,255,.85); animation: splashRing .6s ease-out forwards; pointer-events: none;
+}
+@keyframes splashRing { 0% { transform: scale(.2); opacity: .95; } 100% { transform: scale(1.5); opacity: 0; } }
+.tracer {
+  position: fixed; z-index: 605; height: 2px; margin-top: -1px; transform-origin: left center;
+  background: linear-gradient(90deg, rgba(255,240,180,0), #ffe9a8 55%, #fff);
+  box-shadow: 0 0 4px rgba(255,230,150,.8); pointer-events: none; will-change: width;
+}
+.flak-puff {
+  position: fixed; z-index: 606; width: 16px; height: 16px; margin: -8px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(80,80,85,.95), rgba(45,45,50,.6) 55%, rgba(30,30,35,0) 75%);
+  animation: puff .55s ease-out forwards; pointer-events: none;
+}
+@keyframes puff { 0% { transform: scale(.4); opacity: .95; } 100% { transform: scale(2); opacity: 0; } }
+
+/* ---------- 海域地图（Kancolle风格海图） ---------- */
+.map-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.map-head h3 { border-bottom: none; padding-bottom: 0; margin: 0; }
+.map-board-wrap { overflow-x: auto; }
+.map-stars { color: var(--gold); font-size: 12px; letter-spacing: 2px; vertical-align: 1px; }
+.map-topbar { display: flex; gap: 16px; align-items: center; margin: 2px 0 10px; flex-wrap: wrap; }
+.map-gauge { flex: 1; min-width: 200px; }
+.gauge-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); }
+.gauge-head b { color: var(--text); font-weight: normal; }
+.gauge-bar { height: 10px; border: 1px solid var(--line); border-radius: 5px; background: #0a1424; overflow: hidden; margin-top: 2px; }
+.gauge-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #a83040, #ff5560); transition: width .5s; box-shadow: 0 0 6px rgba(255, 85, 96, .4); }
+.gauge-fill.full { background: linear-gradient(90deg, #c9a43a, #ffd700); box-shadow: 0 0 6px rgba(255, 215, 0, .4); }
+.map-stat { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.map-stat b { color: var(--text); }
+.map-stat b.red { color: var(--red); }
+.map-nodeinfo { margin-top: 10px; font-size: 13px; }
+.map-nodeinfo b { color: var(--gold); }
+
+/* 海图画布：经纬网格 + 深蓝海面 */
+.map-board {
+  position: relative; width: 760px; height: 460px; margin: 0 auto;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 46px),
+    repeating-linear-gradient(90deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 46px),
+    radial-gradient(ellipse at 50% 30%, #13406a 0%, #0a2338 55%, #061625 100%);
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, .45);
+}
+.map-board.mini { width: 236px; height: 168px; border-radius: 6px; margin: 0; }
+.map-routes { position: absolute; left: 0; top: 0; z-index: 1; }
+.map-edge { stroke: rgba(96, 130, 180, .7); stroke-width: 2; stroke-dasharray: 7 6; }
+.map-edge.next { stroke: rgba(170, 210, 255, .95); stroke-dasharray: 3 7; }
+.map-edge.traveled { stroke: #ffd700; stroke-width: 2.6; stroke-dasharray: none; filter: drop-shadow(0 0 3px rgba(255, 215, 0, .65)); }
+
+/* 节点格子：类型着色 + 图标 + 节点字母 */
+.map-node {
+  position: absolute; width: 56px; height: 56px; transform: translate(-50%, -50%);
+  border-radius: 11px; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--line); background: linear-gradient(180deg, #243a5e, #16263f);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .5);
+  cursor: default; z-index: 2; transition: transform .12s;
+}
+.map-node:hover { transform: translate(-50%, -50%) scale(1.12); }
+.node-icon { font-size: 22px; line-height: 1; pointer-events: none; }
+.node-label {
+  position: absolute; top: -21px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; color: #93abcf; letter-spacing: 1px; white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
+}
+.map-node.start { border-color: #e8c24a; background: linear-gradient(180deg, #4d3d18, #26200e); }
+.map-node.start .node-icon { font-size: 13px; font-weight: bold; color: var(--gold); letter-spacing: 1px; }
+.map-node.battle { border-color: #e07070; background: linear-gradient(180deg, #4d2631, #2b161e); color: #ffb0b0; }
+.map-node.boss { border-color: #ff5560; background: radial-gradient(circle, #7a2429, #2b0a0e); color: #ff8585; box-shadow: 0 0 16px rgba(255, 60, 80, .3); }
+.map-node.boss .node-icon { font-size: 28px; }
+.map-node.boss::before { content: ''; position: absolute; inset: -7px; border: 1px dashed rgba(255, 90, 100, .55); border-radius: 14px; pointer-events: none; }
+.map-node.resource { border-color: #5cc45c; background: linear-gradient(180deg, #1e4a2c, #11271a); color: #7fe07f; }
+.map-node.res-fuel { border-color: #d8a048; background: linear-gradient(180deg, #4a3a16, #26200c); color: #e8c060; }
+.map-node.res-ammo { border-color: #c8d0e0; background: linear-gradient(180deg, #343c4d, #1c222e); color: #dde5f2; }
+.map-node.res-steel { border-color: #98a8b8; background: linear-gradient(180deg, #313c46, #1a2026); color: #aebfcd; }
+.map-node.res-baux { border-color: #98d8c8; background: linear-gradient(180deg, #24493c, #122820); color: #9fe0cf; }
+.map-node.resource .node-icon { font-size: 15px; font-weight: bold; }
+.map-node.supply { border-color: #5aa8e8; background: linear-gradient(180deg, #1e3a5e, #12243c); color: #8fd0ff; }
+.map-node.empty { border-color: #4a5a75; background: #1a2333; color: #8fa3c4; }
+
+/* 当前节点：金色脉冲 + 舰队标记 */
+.map-node.current { border-color: var(--gold); animation: nodePulse 1.5s ease-out infinite; }
+@keyframes nodePulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 215, 0, .55); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 215, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
+}
+.fleet-mark {
+  position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  font-size: 16px; z-index: 4; filter: drop-shadow(0 0 4px rgba(255, 215, 0, .9));
+  animation: fleetBounce 1.1s ease-in-out infinite; pointer-events: none;
+}
+@keyframes fleetBounce { 0%, 100% { margin-top: 0; } 50% { margin-top: -5px; } }
+.map-node.cleared { opacity: .38; filter: grayscale(.6); }
+
+/* 罗盘装饰 + 图例 */
+.map-compass {
+  position: absolute; right: 16px; bottom: 14px; width: 52px; height: 52px;
+  border-radius: 50%; border: 1px solid rgba(140, 175, 225, .35); opacity: .5;
+  display: flex; align-items: center; justify-content: center; z-index: 2; pointer-events: none;
+  background:
+    conic-gradient(from 45deg, rgba(160, 195, 240, .22) 0 90deg, transparent 90deg 180deg,
+      rgba(160, 195, 240, .22) 180deg 270deg, transparent 270deg 360deg),
+    radial-gradient(circle, rgba(160, 195, 240, .16), transparent 65%);
+}
+.map-compass::before { content: '✚'; color: rgba(160, 195, 240, .5); font-size: 14px; }
+.map-compass::after { content: 'N'; position: absolute; top: -3px; left: 50%; transform: translateX(-50%); font-size: 9px; color: rgba(200, 225, 255, .75); }
+.map-legend {
+  position: absolute; left: 10px; bottom: 8px; display: flex; gap: 12px;
+  font-size: 10px; color: #93abcf; background: rgba(6, 13, 24, .6);
+  padding: 4px 10px; border-radius: 5px; z-index: 2; pointer-events: none;
+}
+.map-legend b { font-weight: normal; margin-right: 3px; }
+
+/* 缩略图模式 */
+.map-board.mini .map-node { width: 26px; height: 26px; border-radius: 6px; border-width: 1px; }
+.map-board.mini .map-node:hover { transform: translate(-50%, -50%) scale(1.05); }
+.map-board.mini .node-icon { font-size: 12px; }
+.map-board.mini .map-node.start .node-icon { font-size: 8px; }
+.map-board.mini .map-node.boss .node-icon { font-size: 15px; }
+.map-board.mini .map-node.boss::before { inset: -4px; border-radius: 8px; }
+.map-board.mini .map-node.resource .node-icon { font-size: 9px; }
+.map-board.mini .node-label, .map-board.mini .fleet-mark, .map-board.mini .map-compass, .map-board.mini .map-legend { display: none; }
+
+/* ---------- 出击海域选择（Kancolle世界地图风格） ---------- */
+.area-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.area-tabs button {
+  background: linear-gradient(180deg, rgba(29,49,79,.9), rgba(18,32,54,.92));
+  color: var(--dim); border: 1px solid var(--line); border-radius: 6px;
+  padding: 7px 16px; cursor: pointer; font-size: 13px; transition: all .12s;
+}
+.area-tabs button b { color: var(--blue); margin-right: 6px; font-size: 15px; }
+.area-tabs button:hover { border-color: var(--gold); color: var(--gold); transform: translateY(-1px); }
+.area-tabs button.active {
+  background: linear-gradient(180deg, #e8c24a, #b8912a); color: #1a1404; border-color: #d4ae38;
+}
+.area-tabs button.active b { color: #1a1404; }
+
+.sortie-mapview { display: flex; gap: 12px; align-items: stretch; }
+
+/* 海图面板（区域世界地图）：经纬网格 + 区域标题 + 地图位置标记 */
+.area-map {
+  position: relative; flex: 1.35; min-width: 0; min-height: 420px;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 42px),
+    repeating-linear-gradient(90deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 42px),
+    radial-gradient(ellipse at 22% 88%, rgba(70, 140, 220, .16), transparent 55%),
+    radial-gradient(ellipse at 78% 26%, rgba(60, 120, 200, .12), transparent 50%),
+    linear-gradient(180deg, #0a1626, #0d1f38);
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, .45);
+}
+.area-routes { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.area-routes line { stroke: rgba(96, 130, 180, .4); stroke-width: 1.2; stroke-dasharray: 6 5; }
+.area-map-title {
+  position: absolute; left: 14px; top: 12px; z-index: 2;
+  color: var(--gold); font-size: 16px; font-weight: bold; letter-spacing: 1px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .8);
+}
+.area-map-title .dim { font-size: 11px; font-weight: normal; margin-left: 8px; }
+.area-compass {
+  position: absolute; right: 12px; bottom: 10px; width: 40px; height: 40px;
+  border-radius: 50%; border: 1px solid rgba(140, 175, 225, .35); opacity: .55;
+  z-index: 2; pointer-events: none; background: radial-gradient(circle, rgba(160,195,240,.14), transparent 65%);
+}
+.area-compass::before { content: '✚'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(160,195,240,.45); font-size: 12px; }
+.area-compass::after { content: 'N'; position: absolute; top: -4px; left: 50%; transform: translateX(-50%); font-size: 9px; color: rgba(200,225,255,.7); }
+
+/* 地图位置标记（Kancolle地图编号按钮） */
+.spot-btn {
+  position: absolute; transform: translate(-50%, -50%); z-index: 2;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: none; border: none; cursor: pointer; padding: 0; color: var(--text);
+}
+.spot-no {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 35% 30%, #3a5a90, #152c4e);
+  border: 2px solid #4a6ca0; color: #e8f0ff; font-size: 17px; font-weight: bold;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .15);
+  transition: all .15s;
+}
+.spot-btn:hover .spot-no { border-color: var(--gold); transform: scale(1.1); }
+.spot-btn.sel .spot-no {
+  border-color: var(--gold);
+  background: radial-gradient(circle at 35% 30%, #e8c24a, #9a7418);
+  color: #1a1404;
+  box-shadow: 0 0 0 4px rgba(232, 194, 74, .22), 0 3px 12px rgba(0, 0, 0, .5);
+}
+.spot-btn.cleared .spot-no {
+  border-color: #5cc45c;
+  background: radial-gradient(circle at 35% 30%, #2f6e3f, #173d24);
+  color: #b8f0b8;
+}
+.spot-name {
+  font-size: 11px; color: var(--text); white-space: nowrap;
+  text-shadow: 0 1px 3px #000;
+}
+.spot-btn.sel .spot-name { color: var(--gold); }
+.spot-prog { font-size: 10px; color: var(--dim); text-shadow: 0 1px 3px #000; }
+
+/* 地图详情面板 */
+.map-detail {
+  flex: 0 0 340px; min-width: 0;
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+  background: rgba(10, 20, 36, .55);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.map-detail .md-board { margin: 0 auto; }
+.md-title { font-size: 15px; font-weight: bold; color: var(--gold); }
+.map-clear-badge { color: var(--green); font-size: 12px; font-weight: bold; margin-left: 8px; }
+.md-desc { color: var(--dim); font-size: 12px; line-height: 1.6; }
+.md-rows { font-size: 11.5px; line-height: 1.9; color: var(--text); }
+.md-rows b { color: var(--blue); }
+.md-rows .red { color: var(--red); }
+.md-btn { margin-top: auto; font-size: 15px; padding: 9px 0; }
+
+
+/* ---------- 任务 ---------- */
+.quest-card {
+  border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;
+  background: rgba(10,20,36,0.5); display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.quest-card .qname { font-weight: bold; }
+.quest-card .qdesc { color: var(--dim); font-size: 12px; margin-top: 2px; }
+.quest-card .qprog { color: var(--blue); font-size: 12px; }
+.quest-card.claimed { opacity: 0.5; }
+.quest-card .qrewards { font-size: 11px; color: var(--orange); }
+
+/* ---------- 其他 ---------- */
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.tabs button {
+  background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+  padding: 5px 14px; cursor: pointer; border-radius: 4px 4px 0 0;
+}
+.tabs button.active { background: var(--panel2); color: var(--gold); border-bottom-color: var(--gold); }
+.countdown { font-family: Consolas, monospace; color: var(--blue); }
+.resource-formula { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+.resource-formula input {
+  width: 100%; background: #0a1424; color: var(--text); border: 1px solid var(--line);
+  padding: 5px 6px; border-radius: 4px; text-align: center;
+}
+.resource-formula label { display: block; font-size: 11px; color: var(--dim); text-align: center; }
+.preset-recipe { display: inline-block; margin: 2px; padding: 3px 8px; font-size: 11px; border: 1px solid var(--line);
+  border-radius: 4px; cursor: pointer; color: var(--dim); background: rgba(10,20,36,0.5); }
+.preset-recipe:hover { color: var(--gold); border-color: var(--gold); }
+.preset-recipe.active { color: var(--gold); border-color: var(--gold); background: rgba(255, 215, 0, 0.12); }
+.roster-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-bottom: 10px; }
+.roster-tools .preset-recipe { margin: 2px 0; }
+.eq-slot {
+  border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; font-size: 12px;
+  display: inline-block; margin: 2px; background: rgba(10,20,36,0.5); cursor: pointer;
+}
+.eq-slot:hover { border-color: var(--gold); }
+.toast {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  background: #1d314f; border: 1px solid var(--gold); color: var(--text);
+  padding: 10px 22px; border-radius: 6px; z-index: 200; font-size: 14px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+}
+.flex { display: flex; gap: 12px; flex-wrap: wrap; }
+.grow { flex: 1; }
+.text-center { text-align: center; }
+.big-rank { font-size: 30px; font-weight: bold; color: var(--gold); }
