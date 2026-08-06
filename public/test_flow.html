@@ -45,6 +45,23 @@
         R(document.querySelector('#screen').innerHTML.length > 50, 'screen:' + s.join('/'));
       }
 
+      /* 1.5 舰娘详情弹窗（母港点击舰艇 → 属性/立绘/装备槽 → 装卸装备） */
+      UI.go('home');
+      const homeCards = document.querySelectorAll('#screen .ship-card');
+      R(homeCards.length >= 2, 'shipdetail:cards', 'n=' + homeCards.length);
+      homeCards[0].click();
+      const dtlHtml = document.querySelector('#modal-root').innerHTML;
+      R(dtlHtml.includes('耐久') && dtlHtml.includes('装备') && dtlHtml.includes('data-slot'), 'shipdetail:modal', dtlHtml.slice(0, 60));
+      const dtlSlot = document.querySelector('#modal-root [data-slot]');
+      if (dtlSlot) {
+        dtlSlot.click();
+        const pickerHtml = document.querySelector('#modal-root').innerHTML;
+        R(pickerHtml.includes('选择装备'), 'shipdetail:equipPicker', pickerHtml.slice(0, 60));
+        const pick = document.querySelector('#modal-root [data-eq]');
+        R(!!pick, 'shipdetail:pickable', pick && pick.textContent.slice(0, 20));
+      }
+      document.querySelector('#modal-root').innerHTML = '';
+
       /* 2. 资源注入 + 强舰队 */
       Game.gain({ fuel: 20000, ammo: 20000, steel: 20000, baux: 20000 });
       const strongIds = ['enterprise', 'iowa', 'essex', 'fletcher', 'atlanta', 'saratoga'];
@@ -93,11 +110,13 @@
       Game.state.construction[0].end = Date.now() - 1;
       const cb = Factory.claimBuild(0);
       R(cb.ok, 'factory:claimBuild');
-      const d = Factory.startDevelop({ fuel: 10, ammo: 20, steel: 10, baux: 40 }, null);
-      R(d.ok, 'factory:develop');
-      Game.state.development[0].end = Date.now() - 1;
-      const cd = Factory.claimDevelop(0);
-      R(cd.ok, 'factory:claimDevelop');
+      /* 开发：即时结算（wiki：秘书舰系×资源池） */
+      Game.state.admiral.level = 40;
+      Game.state.resources.devMats = 10;
+      const d = Factory.develop({ fuel: 20, ammo: 60, steel: 10, baux: 110 }, Game.state.fleet[1][0]);
+      R(d.ok, 'factory:develop', JSON.stringify(d && { ok: d.ok, success: d.success, id: d.eq && d.eq.id }));
+      R(Game.state.resources.devMats === 9 || Game.state.resources.devMats === 10, 'factory:devMats', 'devMats=' + Game.state.resources.devMats);
+      R(Factory.developPreview({ fuel: 10, ammo: 251, steel: 250, baux: 10 }, null).pool === 'AMMO', 'devPool:ammo');
       const ex = Logistics.startExpedition(2, 'ex1');
       R(ex.ok, 'logistics:expedition', JSON.stringify(ex));
       Game.state.expeditions[2].end = Date.now() - 1;
@@ -152,6 +171,17 @@
       R(document.querySelector('#screen').innerHTML.includes('近代化改修') && document.querySelector('#screen').innerHTML.includes('剩余可改修'), 'screen:factory-modernize');
       document.querySelector('#screen').querySelector('[data-mod-target]').click();
       R(document.querySelector('#modal-root').innerHTML.includes('选择素材舰'), 'modernize:modalFromFactory');
+      /* 装备开发面板（开发池预览）+ 装备仓库（解体）冒烟 */
+      UI.go('factory', 'dev');
+      const devHtml = document.querySelector('#screen').innerHTML;
+      R(devHtml.includes('装备开发') && devHtml.includes('开发资材') && devHtml.includes('当前开发池'), 'screen:factory-dev');
+      R(devHtml.includes('开发失败'), 'screen:dev-fail-share');
+      UI.go('factory', 'equip');
+      const eqpHtml = document.querySelector('#screen').innerHTML;
+      R(eqpHtml.includes('装备仓库') && eqpHtml.includes('库存'), 'screen:factory-equip');
+      const spare = Object.keys(Game.state.equipment).find(eu => !Object.values(Game.state.ships).some(s => (s.equipped || []).includes(eu)));
+      const scrapR = Factory.scrapEquip(spare);
+      R(scrapR.ok && !Game.state.equipment[spare], 'factory:scrapEquip', JSON.stringify(scrapR.gain));
 
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {

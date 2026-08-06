@@ -57,18 +57,19 @@ const LogisticsUI = (() => {
         ${EXPEDITIONS.map(ex => {
           const active = st.expeditions[2] && st.expeditions[2].exId === ex.id;
           const left = st.expeditions[2] ? st.expeditions[2].end - Date.now() : 0;
-          const rw = Object.entries(ex.reward).map(([k, v]) => `${({ fuel: '油', ammo: '弹', steel: '钢', baux: '铝' })[k]}+${v}`).join(' ');
+          const rw = Object.entries(ex.reward).map(([k, v]) => `${({ fuel: '油', ammo: '弹', steel: '钢', baux: '铝', devMats: '开发资材' })[k]}+${v}`).join(' ');
           return `<div class="panel" style="margin:6px 0">
             <div class="flex" style="justify-content:space-between;align-items:center">
               <div>
                 <b>${ex.name}</b> <span class="dim">${Util.fmtTime(ex.time * 1000)}</span>
-                <div class="hint">${ex.desc} ｜ 条件：${ex.req.ships || 0}+舰 ｜ 奖励：${rw}</div>
+                <div class="hint">${ex.desc} ｜ 条件：${ex.req.ships || 0}+舰 ｜ 奖励：${rw} ｜ 入手经验：${ex.exp}</div>
               </div>
               ${active
                 ? (left > 0 ? `<span class="countdown" data-until="${st.expeditions[2].end}">${Util.fmtTime(left)}</span>` : `<button class="btn btn-gold btn-sm" data-claimex>完成！领取</button>`)
                 : `<button class="btn btn-sm" data-ex="${ex.id}">派遣</button>`}
             </div></div>`;
         }).join('')}
+        <div class="hint">远征归来获得经验（旗舰1.5倍、可能随机2倍）；全员「闪」状态大幅提高大成功概率（大成功：资源与经验×2）。</div>
       </div>`);
 
       root.querySelectorAll('[data-ex]').forEach(b => {
@@ -83,8 +84,8 @@ const LogisticsUI = (() => {
       if (claimBtn) claimBtn.addEventListener('click', () => {
         const r = Logistics.claimExpedition(2);
         if (!r.ok) { UI.toast(r.msg); return; }
-        const rw = Object.entries(r.reward).map(([k, v]) => `${({ fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土' })[k]}+${v}`).join(' ');
-        UI.toast(`远征「${r.ex.name}」成功！获得 ${rw}`);
+        const rw = Object.entries(r.reward).map(([k, v]) => `${({ fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土', devMats: '开发资材' })[k]}+${v}`).join(' ');
+        UI.toast(`远征「${r.ex.name}」${r.great ? '大成功！' : '成功！'}获得 ${rw}`);
         Game.save(); render();
       });
     }
@@ -198,7 +199,7 @@ const LogisticsUI = (() => {
       const used = pr.used || 0;
       root.insertAdjacentHTML('beforeend', `<div class="panel">
         <h3>演习 <span class="dim">（不消耗资源、不会真正受伤，今日已用 ${used}/5）</span></h3>
-        <div class="hint">对手根据提督等级生成，胜利可获得经验（旗舰1.5倍，MVP 2倍）。</div>
+        <div class="hint">经验按敌方旗舰与第二舰等级计算（S胜×1.2），胜利获得提督经验；被击沉的舰娘无法获得经验。</div>
         ${pr.fleets.map((f, i) => {
           const done = i < used;
           const ships = f.ships.map(s => {
@@ -220,11 +221,11 @@ const LogisticsUI = (() => {
           const f = pr.fleets[idx];
           const result = Battle.battle(Game.state.fleet[1], f.ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
           pr.used = idx + 1;
-          const gains = Progression.applyBattleResult(1, result, true);
+          const res = Progression.applyBattleResult(1, result, true);
           Game.state.stats.practice++;
           Game.save();
           const wrapped = { ok: true, result, isBoss: false, drop: null, cleared: false };
-          SortieUI.renderBattle(root, wrapped, () => render(), { practice: true, gains, onBack: () => render() });
+          SortieUI.renderBattle(root, wrapped, () => render(), { practice: true, gains: res.gains, adm: res.adm, onBack: () => render() });
         });
       });
     }

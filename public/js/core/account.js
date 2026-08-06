@@ -1,18 +1,20 @@
 'use strict';
 /* ============================================================
  * 账号会话管理（浏览器端）
- * 双模式：
- *   游客(guest)  -> 存档仅存 localStorage（原版行为）
- *   账号(account)-> 存档本地缓存 + 同步服务器（token 会话）
+ * 必须登录后才能进入游戏。
+ * 会话机制：
+ *   登录/注册后服务器下发 HttpOnly Cookie（usnc_session），
+ *   同源 fetch 自动携带，关闭浏览器后 7 天内免登录直接进游戏；
+ *   同时保留 localStorage token 作为兼容备份。
  * ============================================================ */
 
 const Account = (() => {
   const TOKEN_KEY = 'usnc_token_v1';
-  let session = { mode: 'guest', username: '', token: '' };
+  let session = { mode: 'guest', username: '', role: '', token: '' };
   const listeners = [];
 
   function api(method, url, body) {
-    const opts = { method, headers: {} };
+    const opts = { method, headers: {}, credentials: 'same-origin' };
     if (body !== undefined) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
@@ -26,8 +28,8 @@ const Account = (() => {
     });
   }
 
-  function setSession(mode, username, token) {
-    session = { mode, username: username || '', token: token || '' };
+  function setSession(mode, username, role, token) {
+    session = { mode, username: username || '', role: role || '', token: token || '' };
     try {
       if (session.mode === 'account' && session.token) localStorage.setItem(TOKEN_KEY, session.token);
       else localStorage.removeItem(TOKEN_KEY);
@@ -36,29 +38,37 @@ const Account = (() => {
 
   function notify() { listeners.forEach(fn => { try { fn(); } catch (e) { /* ignore */ } }); }
 
-  /* 启动恢复：有本地 token 则验证会话并取档
+  /* 启动恢复，按优先级：
+   *   1. localStorage token（Authorization 校验）
+   *   2. HttpOnly Cookie（免登录直进）
    * resolve: { ok:true, save } | { ok:false, reason:'notoken'|'expired' } */
   function restore() {
     let token = '';
     try { token = localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { /* ignore */ }
-    if (!token) return Promise.resolve({ ok: false, reason: 'notoken' });
-    session.mode = 'account';
-    session.token = token;
-    session.username = '';
-    return api('GET', '/api/save').then(d => {
-      session.username = d.username || '';
-      notify();
-      return { ok: true, save: d.save || null };
-    }).catch(() => {
-      setSession('guest', '', '');
-      notify();
-      return { ok: false, reason: 'expired' };
-    });
+    const probe = (t) => {
+      session.mode = 'account';
+      session.token = t;
+      session.username = '';
+      return api('GET', '/api/save').then(d => {
+        session.username = d.username || '';
+        session.role = d.role || '';
+        notify();
+        return { ok: true, save: d.save || null };
+      }).catch(() => ({ ok: false, reason: 'expired' }));
+    };
+    if (token) {
+      return probe(token).then(r => {
+        if (r.ok) return r;
+        /* localStorage token 失效：回退尝试 Cookie */
+        return probe('');
+      });
+    }
+    return probe('');   // 无 localStorage token → 尝试 Cookie
   }
 
   function register(username, password) {
     return api('POST', '/api/auth/register', { username, password }).then(d => {
-      setSession('account', d.username, d.token);
+      setSession('account', d.username, d.role, d.token);
       notify();
       return { ok: true, save: d.save || null };
     });
@@ -66,7 +76,7 @@ const Account = (() => {
 
   function login(username, password) {
     return api('POST', '/api/auth/login', { username, password }).then(d => {
-      setSession('account', d.username, d.token);
+      setSession('account', d.username, d.role, d.token);
       notify();
       return { ok: true, save: d.save || null };
     });
@@ -74,13 +84,16 @@ const Account = (() => {
 
   function logout() {
     const token = session.token;
-    setSession('guest', '', '');
+    setSession('guest', '', '', '');
     notify();
-    if (token) api('POST', '/api/auth/logout').catch(() => { /* ignore */ });
+    /* 无论是否有 localStorage token 都通知服务器（cookie 亦作废） */
+    api('POST', '/api/auth/logout').catch(() => { /* ignore */ });
   }
 
   function isAccount() { return session.mode === 'account'; }
+  function isAdmin() { return session.role === 'admin'; }
   function username() { return session.username; }
+  function role() { return session.role; }
   function token() { return session.token; }
 
   /* 上传存档（账号模式；服务器不可达时静默失败，本地缓存兜底） */
@@ -91,7 +104,7 @@ const Account = (() => {
 
   function onChange(fn) { listeners.push(fn); }
 
-  return { restore, register, login, logout, saveGame, isAccount, username, token, onChange };
+  return { restore, register, login, logout, saveGame, isAccount, isAdmin, username, role, token, onChange };
 })();
 
 if (typeof window !== 'undefined') window.Account = Account;

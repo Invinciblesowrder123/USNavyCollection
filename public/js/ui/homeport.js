@@ -32,7 +32,7 @@ const Homeport = (() => {
       const euid = s.equipped[i];
       const eq = euid ? st.equipment[euid] : null;
       const ed = eq ? EquipmentData[eq.id] : null;
-      const types = sl.types.map(t => ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦/水爆', '电探', '高角炮', '机枪', '声呐/爆雷', '设备'][t - 1]).join('/');
+      const types = (sl.types || sl).map(t => ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦/水爆', '电探', '高角炮', '机枪', '声呐/爆雷', '设备'][t - 1]).join('/');
       const size = def.sizes ? def.sizes[i] : 24;
       return `<div class="eq-slot" data-slot="${i}">
         ${ed ? `<b>${Util.esc(ed.zh)}</b> ${UI.starHtml(eq)}` : `<span class="dim">空槽</span>`}
@@ -116,7 +116,7 @@ const Homeport = (() => {
       const ed = EquipmentData[eq.id];
       if (!ed) return false;
       const used = Object.values(st.ships).some(x => x.equipped.includes(eq.uid));
-      return !used && slot.types.includes(ed.slot);
+      return !used && (slot.types || slot).includes(ed.slot);
     });
     const html = `
       <span class="modal-close" data-close>×</span>
@@ -293,6 +293,7 @@ const Homeport = (() => {
         <h3>司令部状态</h3>
         <div class="stat-grid">
           <div class="stat-item"><div class="label">提督等级</div><div class="value num">Lv.${st.admiral.level}</div></div>
+          <div class="stat-item"><div class="label">提督头衔</div><div class="value num" style="color:var(--gold)">${Game.admiralTitle(st.admiral.level)}</div></div>
           <div class="stat-item"><div class="label">总出击</div><div class="value num">${st.stats.sortie}</div></div>
           <div class="stat-item"><div class="label">总胜利</div><div class="value num">${st.stats.win}</div></div>
           <div class="stat-item"><div class="label">击沉敌舰</div><div class="value num">${st.stats.sink}</div></div>
@@ -305,8 +306,9 @@ const Homeport = (() => {
           远征：${exActive.length ? exActive.map(e => `<span class="countdown" data-until="${e.end}">${Util.fmtTime(e.end - Date.now())}</span>`).join(' / ') + ' 进行中' : '空闲'}
           ｜ 入渠：${repCount} 艘（${repairInfo}）
           ｜ 改修资材：<span class="screw">${st.resources.screws || 0}</span>
+          ｜ 开发资材：<span class="devmat">${st.resources.devMats || 0}</span>
         </div>
-        <div class="hint">资源每30秒自然恢复（油弹钢+3 铝+1，上限=(提督等级+3)×250，参照 kcwiki「资源」），远征与任务是主要收入来源。日常任务「装备的改修强化」每天+1改修资材。调试模式可在顶栏开启「无限资源」。</div>
+        <div class="hint">资源每30秒自然恢复（油弹钢+3 铝+1，上限=(提督等级+3)×250，参照 kcwiki「资源」），远征与任务是主要收入来源。日常任务「装备开发3次」每天+1开发资材、日常任务「装备的改修强化」每天+1改修资材。管理员可在顶栏开启「测试模式」（无限资源/瞬间建造/瞬间入渠）。</div>
       </div>`;
 
     root.querySelectorAll('.ship-card').forEach(c => {

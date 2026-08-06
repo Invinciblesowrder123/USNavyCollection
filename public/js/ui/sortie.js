@@ -176,43 +176,435 @@ const SortieUI = (() => {
     });
   }
 
-  /* 战斗演出 */
+  /* ============================================================
+   * 战斗演出 — 结构化事件驱动动画
+   * 事件类型: shell炮击 / torp·open_torp雷击 / air空袭 / asw对潜
+   *          / night夜战 / airfight空战 / flak对空炮火
+   * ============================================================ */
   function renderBattle(root, r, onDone, opts = {}) {
     const st = Game.state;
     const isPractice = !!opts.practice;
     const isSortie = !!Game.state.sortie;
     root.innerHTML = `
       <div class="panel">
-        <h3>战斗 —— ${r.isBoss ? 'BOSS战' : '遭遇战'}</h3>
-        <div class="battlefield">
+        <h3>战斗 —— ${r.isBoss ? 'BOSS战' : '遭遇战'} <button class="btn btn-sm" id="fxSkip" style="float:right">跳过>></button></h3>
+        <div class="battlefield" id="bf">
           <div class="battle-row" id="rowA">${r.result.mySide.map((s, i) => battleShipHtml(s, i)).join('')}</div>
+          <div class="battle-mid"></div>
           <div class="battle-row enemy-row" id="rowB">${r.result.enemySide.map((s, i) => battleShipHtml(s, i)).join('')}</div>
           <div id="battleLog"></div>
         </div>
       </div>`;
 
+    const bf = root.querySelector('#bf');
     const logEl = root.querySelector('#battleLog');
     const entries = r.result.log;
-    let i = 0;
-    /* 回合制后日志变长：条目多时自动加速播放 */
-    const speed = entries.length > 40 ? 150 : 300;
-    const timer = setInterval(() => {
-      if (i >= entries.length) {
-        clearInterval(timer);
-        showResult();
-        return;
+    const N = entries.length;
+    /* 条目越多播放越快；动画时长随之缩放 */
+    const pace = N > 150 ? 0.85 : N > 90 ? 1 : N > 50 ? 1.35 : 2;
+    const delay = Math.round(220 * pace);
+    const flight = Math.max(175, Math.round(delay * 0.58));
+    const flightTorp = Math.round(flight * 1.3);
+    /* 开幕空袭整体演出略长（防空过后集中呈现轰炸机群） */
+    const flightAir = 900;
+
+    const shipEl = (side, idx) => (side && idx >= 0)
+      ? root.querySelector(`#${side === 'A' ? 'rowA' : 'rowB'} [data-ship="${idx}"]`) : null;
+    const centerOf = el => {
+      const b = el.getBoundingClientRect();
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+    };
+    const bfBox = () => bf.getBoundingClientRect();
+    /* 无目标时（空袭未命中）落在对方区域中央附近 */
+    const fallbackPoint = atkEl => {
+      const b = bfBox();
+      const rowB = root.querySelector('#rowB').getBoundingClientRect();
+      const baseY = atkEl && atkEl.closest('#rowB') ? b.top + b.height * 0.3 : rowB.top + rowB.height / 2;
+      return { x: b.left + b.width * (0.3 + Math.random() * 0.4), y: baseY };
+    };
+    const mkEl = (cls, content) => {
+      const d = document.createElement('div');
+      d.className = cls;
+      if (content != null) d.textContent = content;
+      return d;
+    };
+    const put = (el, x, y) => { el.style.left = x + 'px'; el.style.top = y + 'px'; };
+    const fly = (el, x, y, t, ease) => {
+      el.style.transform = `translate(${x - parseFloat(el.style.left)}px, ${y - parseFloat(el.style.top)}px)`;
+      el.style.transition = `transform ${t}ms ${ease || 'cubic-bezier(.3,.6,.4,1)'}`;
+    };
+
+    /* ---- 命中 / 未命中特效 ---- */
+    function impact(tgtEl, kind, dmg, sink) {
+      if (!tgtEl) return;
+      tgtEl.classList.add('hit');
+      setTimeout(() => tgtEl.classList.remove('hit'), 420);
+      const c = centerOf(tgtEl);
+      const cls = 'explosion'
+        + ((kind === 'torp' || kind === 'open_torp') ? ' torp' : (kind === 'asw' ? ' asw' : ' air'))
+        + (sink ? ' big' : '');
+      const boom = mkEl(cls);
+      put(boom, c.x, c.y);
+      document.body.appendChild(boom);
+      setTimeout(() => boom.remove(), 950);
+      if (dmg > 0) {
+        const num = mkEl('dmg-num' + (dmg >= 90 ? ' big' : ''), '-' + dmg);
+        put(num, c.x - 12 + Math.random() * 12, c.y - 46);
+        document.body.appendChild(num);
+        setTimeout(() => num.remove(), 1050);
       }
-      const e = entries[i++];
+    }
+
+    function missFx(tgtEl, kind) {
+      const at = tgtEl ? centerOf(tgtEl) : { x: bfBox().left + bfBox().width / 2, y: bfBox().top + bfBox().height * 0.5 };
+      const p = { x: at.x + (Math.random() - 0.5) * 34, y: at.y + (Math.random() - 0.5) * 18 };
+      const splash = () => {
+        const s = mkEl('splash');
+        put(s, p.x + (Math.random() - 0.5) * 14, p.y + (Math.random() - 0.5) * 8);
+        document.body.appendChild(s);
+        setTimeout(() => s.remove(), 700);
+      };
+      if (kind === 'air') { splash(); setTimeout(splash, 130); }
+      else splash();
+      const miss = mkEl('miss-txt', '未命中');
+      put(miss, p.x, p.y - 34);
+      document.body.appendChild(miss);
+      setTimeout(() => miss.remove(), 1050);
+    }
+
+    /* ---- 炮击 / 夜战：炮口闪光 + 弹道 ---- */
+    function gunAnim(ev, atkEl, tgtEl) {
+      if (atkEl) {
+        atkEl.classList.add('firing');
+        setTimeout(() => atkEl.classList.remove('firing'), flight + 140);
+      }
+      const from = atkEl ? centerOf(atkEl) : fallbackPoint(null);
+      const to = tgtEl ? centerOf(tgtEl) : fallbackPoint(atkEl);
+      const p = mkEl('proj-shell' + (ev.kind === 'night' ? ' night' : ''));
+      put(p, from.x, from.y);
+      document.body.appendChild(p);
+      requestAnimationFrame(() => fly(p, to.x, to.y, flight, 'cubic-bezier(.15,.55,.45,1)'));
+      setTimeout(() => {
+        p.remove();
+        if (ev.hit) impact(tgtEl, 'shell', ev.dmg, ev.sink);
+        else missFx(tgtEl, 'shell');
+      }, flight);
+    }
+
+    /* ---- 雷击：鱼雷入水 + 航迹 ---- */
+    function torpAnim(ev, atkEl, tgtEl) {
+      if (atkEl) {
+        atkEl.classList.add('firing');
+        setTimeout(() => atkEl.classList.remove('firing'), flightTorp + 120);
+      }
+      const from = atkEl ? centerOf(atkEl) : fallbackPoint(null);
+      const to = tgtEl ? centerOf(tgtEl) : fallbackPoint(atkEl);
+      const ang = Math.atan2(to.y - from.y, to.x - from.x) * 180 / Math.PI;
+      const p = mkEl('proj-torp');
+      put(p, from.x, from.y);
+      p.style.transform = `rotate(${ang}deg)`;
+      document.body.appendChild(p);
+      requestAnimationFrame(() => {
+        p.style.transform = `rotate(${ang}deg) translate(${Math.hypot(to.x - from.x, to.y - from.y)}px)`;
+        p.style.transition = `transform ${flightTorp}ms cubic-bezier(.4,.15,.6,.9)`;
+      });
+      setTimeout(() => {
+        p.remove();
+        if (ev.hit) impact(tgtEl, 'torp', ev.dmg, ev.sink);
+        else missFx(tgtEl, 'torp');
+      }, flightTorp);
+    }
+
+    /* ---- 开幕空袭（批量）：全部攻击机同时起飞、各自投弹，命中/落水一次性结算 ---- */
+    function airStrikeBulkAnim(ev) {
+      const list = ev.strikes || [];
+      if (!list.length) return;
+      const d1 = Math.round(flightAir * 0.45);   // 爬升段
+      const d2 = Math.round(flightAir * 0.55);   // 俯冲段
+      const impactAt = d1 + d2 + 320;
+      /* 攻击方航母起飞闪光（每艘一次） */
+      const launchers = {};
+      for (const st of list) {
+        const key = (st.atkS || '') + ':' + st.atkI;
+        if (launchers[key]) continue;
+        launchers[key] = 1;
+        const atkEl = shipEl(st.atkS, st.atkI);
+        if (atkEl) {
+          atkEl.classList.add('firing');
+          setTimeout(() => atkEl.classList.remove('firing'), impactAt + 150);
+        }
+      }
+      /* 全部打击并行：每格派出 2 架，升空后俯冲投弹 */
+      for (const st of list) {
+        const atkEl = shipEl(st.atkS, st.atkI);
+        const tgtEl = shipEl(st.tgtS, st.tgtI);
+        const from = atkEl ? centerOf(atkEl) : fallbackPoint(null);
+        const to = tgtEl ? centerOf(tgtEl) : fallbackPoint(atkEl);
+        const mid = { x: (from.x + to.x) / 2 + (Math.random() - 0.5) * 60, y: from.y - 200 };
+        for (let k = 0; k < 2; k++) {
+          const pl = mkEl('proj-plane', k === 0 ? '✈' : '⌃');
+          const bx = from.x - 16 + k * 20, by = from.y + 6 - k * 6;
+          put(pl, bx, by);
+          document.body.appendChild(pl);
+          const t0 = k * 130 + Math.random() * 80;
+          setTimeout(() => fly(pl, mid.x, mid.y, d1, 'cubic-bezier(.3,.7,.5,1)'), t0);
+          setTimeout(() => fly(pl, to.x, to.y, d2, 'cubic-bezier(.6,.05,.9,.55)'), t0 + d1);
+          setTimeout(() => {
+            for (let b = 0; b < 2; b++) {
+              setTimeout(() => {
+                const bomb = mkEl('bomb');
+                put(bomb, to.x - 8 + b * 14 + (Math.random() - 0.5) * 8, to.y - 38);
+                document.body.appendChild(bomb);
+                requestAnimationFrame(() => {
+                  bomb.style.transform = 'translateY(32px)';
+                  bomb.style.transition = 'transform 210ms cubic-bezier(.7,0,1,1)';
+                });
+                setTimeout(() => bomb.remove(), 260);
+              }, b * 130);
+            }
+            pl.remove();
+          }, t0 + d1 + d2 + 70);
+        }
+      }
+      /* 全部命中/未命中特效在投弹后统一触发 */
+      for (const st of list) {
+        const tgtEl = shipEl(st.tgtS, st.tgtI);
+        setTimeout(() => {
+          if (st.hit) impact(tgtEl, 'air', st.dmg, st.sink);
+          else missFx(tgtEl, 'air');
+        }, impactAt + Math.random() * 240);
+      }
+    }
+
+    /* ---- 空袭（单次，旧格式回退） ---- */
+    function airAnim(ev, atkEl, tgtEl) {
+      if (atkEl) atkEl.classList.add('firing');
+      const from = atkEl ? centerOf(atkEl) : fallbackPoint(null);
+      const to = tgtEl ? centerOf(tgtEl) : fallbackPoint(atkEl);
+      const mid = { x: (from.x + to.x) / 2 + (Math.random() - 0.5) * 50, y: from.y - 170 };
+      const d1 = Math.round(flightAir * 0.42);
+      const d2 = Math.round(flightAir * 0.58);
+      for (let k = 0; k < 3; k++) {
+        const pl = mkEl('proj-plane', k === 1 ? '✈' : '⌃');
+        const bx = from.x - 20 + k * 16, by = from.y + 8 - k * 7;
+        put(pl, bx, by);
+        document.body.appendChild(pl);
+        const t0 = 15 + k * 65;
+        setTimeout(() => fly(pl, mid.x, mid.y, d1, 'cubic-bezier(.3,.7,.5,1)'), t0);
+        setTimeout(() => fly(pl, to.x, to.y, d2, 'cubic-bezier(.6,.05,.9,.55)'), t0 + d1);
+        setTimeout(() => {
+          for (let b = 0; b < 2; b++) {
+            setTimeout(() => {
+              const bomb = mkEl('bomb');
+              put(bomb, to.x - 9 + b * 13 + (Math.random() - 0.5) * 8, to.y - 36);
+              document.body.appendChild(bomb);
+              requestAnimationFrame(() => {
+                bomb.style.transform = 'translateY(30px)';
+                bomb.style.transition = 'transform 180ms cubic-bezier(.7,0,1,1)';
+              });
+              setTimeout(() => {
+                bomb.remove();
+                if (ev.hit) impact(tgtEl, 'air', ev.dmg, ev.sink);
+                else missFx(tgtEl, 'air');
+              }, 210);
+            }, b * 120);
+          }
+          pl.remove();
+        }, t0 + d1 + d2 + 40);
+      }
+      if (atkEl) setTimeout(() => atkEl.classList.remove('firing'), flightAir + 220);
+    }
+
+    /* ---- 先制对潜：深水炸弹抛投 ---- */
+    function aswAnim(ev, atkEl, tgtEl) {
+      if (atkEl) {
+        atkEl.classList.add('firing');
+        setTimeout(() => atkEl.classList.remove('firing'), 700);
+      }
+      const from = atkEl ? centerOf(atkEl) : fallbackPoint(null);
+      const to = tgtEl ? centerOf(tgtEl) : fallbackPoint(atkEl);
+      const apex = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 100 };
+      for (let k = 0; k < 2; k++) {
+        const dc = mkEl('dc');
+        const bx = from.x, by = from.y - 8;
+        put(dc, bx, by);
+        document.body.appendChild(dc);
+        setTimeout(() => {
+          fly(dc, apex.x, apex.y, 230, 'cubic-bezier(.4,.2,.6,1)');
+          setTimeout(() => {
+            fly(dc, to.x, to.y, 250, 'cubic-bezier(.55,.1,.85,.6)');
+            setTimeout(() => {
+              dc.remove();
+              if (k === 1) {
+                if (ev.hit) impact(tgtEl, 'asw', ev.dmg, ev.sink);
+                else missFx(tgtEl, 'asw');
+              }
+            }, 270);
+          }, 250);
+        }, 40 + k * 200);
+      }
+    }
+
+    /* ---- S1 空战：敌我机群对冲，中空被击落 ---- */
+    function airFightAnim(ev) {
+      const b = bfBox();
+      const rowA = root.querySelector('#rowA');
+      const rowB = root.querySelector('#rowB');
+      if (!rowA || !rowB) return;
+      const ra = rowA.getBoundingClientRect();
+      const rb = rowB.getBoundingClientRect();
+      const midY = (ra.bottom + rb.top) / 2;
+      const spanX = b.width * 0.5;
+      const loseSide = ev.atkS === 'B' ? 'B' : 'A';     // 损失较重的一侧派出更多机群
+      const nA = loseSide === 'A' ? Math.min(3 + Math.floor((ev.dmg || 4) / 4), 6) : 3;
+      const nB = loseSide === 'B' ? Math.min(3 + Math.floor((ev.dmg || 4) / 4), 6) : 3;
+      const t = Math.round(flight * 0.6);
+      const puffAt = (x, y) => {
+        const puff = mkEl('flak-puff');
+        put(puff, x, y);
+        document.body.appendChild(puff);
+        setTimeout(() => puff.remove(), 550);
+      };
+      /* 我方机群向下迎击 */
+      for (let k = 0; k < nA; k++) {
+        setTimeout(() => {
+          const pl = mkEl('proj-plane', '⌃');
+          const bx = b.left + b.width * 0.2 + Math.random() * spanX, by = ra.top + ra.height * 0.4;
+          put(pl, bx, by);
+          document.body.appendChild(pl);
+          const tx = b.left + b.width * 0.3 + Math.random() * spanX, ty = midY - 16 - Math.random() * 24;
+          requestAnimationFrame(() => fly(pl, tx, ty, t, 'cubic-bezier(.5,.3,.6,1)'));
+          setTimeout(() => { pl.remove(); puffAt(tx, ty); }, t);
+        }, k * 45);
+      }
+      /* 敌方机群向上迎击 */
+      for (let k = 0; k < nB; k++) {
+        setTimeout(() => {
+          const pl = mkEl('proj-plane', '⌃');
+          const bx = b.left + b.width * 0.2 + Math.random() * spanX, by = rb.top + rb.height * 0.6;
+          put(pl, bx, by);
+          document.body.appendChild(pl);
+          const tx = b.left + b.width * 0.3 + Math.random() * spanX, ty = midY + 16 + Math.random() * 24;
+          requestAnimationFrame(() => fly(pl, tx, ty, t, 'cubic-bezier(.5,.3,.6,1)'));
+          setTimeout(() => { pl.remove(); puffAt(tx, ty); }, t);
+        }, k * 45);
+      }
+    }
+
+    /* ---- S2 对空炮火：防空炮仰射机群 + 黑烟 ---- */
+    function flakAnim(ev, atkEl, tgtEl) {
+      const from = atkEl ? centerOf(atkEl) : fallbackPoint(null);
+      /* 炮口指向空中的敌机机群（目标舰上空、两行之间），而非舰体本身 */
+      const sky = tgtEl ? (() => {
+        const tb = tgtEl.getBoundingClientRect();
+        const rb = root.querySelector('#rowB').getBoundingClientRect();
+        const ra = root.querySelector('#rowA').getBoundingClientRect();
+        const midY = (ra.bottom + rb.top) / 2;
+        const sideDown = tgtEl.closest('#rowB') ? -1 : 1;   // 敌机从中线附近俯冲而来
+        return { x: tb.left + tb.width / 2 + (Math.random() - 0.5) * 70, y: midY + sideDown * (18 + Math.random() * 40) };
+      })() : fallbackPoint(atkEl);
+      const n = Math.min(Math.max(ev.dmg || 3, 3), 5);
+      const t = Math.round(flight * 0.45);
+      for (let k = 0; k < n; k++) {
+        setTimeout(() => {
+          const f2 = { x: from.x + (Math.random() - 0.5) * 32, y: from.y + (Math.random() - 0.5) * 26 };
+          const t2 = { x: sky.x + (Math.random() - 0.5) * 46, y: sky.y + (Math.random() - 0.5) * 34 };
+          const ang = Math.atan2(t2.y - f2.y, t2.x - f2.x) * 180 / Math.PI;
+          const len = Math.hypot(t2.x - f2.x, t2.y - f2.y);
+          const tr = mkEl('tracer');
+          put(tr, f2.x, f2.y);
+          tr.style.transform = `rotate(${ang}deg)`;
+          tr.style.width = '0px';
+          document.body.appendChild(tr);
+          requestAnimationFrame(() => {
+            tr.style.width = len + 'px';
+            tr.style.transition = `width ${t}ms linear`;
+          });
+            setTimeout(() => {
+              tr.remove();
+              const puff = mkEl('flak-puff');
+              put(puff, t2.x, t2.y);
+              document.body.appendChild(puff);
+              setTimeout(() => puff.remove(), 550);
+            }, t);
+        }, k * 40);
+      }
+    }
+
+    function playEvent(ev) {
+      const atkEl = shipEl(ev.atkS, ev.atkI);
+      const tgtEl = shipEl(ev.tgtS, ev.tgtI);
+      switch (ev.kind) {
+        case 'shell': case 'night': gunAnim(ev, atkEl, tgtEl); break;
+        case 'torp': case 'open_torp': torpAnim(ev, atkEl, tgtEl); break;
+        case 'air': (ev.strikes ? airStrikeBulkAnim(ev) : airAnim(ev, atkEl, tgtEl)); break;
+        case 'asw': aswAnim(ev, atkEl, tgtEl); break;
+        case 'airfight': airFightAnim(ev); break;
+        case 'flak': flakAnim(ev, atkEl, tgtEl); break;
+      }
+    }
+    const evDur = ev => {
+      switch (ev.kind) {
+        case 'torp': case 'open_torp': return flightTorp + 250;
+        case 'air': return ev.strikes ? flightAir + 620 : flightAir + 300;
+        case 'asw': return 540;
+        case 'airfight': return Math.round(flight * 0.6) + 220 + Math.min(ev.dmg || 4, 12) * 45;
+        case 'flak': return Math.round(flight * 0.45) + 180 + Math.min(Math.max(ev.dmg || 3, 3), 5) * 40;
+        default: return flight + 230;
+      }
+    };
+
+    /* ---- 跳过演出：清空计时器，瞬时播放剩余条目 ---- */
+    let timerId = null;
+    let skipped = false;
+    const skipBtn = root.querySelector('#fxSkip');
+    skipBtn.addEventListener('click', () => {
+      if (skipped || pos >= N) return;
+      skipped = true;
+      clearTimeout(timerId);
+      root.querySelectorAll('.proj-shell,.proj-torp,.proj-plane,.bomb,.dc,.explosion,.dmg-num,.splash,.tracer,.flak-puff,.miss-txt')
+        .forEach(el => el.remove());
+      root.querySelectorAll('.battle-ship.firing,.battle-ship.hit').forEach(el => el.classList.remove('firing', 'hit'));
+      while (pos < N) {
+        const e = entries[pos++];
+        if (typeof e === 'string') {
+          const line = document.createElement('div');
+          line.className = 'line';
+          line.textContent = e;
+          logEl.appendChild(line);
+        } else if (e.snap) updateBars(e.snap);
+      }
+      logEl.scrollTop = logEl.scrollHeight;
+      showResult();
+    });
+
+    /* ---- 顺序播放器 ---- */
+    let pos = 0;
+    if (window.__battleFxDebug) { window.__pos = 0; window.__battleN = N; }
+    const step = () => {
+      if (window.__battleFxDebug) window.__pos = pos;
+      if (pos >= N) { showResult(); return; }
+      const e = entries[pos++];
+      let wait = delay;
       if (typeof e === 'string') {
+        const isPhase = e.includes('——') || e.includes('进入夜战') || e.includes('航空战') || e.includes('交战形态') || e.includes('索敌');
         const line = document.createElement('div');
-        line.className = 'line' + (e.includes('击沉') ? ' sink' : e.includes('发动') ? ' ci' : '');
+        line.className = 'line' + (e.includes('击沉') ? ' sink'
+          : (e.includes('发动') || e.includes('空袭') || e.includes('Cut-in')) ? ' ci'
+          : isPhase ? ' phase' : '');
         line.textContent = e;
         logEl.appendChild(line);
         logEl.scrollTop = logEl.scrollHeight;
+        wait = delay + (isPhase ? 90 : 0);
       } else if (e.snap) {
         updateBars(e.snap);
+        wait = Math.round(delay * 0.45);
+      } else if (e.event) {
+        playEvent(e.event);
+        wait = evDur(e.event);
       }
-    }, speed);
+      timerId = setTimeout(step, wait);
+    };
 
     function updateBars(snap) {
       [['rowA', snap.A], ['rowB', snap.B]].forEach(([rowId, arr]) => {
@@ -228,13 +620,15 @@ const SortieUI = (() => {
     }
 
     function showResult() {
-      const gains = opts.gains || Progression.applyBattleResult(1, r.result, isPractice);
+      const res = opts.gains ? { gains: opts.gains, adm: opts.adm } : Progression.applyBattleResult(1, r.result, isPractice);
+      const gains = res.gains || [];
+      const admExp = r.admExp || (res.adm ? res.adm.exp : 0);
       const rankLabel = r.result.perfect ? '完全胜利' : { S: '胜利', A: '胜利', B: '战术胜利', C: '战术败北', D: '败北', E: '败北E' }[r.result.rank] || '败北';
       root.querySelector('#battleLog').insertAdjacentHTML('beforeend',
         `<div class="line" style="margin-top:8px">
           <span class="big-rank">${r.result.rank} ${rankLabel}</span>
           ${r.drop ? `<span style="color:var(--gold)"> 掉落新舰娘：${UI.esc(Game.shipDef(r.drop).zh)}！</span>` : ''}
-          <div class="hint">${gains.map(g => { const s = st.ships[g.uid]; return `${UI.esc(Game.shipDef(s).zh)} EXP+${g.exp}${g.ups ? ` 升级Lv.${s.lv}！` : ''}`; }).join(' ｜ ')}</div>
+          <div class="hint">${gains.map(g => { const s = st.ships[g.uid]; return `${UI.esc(Game.shipDef(s).zh)} EXP+${g.exp}${g.ups ? ` 升级Lv.${s.lv}！` : ''}`; }).join(' ｜ ')}${admExp ? ` ｜ 提督EXP+${admExp}` : ''}</div>
         </div>`);
       const nav = document.createElement('div');
       nav.className = 'btn-row';
@@ -252,12 +646,16 @@ const SortieUI = (() => {
       });
       Game.save();
     }
+
+    step();
   }
 
   function battleShipHtml(s, idx) {
     const name = s.zh || s.name || '';
+    const t = s.type || 'UN';
+    const zh = (typeof SHIP_TYPE_ZH !== 'undefined' && SHIP_TYPE_ZH[t]) ? SHIP_TYPE_ZH[t] : t;
     return `<div class="battle-ship" data-ship="${idx}">
-      <div class="portrait-ph">${Util.esc(name)}</div>
+      <div class="ship-icon type-${Util.esc(t)}"><span class="type-code">${Util.esc(t)}</span><span class="type-name">${Util.esc(zh)}</span></div>
       <div class="bname">${Util.esc(name)}${s.boss ? ' ☠' : ''}</div>
       <div class="bhp"><div class="ok" style="width:100%"></div></div>
     </div>`;

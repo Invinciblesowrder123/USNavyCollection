@@ -61,16 +61,28 @@ const Logistics = (() => {
     st.expeditions[fleetIdx] = null;
     st.stats.expedition++;
     Progression.notify('expedition', 1);
-    G.gain(ex.reward);
-    /* 远征归来：获得经验（参照wiki：基础×旗舰1.5），疲劳+30 */
-    const expBase = Math.min(500, Math.round(ex.time * 2));
+    /* 大成功判定（参照wiki：舰队全员闪可大幅提高大成功率；大成功资源/经验×2） */
+    const fleetShips = st.fleet[fleetIdx].map(u => st.ships[u]).filter(Boolean);
+    const sparkled = fleetShips.filter(s => s.morale >= 50).length;
+    const great = fleetShips.length && sparkled === fleetShips.length
+      ? Util.chance(0.95) : Util.chance(0.15);
+    const rew = {};
+    for (const k in ex.reward) rew[k] = (ex.reward[k] || 0) * (great ? 2 : 1);
+    G.gain(rew);
+    /* 提督经验（wiki：远征一览入手经验值即提督经验，大成功×2，失败×0.3） */
+    const expBase = ex.exp || Math.min(500, Math.round(ex.time * 2));
+    G.addAdmiralExp(Math.round(expBase * (great ? 2 : 1)));
+    /* 舰娘经验（参照wiki：基础经验 ×(大成功2倍)×(随机2倍，可叠加)× 旗舰1.5），疲劳+30 */
     for (const uid of st.fleet[fleetIdx]) {
       const s = st.ships[uid];
       if (!s) continue;
-      Progression.addShipExp(uid, Math.round(expBase * (st.fleet[fleetIdx][0] === uid ? 1.5 : 1)));
+      let exp = expBase * (great ? 2 : 1);
+      if (Util.chance(0.5)) exp *= 2;                       /* 随机两倍化 */
+      if (st.fleet[fleetIdx][0] === uid) exp *= 1.5;        /* 旗舰加成 */
+      Progression.addShipExp(uid, Math.round(exp));
       s.morale = Math.min(100, s.morale + 30);
     }
-    return { ok: true, ex, reward: ex.reward };
+    return { ok: true, ex, reward: rew, great };
   }
 
   /* ============ 补给 ============ */
@@ -152,7 +164,9 @@ const Logistics = (() => {
     if (c.dmg <= 0) return { ok: false, msg: '该舰娘不需要修理' };
     if (st.resources.steel < c.steel) return { ok: false, msg: `钢材不足！需要 ${c.steel}` };
     st.resources.steel -= c.steel;
-    st.repairs[dockIdx] = { ship: uid, start: Date.now(), end: Date.now() + c.minutes * TIME_SCALE * 1000 };
+    /* 测试模式：瞬间入渠完成（end=现在，下一个时钟tick自动修好） */
+    const end = G.isTestMode() ? Date.now() : Date.now() + c.minutes * TIME_SCALE * 1000;
+    st.repairs[dockIdx] = { ship: uid, start: Date.now(), end };
     Progression.notify('repair', 1);
     return { ok: true, c };
   }
@@ -177,11 +191,16 @@ const Logistics = (() => {
     return st.practice;
   }
 
-  /* 生成5个梯度演习对手（按提督等级） */
+  /* 生成5个梯度演习对手（等级参照我方舰队最高舰娘等级；提督等级下限） */
   function PracticeGen() {
     const G = GameRef();
     const st = G.state;
-    const lv = st.admiral.level;
+    let topLv = st.admiral.level;
+    for (const uid of st.fleet[1] || []) {
+      const s = st.ships[uid];
+      if (s && s.lv > topLv) topLv = s.lv;
+    }
+    const lv = Math.min(Progression.MAX_LV, Math.max(st.admiral.level, topLv));
     const names = ['列克星敦队的演练', '弗莱彻小队的合练', '大黄蜂的挑战', '密苏里的邀请', '深海舰队模拟战'];
     const fleets = [];
     const defs = ['mahan', 'benson', 'fletcher', 'atlanta', 'helena', 'brooklyn', 'baltimore', 'neworleans', 'iowa', 'northcarolina', 'essex', 'enterprise', 'saratoga', 'ranger', 'independence', 'johnston', 'gato', 'sbroberts'];
@@ -192,7 +211,7 @@ const Logistics = (() => {
       for (let k = 0; k < count; k++) {
         const t = types[Math.min(k, types.length - 1)];
         const pool = defs.filter(id => ShipData[id].type === t);
-        roster.push({ id: Util.pick(pool), lv: Math.max(5, Math.floor(lv * Util.rf(0.6, 1.2))) });
+        roster.push({ id: Util.pick(pool), lv: Math.max(5, Math.min(Progression.MAX_LV, Math.round(lv * Util.rf(0.6, 1.2)))) });
       }
       fleets.push({ name: names[i % names.length], ships: roster });
     }

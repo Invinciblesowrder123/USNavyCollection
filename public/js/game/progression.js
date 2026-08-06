@@ -6,28 +6,55 @@
 const Progression = (() => {
   const GameRef = () => (typeof window !== 'undefined') ? window.Game : require('../core/state.js').Game;
 
-  const MAX_LV = 99;
+  /* 等级上限188（参照舰娘百科经验表：2026/05/29更新后 185→188） */
+  const MAX_LV = 188;
   const KAI_COST = { fuel: 200, ammo: 100, steel: 300, baux: 50 };
 
-  /* ============ 经验（参照舰娘百科经验表：Lv1~99 累计85.15万，Lv99→100再需14.85万） ============ */
+  /* ============ 经验（参照舰娘百科「舰娘升级所需经验值」Lv1~188 完整表） ============
+   * EXP_NEED[lv] = 升到 lv 级所需经验（lv-1 → lv），Lv1=0
+   * 本作无结婚系统：99→100 作为普通升级（14.85万），此后沿用 wiki 婚后表数值
+   * （wiki 婚后表累计从 Lv100 重新计 0，此处顺延不归零，曲线斜率与 wiki 一致） */
+  const EXP_NEED = (() => {
+    const a = new Array(190).fill(0);
+    for (let lv = 2; lv <= 51; lv++) a[lv] = 100 * (lv - 1);
+    for (let lv = 52; lv <= 60; lv++) a[lv] = 100 * (2 * lv - 52);     /* 52:5200 … 60:6800 */
+    for (let lv = 61; lv <= 70; lv++) a[lv] = 300 * lv - 11300;          /* 61:7000 … 70:9700 */
+    for (let lv = 71; lv <= 80; lv++) a[lv] = 400 * lv - 18400;          /* 71:10000 … 80:13600 */
+    for (let lv = 81; lv <= 90; lv++) a[lv] = 500 * lv - 26500;          /* 81:14000 … 90:18500 */
+    a[91] = 19000; a[92] = 20000; a[93] = 22000; a[94] = 25000; a[95] = 30000;
+    a[96] = 40000; a[97] = 60000; a[98] = 90000; a[99] = 148500;
+    a[100] = 148500; a[101] = 10000; a[102] = 1000; a[103] = 2000; a[104] = 3000; a[105] = 4000;
+    a[106] = 5000; a[107] = 6000; a[108] = 7000; a[109] = 8000; a[110] = 9000; a[111] = 10000;
+    a[112] = 12000; a[113] = 14000; a[114] = 16000; a[115] = 18000; a[116] = 20000; a[117] = 23000;
+    a[118] = 26000; a[119] = 29000; a[120] = 32000; a[121] = 35000; a[122] = 39000; a[123] = 43000;
+    a[124] = 47000; a[125] = 51000; a[126] = 55000; a[127] = 59000; a[128] = 63000; a[129] = 67000;
+    a[130] = 71000; a[131] = 75000; a[132] = 80000; a[133] = 85000; a[134] = 90000; a[135] = 95000;
+    a[136] = 100000; a[137] = 105000; a[138] = 110000; a[139] = 115000; a[140] = 120000;
+    a[141] = 127000; a[142] = 134000; a[143] = 141000; a[144] = 148000; a[145] = 155000;
+    a[146] = 163000; a[147] = 171000; a[148] = 179000; a[149] = 187000; a[150] = 195000;
+    a[151] = 204000; a[152] = 213000; a[153] = 222000; a[154] = 231000; a[155] = 240000; a[156] = 250000;
+    a[157] = 60000; a[158] = 80000; a[159] = 110000; a[160] = 150000; a[161] = 200000; a[162] = 260000;
+    a[163] = 330000; a[164] = 410000; a[165] = 500000;
+    a[166] = 100000; a[167] = 113000; a[168] = 139000; a[169] = 178000; a[170] = 230000;
+    a[171] = 295000; a[172] = 373000; a[173] = 457000; a[174] = 561000; a[175] = 684000;
+    a[176] = 150000; a[177] = 200000; a[178] = 300000; a[179] = 500000; a[180] = 900000;
+    a[181] = 200000; a[182] = 400000; a[183] = 600000; a[184] = 800000; a[185] = 1000000;
+    a[186] = 1200000; a[187] = 1400000; a[188] = 1600000;
+    return a;
+  })();
+
+  /* 从 lv 级升到 lv+1 所需经验（lv = 1..187）；上限等级返回 0 */
   function shipExpToLevel(lv) {
-    /* 从 lv 级升到 lv+1 所需经验（lv = 1..98） */
-    if (lv < 1) return 0;
-    if (lv <= 50) return 100 * lv;
-    if (lv <= 60) return 100 * (2 * lv - 50);
-    if (lv <= 70) return 100 * (3 * lv - 110);
-    if (lv <= 80) return 100 * (4 * lv - 180);
-    if (lv <= 90) return 100 * (5 * lv - 260);
-    if (lv === 91) return 20000;
-    if (lv === 92) return 22000;
-    if (lv === 93) return 25000;
-    if (lv === 94) return 30000;
-    if (lv === 95) return 40000;
-    if (lv === 96) return 60000;
-    if (lv === 97) return 90000;
-    if (lv === 98) return 148500;
-    if (lv === 99) return 148500;   /* 99→100（结婚），演习经验公式亦引用 */
-    return 0;
+    if (lv < 1 || lv >= MAX_LV) return 0;
+    return EXP_NEED[lv + 1];
+  }
+  /* 累计经验值（1级起，演习公式引用：wiki 演习经验=(旗舰累计/100+第二舰累计/300)） */
+  function shipCumExp(lv) {
+    if (lv <= 1) return 0;
+    if (lv > MAX_LV) lv = MAX_LV;
+    let sum = 0;
+    for (let i = 2; i <= lv; i++) sum += EXP_NEED[i];
+    return sum;
   }
   function addShipExp(uid, exp) {
     const G = GameRef();
@@ -283,31 +310,51 @@ const Progression = (() => {
     const q = QUESTS.find(x => x.id === qid);
     st.quests[qid].claimed = true;
     const r = addQuestReward(st, q);
-    const ships = r.ship ? r.ship.map(id => G.createShip(id, 1)) : [];
+    const ships = r.ship ? r.ship.map(id => { const s = G.createShip(id, 1); G.equipDefaults(s.uid); return s; }) : [];
     const eqs = r.equip ? r.equip.map(id => G.createEquip(id)) : [];
     return { ok: true, q, ships, eqs };
   }
 
-  /* ============ 出击结果经验结算（参照wiki：基础=敌HP总和/2 × 评价×旗舰×MVP） ============ */
-  const RANK_EXP = { S: 1.0, A: 1.0, B: 0.9, C: 0.8, D: 0.7, E: 0.5 };
+  /* ============ 出击结果经验结算 ============
+   * 舰娘经验（参照wiki「舰娘经验值获得」）：
+   *   基本经验 = 敌舰队总HP/2 × 评价倍率 × 旗舰1.5 × MVP2.0（E评价旗舰加成无效）
+   *   评价倍率：完全胜利S x1.2 / 胜利S x1.0 / 胜利A x1.0 / 战术胜利B·败北C x0.8 / 败北D x0.7 / 败北E x0.5
+   * 被击沉（HP=0）的舰娘不获得经验值
+   */
+  const RANK_EXP = { S: 1.0, A: 1.0, B: 0.8, C: 0.8, D: 0.7, E: 0.5 };
+  /* 演习评价倍率（wiki「演习·评价补正表」）：演习败北倍率比出击更低 */
+  const PRACTICE_RANK_EXP = { S: 1.2, A: 1.0, B: 1.0, C: 0.64, D: 0.56, E: 0.4 };
 
   function applyBattleResult(fleetIdx, result, isPractice) {
     const G = GameRef();
     const st = G.state;
     const fleet = st.fleet[fleetIdx];
     const rank = result.rank || 'D';
-    const rankMult = rank === 'S' ? (result.perfect ? 1.2 : 1.0) : (RANK_EXP[rank] || 0.5);
+    const admOut = { exp: 0, up: false };
     let base;
     if (isPractice) {
-      /* 演习：补正前经验 = 旗舰必要exp/100 + 第2舰必要exp/300（+0~3随机） */
-      const ships = fleet.map(u => st.ships[u]).filter(Boolean);
-      const lv1 = ships[0], lv2 = ships[1];
-      let pre = (lv1 ? shipExpToLevel(lv1.lv) : 0) / 100 + (lv2 ? shipExpToLevel(lv2.lv) : 0) / 300;
+      /* 演习（参照wiki「演习」）：
+       * 补正前经验 = 敌方旗舰累计经验/100 + 敌方第二舰累计经验/300（+0~3随机）
+       * 基本经验 = 补正前≤500 直接取；>500 则 500+√(补正前-500)
+       * 提督经验 = 评价加成(20/0/0) + 等级差×20 + 40，取20的倍数，限 [20,160] */
+      const en = result.enemySide || [];
+      const lv1 = en[0] ? en[0].lv : 1, lv2 = en[1] ? en[1].lv : 1;
+      let pre = shipCumExp(lv1) / 100 + shipCumExp(lv2) / 300;
       pre = Math.floor(pre) + Util.ri(0, 3);
       base = pre <= 500 ? pre : Math.floor(500 + Math.sqrt(pre - 500));
+      const oppLv = en.reduce((m, s) => Math.max(m, s.lv || 0), 1);
+      const lvDiff = oppLv - st.admiral.level;
+      const bonus = rank === 'S' ? 20 : 0;
+      let adm = bonus + 20 * lvDiff + 40;
+      adm = Util.clamp(Math.round(adm / 20) * 20, 20, 160);
+      G.addAdmiralExp(adm);
+      admOut.exp = adm;
     } else {
       base = Math.floor((result.enemyHpTotal || 0) / 2);
     }
+    const rankMult = isPractice
+      ? (PRACTICE_RANK_EXP[rank] || 0.4)
+      : (rank === 'S' ? (result.perfect ? 1.2 : 1.0) : (RANK_EXP[rank] || 0.5));
     const mySide = result.mySide;
     const gains = [];
     for (const f of fleet) {
@@ -315,11 +362,13 @@ const Progression = (() => {
       if (!s) continue;
       const side = mySide && mySide.find(x => x.uid === f);
       if (!side) continue;
+      if (side.hp <= 0) continue;                 /* 被击沉的舰娘无法获得经验值 */
       let exp = base;
       if (result.mvpUid && result.mvpUid === f) exp *= 2;
       if (rank !== 'E' && st.fleet[fleetIdx][0] === f) exp *= 1.5;  /* E评价旗舰加成无效 */
       exp = Math.floor(exp * rankMult);
       const ups = addShipExp(f, exp);
+      if (ups) admOut.up = true;
       gains.push({ uid: f, exp, ups });
     }
     if (!isPractice) {
@@ -330,7 +379,7 @@ const Progression = (() => {
     } else {
       notify('practice', 1);
     }
-    return gains;
+    return { gains, adm: admOut };
   }
 
   /* 动态条件检查（编成规模/搭载飞机数），由主循环每秒调用 */
@@ -352,7 +401,7 @@ const Progression = (() => {
   }
 
   return {
-    MAX_LV, shipExpToLevel, addShipExp, remodelInfo, remodel,
+    MAX_LV, shipExpToLevel, shipCumExp, addShipExp, remodelInfo, remodel,
     modernizeInfo, modernize, modernizePreview, materialValue, modernCap,
     gainReward, gainDeviation, bonusLevel,
     resetDue, resetQuests, initQuests, notify, canClaim, claimQuest,

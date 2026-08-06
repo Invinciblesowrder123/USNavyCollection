@@ -26,6 +26,8 @@ const QuestsUI = (() => {
           if (r.ammo) rw.push(`弹+${r.ammo}`);
           if (r.steel) rw.push(`钢+${r.steel}`);
           if (r.baux) rw.push(`铝+${r.baux}`);
+          if (r.screws) rw.push(`改修资材+${r.screws}`);
+          if (r.devMats) rw.push(`开发资材+${r.devMats}`);
           if (r.equip) rw.push(r.equip.map(id => EquipmentData[id].zh).join('、'));
           if (r.ship) rw.push(r.ship.map(id => ShipData[id].zh).join('、'));
           const done = qq.progress >= q.cond.count;

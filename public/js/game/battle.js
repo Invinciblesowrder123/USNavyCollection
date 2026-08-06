@@ -1,12 +1,19 @@
 ﻿'use strict';
 /* ============================================================
- * 战斗引擎 v3 — 还原《舰队收藏》机制（参考舰娘百科 zh.kcwiki.cn）
- * 流程: 阵型选择 → 索敌 → 航空战(制空权/空袭) → 先制对潜 → 开幕雷击
- *       → 交战形态 → 第一轮炮击战(射程制·敌我交替·我方先手)
+ * 战斗引擎 v4 — 还原《舰队收藏》机制（参照舰娘百科 zh.kcwiki.cn「战斗」「航空战」「伤害计算」）
+ * 流程: 阵型选择 → 索敌 → 航空战(制空权/S1空战击坠/S2对空炮火/开幕空袭)
+ *       → 先制对潜 → 开幕雷击 → 交战形态 → 第一轮炮击战(射程制·敌我交替·我方先手)
  *       → 第二轮炮击战(位置制) → 雷击战(双方·中破罚站) → 夜战(单轮·大破罚站)
- * 损伤状态: 小破≤75% / 中破≤50%(火力-20%·禁雷击·空母罚站) / 大破≤25%(火力-60%·禁夜战)
- * 防沉保护: 我方舰娘受到≥当前HP的伤害时，仅损失当前HP的50%~80%
- * 胜利判定/MVP/经验倍率 参照 wiki
+ * 数值（wiki）: 阈值 昼战炮击220 / 昼战雷击180 / 夜战360 / 航空·对潜170
+ *               S1 空战击坠按制空状态随机比例（双方）
+ *               S2 对空炮火：每格攻击机由一名舰娘迎击（比例击坠+固定击坠，各50%），
+ *                  我方+1保底，对空CI追加固定击坠；轮型阵对空补正1.6
+ *               航空攻击：舰攻机种倍率随机0.8/1.5，舰爆1.0，命中70~80%不受疲劳阵型影响
+ *               损伤状态补正：中破 炮击/夜战/对潜0.7、雷击0.8；大破 炮击/对潜0.4、雷击0
+ *               弹药补正：残弹≥50%为1，<50% 为残弹率/50
+ * 损伤状态: 小破≤75% / 中破≤50% / 大破≤25%（参照wiki）
+ * 防沉保护: 伤害≥当前HP → 扣当前HP的50%~80%（红脸僚舰扣至1）
+ * 旗舰援护: 未满小破的僚舰可随机掩护旗舰（轮型最高）
  * ============================================================ */
 
 const Battle = (() => {
@@ -16,15 +23,21 @@ const Battle = (() => {
   const ENGAGEMENT = { PARALLEL: '同航战', REVERSE: '反航战', T_ADV: 'T字有利', T_DIS: 'T字不利' };
   const ENG_MOD = { PARALLEL: 1.0, REVERSE: 0.8, T_ADV: 1.2, T_DIS: 0.6 };
 
+  /* 阵型补正（wiki：炮击/雷击/对潜/夜战/对空（舰队防空值）） */
   const FORMATIONS = {
-    '单纵阵': { fp: 1.0, tp: 1.0, asw: 0.6, night: 1.0, name: '单纵阵' },
-    '复纵阵': { fp: 0.8, tp: 0.8, asw: 0.8, night: 0.8, name: '复纵阵' },
-    '轮形阵': { fp: 0.7, tp: 0.7, asw: 1.2, night: 1.0, name: '轮形阵' },
-    '梯形阵': { fp: 0.75, tp: 0.6, asw: 1.1, night: 1.0, name: '梯形阵' },
-    '单横阵': { fp: 0.6, tp: 0.6, asw: 1.3, night: 1.0, name: '单横阵' }
+    '单纵阵': { fp: 1.0, tp: 1.0, asw: 0.6, night: 1.0, aa: 1.0, name: '单纵阵' },
+    '复纵阵': { fp: 0.8, tp: 0.8, asw: 0.8, night: 1.0, aa: 1.2, name: '复纵阵' },
+    '轮形阵': { fp: 0.7, tp: 0.7, asw: 1.2, night: 1.0, aa: 1.6, name: '轮形阵' },
+    '梯形阵': { fp: 0.75, tp: 0.6, asw: 1.1, night: 1.0, aa: 1.0, name: '梯形阵' },
+    '单横阵': { fp: 0.6, tp: 0.6, asw: 1.3, night: 1.0, aa: 1.0, name: '单横阵' }
   };
-
-  const S1_LOSS = { LOST: 0.40, INF: 0.30, PAR: 0.20, SUP: 0.12, SURE: 0.04 };
+  /* 旗舰援护率（wiki：轮型最高 > 复纵/梯形/单横 > 单纵最低） */
+  const PROTECT_RATE = { '单纵阵': 0.05, '复纵阵': 0.12, '轮形阵': 0.25, '梯形阵': 0.15, '单横阵': 0.15 };
+  /* 攻击力阈值（wiki现版本：昼战炮击220 / 昼战雷击180 / 夜战360 / 航空·对潜·支援170） */
+  const THRESHOLD = { SHELL: 220, TORP: 180, NIGHT: 360, AIR: 170, ASW: 170 };
+  /* S1 空战击坠比例（wiki：我方按制空状态，敌方 0%~上限） */
+  const S1_MY = { LOST: [0.25, 0.5833], INF: [0.175, 0.4083], PAR: [0.125, 0.2917], SUP: [0.075, 0.175], SURE: [0.025, 0.0583] };
+  const S1_EN = { LOST: [0, 0.10], INF: [0, 0.40], PAR: [0, 0.60], SUP: [0, 0.80], SURE: [0, 1.00] };
 
   /* A胜利击沉数要求（敌舰队规模 -> 击沉数），单舰无A */
   const A_SINKS = { 2: 1, 3: 2, 4: 2, 5: 3, 6: 4 };
@@ -43,7 +56,8 @@ const Battle = (() => {
     const slots = def.slots.map((s, i) => {
       const eq = eqObjs[i] || null;
       const planeLike = eq && (eq.slot === SLOT.FIGHTER || eq.slot === SLOT.ATTACKER || eq.slot === SLOT.BOMBER || eq.slot === SLOT.SEAPLANE);
-      return { size: (def.sizes ? def.sizes[i] : 24), eq, planeAA: planeLike ? (eq.stat.aa || 0) : 0 };
+      /* plane=是否搭载舰载机（含舰战/舰攻/舰爆/水侦）；planeAA=参与制空的机种（对空值>0） */
+      return { size: (def.sizes ? def.sizes[i] : 24), eq, plane: planeLike, planeAA: planeLike ? (eq.stat.aa || 0) : 0 };
     });
     const countType = t => eqObjs.filter(e => e && e.slot === t).length;
     const hasType = t => countType(t) > 0;
@@ -67,6 +81,8 @@ const Battle = (() => {
       hasSeaplane: hasType(SLOT.SEAPLANE) && slots.some(s => s.eq && s.eq.slot === SLOT.SEAPLANE && s.size > 0),
       hasTorpedo: hasType(SLOT.TORPEDO),
       hasASW: stats.asw > 20 || hasType(SLOT.SONAR_DC),
+      sonar: eqObjs.some(e => e && e.cat === '声呐'),
+      dc: eqObjs.some(e => e && e.cat === '爆雷'),
       aaCI: (countType(SLOT.HAA) >= 2) || (countType(SLOT.HAA) >= 1 && countType(SLOT.RADAR) >= 1) || (countType(SLOT.HAA) >= 1 && countType(SLOT.MG) >= 1),
       searchlight: eqObjs.some(e => e && e.id === 'searchlight'),
       alive: stats.hp > 0, hp: stats.hp, dealt: 0
@@ -104,27 +120,29 @@ const Battle = (() => {
     let d = def;
     if (kai >= 1 && d.kai) d = { ...d, ...d.kai };
     if (kai >= 2 && d.kai2) d = { ...d, ...d.kai2 };
-    return buildCombatShip({
+    const ship = buildCombatShip({
       def: d, lv: roster.lv || 1, kai,
       equipIds: d.equip || [], supply: 1, fuel: 1, morale: 50,
       isPlayer: false, uid: 'p' + idx
     });
+    ship.key = roster.id;
+    return ship;
   }
 
   function makeEnemyShip(key, idx) {
     const tpl = DEEP_TEMPLATES[key];
     const st = tpl.stats.slice();
-    const slots = (tpl.slots || []).map(s => ({ size: s.planes, planeAA: s.aa, eq: null }));
+    const slots = (tpl.slots || []).map(s => ({ size: s.planes, plane: s.planes > 0, planeAA: s.aa, eq: null }));
     return {
-      uid: 'e' + idx, isPlayer: false, name: tpl.name, zh: tpl.name, type: tpl.type, boss: !!tpl.boss,
+      uid: 'e' + idx, key, isPlayer: false, name: tpl.name, zh: tpl.name, type: tpl.type, boss: !!tpl.boss,
       stats: { hp: st[0], hpMax: st[0], fp: st[1], tp: st[2], aa: st[3], arm: st[4], evd: st[5], asw: st[6], los: st[7], lck: st[8] },
       lv: 1, morale: 40, ammo: 1, fuel: 1, equipped: [], slots,
-      /* 深海空母射程为超短（第一轮最后行动）；BB/CA 长 */
-      range: tpl.type === 'BB' ? 2 : (tpl.type === 'CA' ? 2 : (tpl.type === 'CV' || tpl.type === 'CVL' ? 0 : 1)),
+      /* 射程（wiki）：深海BB长、CA中、DD/CL短、深海空母超短（第一轮最后行动） */
+      range: tpl.type === 'BB' ? 3 : (tpl.type === 'CA' ? 2 : (tpl.type === 'CV' || tpl.type === 'CVL' ? 0 : 1)),
       mainGuns: tpl.type === 'BB' || tpl.type === 'CA' ? 2 : 0,
       secondaries: 0, apShell: false, radar: false,
       hasSeaplane: false, hasTorpedo: tpl.type === 'DD' || tpl.type === 'CL' || tpl.type === 'SS',
-      hasASW: false, aaCI: false, searchlight: false,
+      hasASW: false, sonar: false, dc: false, aaCI: false, searchlight: false,
       alive: st[0] > 0, hp: st[0], dealt: 0
     };
   }
@@ -139,9 +157,17 @@ const Battle = (() => {
     return r <= 0.25 ? 'da' : r <= 0.5 ? 'mid' : 'ok';
   };
   const isDaPo = s => s.hp > 0 && dmgState(s) === 'da';
-  /* 中破火力-20%、大破-60% */
-  const dmgMult = s => dmgState(s) === 'da' ? 0.4 : dmgState(s) === 'mid' ? 0.8 : 1;
+  /* 损伤状态补正（wiki：中破 炮击/夜战/对潜0.7、雷击0.8；大破 炮击/对潜0.4、雷击0） */
+  const dmgMult = (s, type) => {
+    const st = dmgState(s);
+    if (st === 'da') return type === 'torp' ? 0 : 0.4;
+    if (st === 'mid') return type === 'torp' ? 0.8 : 0.7;
+    return 1;
+  };
+  /* 弹药补正（wiki：残弹率≥50%→1，<50%→残弹率/50） */
+  const ammoBonus = s => s.ammo >= 0.5 ? 1 : Math.max(0, s.ammo * 2);
 
+  /* ============ 制空值与制空状态 ============ */
   function airPower(side) {
     let sum = 0;
     for (const s of side) {
@@ -217,7 +243,42 @@ const Battle = (() => {
     return Util.pick(alive);
   }
 
-  /* 防沉保护：伤害≥当前HP时，只扣取整[当前HP×0.5 + rand(0~当前HP-1)×0.3] */
+  /* ============ 对潜 / 空母系攻击力（wiki公式） ============ */
+  const eqAsw = s => (s.equipped || []).reduce((sum, e) => sum + (e && e.stat && e.stat.asw ? e.stat.asw : 0), 0);
+  /* 对潜攻击力 = √(素对潜)×2 + 装备对潜×1.5 + 攻击类型补正（爆雷13/航空机8），声呐+爆雷套装×1.15 */
+  const aswPower = s => {
+    const base = Math.max(0, s.stats.asw - eqAsw(s));
+    let p = Math.sqrt(base) * 2 + eqAsw(s) * 1.5 + (s.dc ? 13 : 8);
+    if (s.sonar && s.dc) p *= 1.15;
+    return p;
+  };
+  /* 空母系昼战航空攻击：{(火力+雷装+【爆装×1.3】)×1.5}+55（wiki；搭载0也计入面板总和） */
+  const cvAirPower = s => {
+    let bmbSum = 0;
+    for (const eq of s.equipped) {
+      if (!eq) continue;
+      if (eq.slot === SLOT.BOMBER) bmbSum += eq.stat.bmb || 0;
+    }
+    return ((s.stats.fp + s.stats.tp + Math.floor(bmbSum * 1.3)) * 1.5) + 55;
+  };
+  const enCVAirPower = s => 20 + s.slots.reduce((sum, sl) => sum + (sl.size > 0 ? sl.planeAA * 3 : 0), 0);
+  /* 空母能否在炮击战攻击：存在搭载>0的攻击机（舰攻/舰爆） */
+  const canAirAttack = s => s.slots.some(sl => sl.size > 0 && sl.plane &&
+    (s.isPlayer ? (sl.eq && (sl.eq.slot === SLOT.ATTACKER || sl.eq.slot === SLOT.BOMBER)) : true));
+  /* 先制对潜条件（wiki：DD/CL/雷巡/补给 对潜100+声呐；海防 60+声呐 或 75+装备对潜4；轻母 50+声呐+对潜7以上攻击机）
+   * 注：本作面板对潜约为舰C的6成（满级对潜≈50~60），阈值按0.6缩放以保持机制可用 */
+  const canOpeningASW = s => {
+    if (!s.alive) return false;
+    const asw = s.stats.asw;
+    if (s.type === 'DD' || s.type === 'CL' || s.type === 'CLT' || s.type === 'AS') return asw >= 60 && s.sonar;
+    if (s.type === 'DE') return (asw >= 40 && s.sonar) || (asw >= 50 && eqAsw(s) >= 2);
+    if (s.type === 'CVL') return asw >= 30 && s.sonar && s.slots.some(sl => sl.size > 0 && sl.eq && (sl.eq.stat.asw || 0) >= 4 &&
+      (sl.eq.slot === SLOT.ATTACKER || sl.eq.slot === SLOT.SEAPLANE));
+    return false;
+  };
+
+  /* ============ 防沉保护与旗舰援护 ============ */
+  /* 防沉保护：伤害≥当前HP时，只扣取整[当前HP×0.5 + rand(0~当前HP-1)×0.3]（红脸僚舰扣至1） */
   function protectedDamage(hp) {
     return Math.max(1, Math.floor(hp * 0.5 + Util.ri(0, Math.max(0, hp - 1)) * 0.3));
   }
@@ -226,8 +287,8 @@ const Battle = (() => {
     if (dmg <= 0) { log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，被装甲完全弹开！`); return; }
     atk.dealt += dmg;
     if (def.isPlayer && dmg >= def.hp) {
-      /* 我方舰娘防沉保护（不会在通常战斗中轰沉） */
-      const newHp = protectedDamage(def.hp);
+      /* 我方舰娘防沉保护（旗舰/非红脸僚舰扣50%~80%；红脸僚舰扣至1） */
+      const newHp = (!def.isFlag && (def.morale || 0) < 20) ? 1 : protectedDamage(def.hp);
       def.hp = Math.max(1, newHp);
       log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，命中！造成巨大伤害！「${def.name}」大破！（防沉保护）`);
     } else {
@@ -237,13 +298,35 @@ const Battle = (() => {
     }
   }
 
+  /* 旗舰援护（wiki：未满小破的僚舰可掩护旗舰，轮型阵概率最高） */
+  function findProtector(side, formName) {
+    if (!side || !side.length) return null;
+    if (!Util.chance(PROTECT_RATE[formName] || 0)) return null;
+    const escorts = side.filter((x, i) => i > 0 && x.alive && x.hp / x.stats.hpMax > 0.75);
+    if (!escorts.length) return null;
+    return Util.pick(escorts);
+  }
+
+  /* 统一的伤害入口：先判定旗舰援护，再结算 */
+  function applyDamage(log, atk, def, dmg, prefix, extra, defSide, defForm) {
+    if (dmg > 0 && defSide && defSide.length && def === defSide[0]) {
+      const prot = findProtector(defSide, defForm);
+      if (prot) {
+        log.push(`${prefix}${atk.name}${extra || ''}攻击旗舰 ${def.name}，僚舰「${prot.name}」挺身掩护！（旗舰援护）`);
+        dealDamage(log, atk, prot, dmg, prefix, extra);
+        return;
+      }
+    }
+    dealDamage(log, atk, def, dmg, prefix, extra);
+  }
+
   /* HP 快照（供 UI 演出） */
   function snapshot(sideA, sideB) {
     const mk = s => ({ n: s.name, hp: Math.max(0, s.hp), max: s.stats.hpMax, alive: s.alive });
     return { snap: { A: sideA.map(mk), B: sideB.map(mk) } };
   }
 
-  /* ============ 昼战特殊攻击判定 ============ */
+  /* ============ 昼战特殊攻击判定（wiki：制空优势/确保+水侦；主主1.5、主弹1.3、主电1.2、主副1.1、连击1.2×2） ============ */
   function resolveDayAttack(s, airSup) {
     if (s.stats.fp <= 0 || !s.alive) return null;
     if (airSup && s.hasSeaplane && !isDaPo(s)) {
@@ -257,7 +340,7 @@ const Battle = (() => {
     return { mult: 1.0, n: 1, name: null };
   }
 
-  /* ============ 夜战特殊攻击判定（中破时发动率+15%） ============ */
+  /* ============ 夜战特殊攻击判定（wiki：鱼雷CI 1.5×2/主鱼1.3×2/连击1.2×2；中破CI率+15%；探照灯+10%） ============ */
   function resolveNightAttack(s) {
     if (!s.alive || isDaPo(s)) return null;
     if (s.stats.fp + s.stats.tp <= 0) return null;
@@ -269,43 +352,99 @@ const Battle = (() => {
     else if (guns >= 1 && torps >= 1) spec = { mult: 1.3, n: 2, name: '主鱼Cut-in' };
     else if (guns >= 2) spec = { mult: 1.2, n: 2, name: '夜战连击' };
     if (!spec) return { mult: 1.0, n: 1, name: null };
-    let rate = 0.5;
+    let rate = 0.5 + (s.stats.lck || 0) * 0.005;
+    if (s.searchlight) rate += 0.1;               // 探照灯提高夜战CI率
     if (dmgState(s) === 'mid') rate += 0.15;      // 中破CI率+15%
-    return Util.chance(rate) ? spec : { mult: 1.0, n: 1, name: null };
+    return Util.chance(Math.min(rate, 0.95)) ? spec : { mult: 1.0, n: 1, name: null };
   }
 
-  /* ============ 空袭 ============ */
-  function airStrike(log, attackers, defenders, sideLabel, snap) {
+  /* ============ S1 空战击坠（wiki：舰战/舰攻/舰爆/水爆参与，水侦不参与） ============ */
+  function s1Shootdown(side, rate) {
+    let total = 0;
+    for (const s of side) {
+      for (const sl of s.slots) {
+        if (sl.size <= 0 || !sl.plane) continue;
+        if (sl.eq && sl.eq.slot === SLOT.SEAPLANE) continue;
+        const lost = Math.floor(sl.size * Util.rf(rate[0], rate[1]));
+        sl.size = Math.max(0, sl.size - lost);
+        total += lost;
+      }
+    }
+    return total;
+  }
+
+  /* ============ S2 对空炮火迎击（wiki：每格攻击机由一名舰娘迎击；比例+固定击坠各50%；我方+1保底；对空CI追加固定击坠）
+   * 击坠数不超过该格现有搭载（避免出现「击坠数大于敌机总数」的虚数）；
+   * 固定击坠倍率 0.15（低于原 0.25），使空袭机群在 S1/S2 后仍有存活，保证舰攻/舰爆开幕空袭伤害可见 */
+  function aaShootdown(attackers, defenders, isMySide, aaBonus, log, evFn) {
+    let total = 0;
+    for (const a of attackers) {
+      if (!a.alive) continue;
+      for (const sl of a.slots) {
+        if (sl.size <= 0 || !sl.plane) continue;
+        if (sl.eq && sl.eq.slot === SLOT.FIGHTER) continue;   // 舰战不参与S2
+        const defs = defenders.filter(x => x.alive);
+        if (!defs.length) return total;
+        const interceptor = Util.pick(defs);
+        const wAA = interceptor.stats.aa;
+        const fleetAA = defs.reduce((s, x) => s + x.stats.aa, 0) * aaBonus;
+        let down = 0;
+        /* 比例击坠与固定击坠判定互相独立，成功率均约50% */
+        if (Util.chance(0.5)) down += Math.floor(wAA * sl.size * 0.02 * 0.25);
+        if (Util.chance(0.5)) down += Math.floor((wAA + fleetAA) * 0.15 * (isMySide ? 0.8 : 0.75));
+        let ci = 0;
+        if (isMySide && interceptor.aaCI && Util.chance(0.5)) {
+          ci = Util.ri(4, 7);
+          log.push(`「${interceptor.name}」发动对空Cut-in，追加击落 ${ci} 架敌机！`);
+        }
+        down += (isMySide ? 1 : 0) + ci;   // 我方对空迎击+1保底，敌方无保底
+        down = Math.min(down, sl.size);    // 击坠不超过现有搭载
+        sl.size -= down;
+        if (down > 0 && evFn) evFn('flak', interceptor, a, true, down, null, false);
+        total += down;
+      }
+    }
+    return total;
+  }
+
+  /* ============ 开幕空袭（批量结算）：双方防空(S2)结算完毕后，一次性结算全部空袭伤害，
+   * 返回打击列表供 UI 一次性演出；命中/未命中均入列（未命中仅演出投弹落水） ============ */
+  function airStrike(log, attackers, defenders, sideLabel, defSide, defForm) {
+    const strikes = [];
     for (const s of attackers) {
       if (!s.alive) continue;
       for (const sl of s.slots) {
-        if (sl.size <= 0 || sl.planeAA <= 0) continue;
-        const isFighter = sl.eq && sl.eq.slot === SLOT.FIGHTER;
-        if (isFighter) continue;
-        const targets = defenders.filter(t => t.alive);
-        if (!targets.length) return;
+        if (sl.size <= 0) continue;
+        const isStriker = s.isPlayer
+          ? (sl.eq && (sl.eq.slot === SLOT.ATTACKER || sl.eq.slot === SLOT.BOMBER))
+          : sl.plane;
+        if (!isStriker) continue;
+        /* 空袭只能攻击水面舰（对潜需装备反潜机，本作暂无对应机种） */
+        const targets = defenders.filter(t => t.alive && !isSub(t));
+        if (!targets.length) continue;
         const t = Util.pick(targets);
-        let dmg;
-        if (s.isPlayer) {
-          const power = sl.eq.stat.bmb || sl.eq.stat.tp || 0;
-          dmg = calcDamage(threshold(sl.size * power * 0.75 + 5, 170), t.stats.arm, 0.1);
-        } else {
-          const power = 20 + sl.planeAA * 3;
-          dmg = calcDamage(threshold(power, 160), t.stats.arm, 0.1);
+        const r = { s, t, hit: false, dmg: 0, sink: false };
+        if (Util.chance(0.75)) {
+          let ap;
+          if (s.isPlayer) {
+            const isTorp = sl.eq.slot === SLOT.ATTACKER;
+            const planeMult = isTorp ? (Util.chance(0.5) ? 1.5 : 0.8) : 1.0;
+            const power = sl.eq.stat.bmb || sl.eq.stat.tp || 0;
+            ap = planeMult * (power * Math.sqrt(sl.size) + 25);
+          } else {
+            ap = 20 + sl.planeAA * 3;
+          }
+          ap = threshold(ap, THRESHOLD.AIR);
+          const dmg = calcDamage(ap, t.stats.arm, 0.1);
+          /* 空袭同样触发旗舰援护与防沉保护（wiki） */
+          const wasAlive = t.alive;
+          applyDamage(log, s, t, dmg, `${sideLabel}空袭！`, ' 的机队轰炸', defSide, defForm);
+          r.hit = true; r.dmg = dmg; r.sink = wasAlive && !t.alive;
         }
-        log.push(`${sideLabel}空袭！${s.name} 的机队轰炸 ${t.name}，造成 ${dmg} 伤害。`);
-        s.dealt += dmg;
-        if (t.isPlayer && dmg >= t.hp) {
-          const newHp = protectedDamage(t.hp);
-          t.hp = Math.max(1, newHp);
-          log.push(`「${t.name}」大破！（防沉保护）`);
-        } else {
-          t.hp -= dmg;
-          if (t.hp <= 0 && t.alive) { t.alive = false; log.push(`${t.name} 被击沉了！`); }
-        }
-        if (snap) snap();
+        strikes.push(r);
       }
     }
+    return strikes;
   }
 
   /* ============ 主战斗入口 ============ */
@@ -322,10 +461,47 @@ const Battle = (() => {
     const formAName = fA.name, formBName = fB.name;
     const losOk = (opts.losReq == null) || (G.fleetLos(opts.fleetIdx) >= opts.losReq);
     const pushSnap = () => log.push(snapshot(sideA, sideB));
-    const hit = (s, t, dmg, prefix, extra) => { dealDamage(log, s, t, dmg, prefix, extra); pushSnap(); };
+    if (sideA.length) sideA[0].isFlag = true;
+    if (sideB.length) sideB[0].isFlag = true;
+
+    /* 演出事件记录器（随日志顺序插入 {event} 对象，供 UI 播放动画；不影响字符串日志兼容） */
+    const sideOf = (arr, x) => (x == null ? null : arr.indexOf(x));
+    const ev = (kind, atk, tgt, hit, dmg, special, sink) => {
+      log.push({ event: {
+        kind, hit: !!hit, dmg: dmg || 0, special: special || null, sink: !!sink,
+        atkS: atk ? (sideOf(sideA, atk) >= 0 ? 'A' : 'B') : null,
+        atkI: atk ? Math.max(sideOf(sideA, atk), sideOf(sideB, atk)) : -1,
+        tgtS: tgt ? (sideOf(sideA, tgt) >= 0 ? 'A' : 'B') : null,
+        tgtI: tgt ? Math.max(sideOf(sideA, tgt), sideOf(sideB, tgt)) : -1
+      } });
+    };
+    /* 空袭批量演出事件：一次事件携带全部打击结果，UI 一次性演出 */
+    const evAir = list => {
+      if (!list.length) return;
+      const map = x => ({
+        hit: x.hit, dmg: x.dmg, sink: x.sink,
+        atkS: x.s ? (sideOf(sideA, x.s) >= 0 ? 'A' : 'B') : null,
+        atkI: x.s ? Math.max(sideOf(sideA, x.s), sideOf(sideB, x.s)) : -1,
+        tgtS: x.t ? (sideOf(sideA, x.t) >= 0 ? 'A' : 'B') : null,
+        tgtI: x.t ? Math.max(sideOf(sideA, x.t), sideOf(sideB, x.t)) : -1
+      });
+      const mapped = list.map(map);
+      const first = mapped[0];
+      log.push({ event: {
+        kind: 'air', hit: list.some(x => x.hit),
+        dmg: list.reduce((s, x) => s + x.dmg, 0),
+        sink: list.some(x => x.sink), special: null,
+        atkS: first.atkS, atkI: first.atkI, tgtS: null, tgtI: -1,
+        strikes: mapped
+      } });
+    };
 
     L(`敌军阵型：${formationB}。我军选择：${formationA}。`);
     let airSup = false;
+
+    /* ---- 交战形态（45/30/15/10，wiki：彩云可100%回避T不利，未实装） ---- */
+    const eng = Util.weighted({ PARALLEL: 45, REVERSE: 30, T_ADV: 15, T_DIS: 10 });
+    const engMod = ENG_MOD[eng];
 
     /* ---- 航空战（索敌失败则无法参加航空战） ---- */
     const myAir = airPower(sideA), enAir = airPower(sideB);
@@ -334,88 +510,97 @@ const Battle = (() => {
         const air = airState(myAir, enAir);
         L(`航空战！我军制空 ${myAir}，敌军制空 ${enAir}，${air.label}！`);
         airSup = air.key === 'SUP' || air.key === 'SURE';
-        const lossRate = S1_LOSS[air.key];
-        /* S1 空战击坠（我方损失） */
-        for (const s of sideA) {
-          for (const sl of s.slots) {
-            if (sl.planeAA > 0 && sl.size > 0) {
-              sl.size = Math.max(0, sl.size - Math.floor(sl.size * Util.rf(lossRate - 0.05, lossRate + 0.05)));
-            }
-          }
-        }
-        /* S2 对空炮火（我方击落敌机） */
-        for (const s of sideA) {
-          if (!s.alive) continue;
-          for (const sl of sideB) {
-            for (const sl2 of sl.slots) {
-              if (sl2.planeAA > 0 && sl2.size > 0) {
-                sl2.size = Math.max(0, sl2.size - Math.floor(sl2.size * Util.rf(0.02, 0.10)));
-              }
-            }
-          }
-          if (s.aaCI) {
-            let extra = Util.ri(1, 3);
-            for (const sl of sideB) {
-              for (const sl2 of sl.slots) {
-                if (sl2.planeAA > 0 && sl2.size > 0 && extra > 0) { sl2.size = Math.max(0, sl2.size - extra); extra = 0; }
-              }
-            }
-            L(`${s.name} 发动对空Cut-in，追加击落敌机！`);
-          }
-        }
-        /* 双方空袭 */
-        airStrike(log, sideA, sideB, '我军', pushSnap);
-        airStrike(log, sideB, sideA, '敌军', pushSnap);
+        /* S1 空战击坠（双方按制空状态随机比例；舰战/舰攻/舰爆/水爆） */
+        const s1a = s1Shootdown(sideA, S1_MY[air.key]);
+        const s1b = s1Shootdown(sideB, S1_EN[air.key]);
+        if (s1a + s1b > 0) L(`空战击坠：我军损失 ${s1a} 架，击坠敌机 ${s1b} 架。`);
+        if (s1a > 0) ev('airfight', sideA[0] || null, null, true, s1a, null, false);
+        if (s1b > 0) ev('airfight', sideB[0] || null, null, true, s1b, null, false);
+        /* S2 对空炮火迎击（互击对方攻击机；轮型对空补正1.6/复纵1.2） */
+        const s2a = aaShootdown(sideB, sideA, true, fA.aa, log, ev);
+        const s2b = aaShootdown(sideA, sideB, false, fB.aa, log, ev);
+        if (s2a + s2b > 0) L(`对空炮火：击落敌机 ${s2a} 架，被击落 ${s2b} 架。`);
+        /* 开幕空袭：防空结算后一次性结算 + 一次性演出 */
+        evAir(airStrike(log, sideA, sideB, '我军', sideB, formBName));
+        evAir(airStrike(log, sideB, sideA, '敌军', sideA, formAName));
+        pushSnap();
       } else {
         L('索敌失败！无法参加航空战，制空权自动丧失！');
-        airStrike(log, sideB, sideA, '敌军', pushSnap);
+        /* 我方舰载机不离舰不参与航空战；敌方空袭仍会被我方对空炮火迎击 */
+        aaShootdown(sideB, sideA, true, fA.aa, log, ev);
+        evAir(airStrike(log, sideB, sideA, '敌军', sideA, formAName));
+        pushSnap();
       }
     } else {
       L('双方均无航空战力，不发生航空战。');
     }
 
-    /* ---- 先制对潜 ---- */
-    for (const s of sideA) {
-      if (!s.alive || !s.hasASW) continue;
+    /* ---- 先制对潜（wiki：对潜100+声呐等门槛；深海不发动；按射程顺序） ---- */
+    const aswList = sideA.filter(canOpeningASW).sort((a, b) => b.range - a.range);
+    for (const s of aswList) {
       const subs = sideB.filter(t => t.alive && isSub(t));
-      if (!subs.length) continue;
+      if (!subs.length) break;
       const t = Util.pick(subs);
       if (Util.chance(0.9)) {
-        const ap = threshold(s.stats.asw + 20 + (fA.asw || 0), 150);
+        const ap = threshold(aswPower(s) * (fA.asw || 1), THRESHOLD.ASW);
         const dmg = calcDamage(ap, t.stats.arm, 0.1);
-        hit(s, t, dmg, '先制对潜！');
-      } else L(`先制对潜！${s.name} 攻击 ${t.name}，未命中。`);
+        const wasAlive = t.alive;
+        applyDamage(log, s, t, dmg, '先制对潜！', '', sideB, formBName);
+        ev('asw', s, t, true, dmg, null, wasAlive && !t.alive);
+        pushSnap();
+      } else {
+        L(`先制对潜！${s.name} 攻击 ${t.name}，未命中。`);
+        ev('asw', s, t, false, 0, null, false);
+      }
     }
 
-    /* ---- 开幕雷击（Lv10以上潜水舰） ---- */
-    for (const s of sideA) {
-      if (!s.alive || s.type !== 'SS' || s.lv < 10) continue;
-      const t = pickTarget(sideB, s);
-      if (!t) break;
-      if (Util.chance(0.7)) {
-        const ap = threshold(s.stats.tp + 5, 150);
-        const dmg = calcDamage(ap, t.stats.arm, critChance(hitChance(s, t, formAName, formBName, 1, true)));
-        hit(s, t, dmg, '开幕雷击！');
-      } else L(`开幕雷击！${s.name} 的鱼雷未命中。`);
-    }
+    /* ---- 开幕雷击（wiki：Lv10以上潜水舰；深海精锐潜水舰；中破/大破不影响发动但伤害受损伤补正） ---- */
+    const openTorp = (s, targetSide, defForm) => {
+      const t = pickTarget(targetSide, s);
+      if (!t) return;
+      const ch = hitChance(s, t, formAName, formBName, 1, true);
+      if (Math.random() > ch) { L(`开幕雷击！${s.name} 的鱼雷未命中。`); ev('open_torp', s, t, false, 0, null, false); return; }
+      const ap = threshold((s.stats.tp + 5) * dmgMult(s, 'torp'), THRESHOLD.TORP);
+      const dmg = calcDamage(ap, t.stats.arm, critChance(ch));
+      const wasAlive = t.alive;
+      applyDamage(log, s, t, dmg, '开幕雷击！', '', targetSide, defForm);
+      ev('open_torp', s, t, true, dmg, null, wasAlive && !t.alive);
+      pushSnap();
+    };
+    for (const s of sideA) if (s.alive && s.type === 'SS' && s.lv >= 10) openTorp(s, sideB, formBName);
+    for (const s of sideB) if (s.alive && s.type === 'SS' && (s.name.includes('精锐') || s.boss)) openTorp(s, sideA, formAName);
 
-    /* ---- 交战形态（45/30/15/10） ---- */
-    const eng = Util.weighted({ PARALLEL: 45, REVERSE: 30, T_ADV: 15, T_DIS: 10 });
-    const engMod = ENG_MOD[eng];
     L(`交战形态：${ENGAGEMENT[eng]}！`);
 
     /* ---- 炮击战 ---- */
     const shellingTargets = s => (s.isPlayer ? sideB : sideA).filter(t => t.alive);
 
     const doShell = (label, s, t, atk, ammoMult) => {
-      const ch = hitChance(s, t, formAName, formBName, engMod, false);
-      if (Math.random() > ch) { L(`${label}${s.name} 攻击 ${t.name}，未命中。`); return; }
-      const fm = s.isPlayer ? fA.fp : fB.fp;
-      let ap = (s.stats.fp + 5) * fm * engMod * atk.mult * dmgMult(s);
-      if (ammoMult < 1) ap *= ammoMult;
-      ap = threshold(ap, 180);
+      if (isSub(t) && !s.hasASW) {
+        L(`${label}${s.name} 对潜水中的 ${t.name} 攻击无效。`);
+        return;
+      }
+      const isCVShip = isCV(s);
+      let ch, ap;
+      if (isSub(t)) {
+        /* 对潜炮击（wiki：√(素对潜)×2 + 装备对潜×1.5 + 类型补正） */
+        ch = 0.9;
+        ap = threshold(aswPower(s) * (s.isPlayer ? (fA.asw || 1) : (fB.asw || 1)) * engMod * ammoMult, THRESHOLD.ASW);
+      } else if (isCVShip) {
+        /* 空母系昼战航空攻击（wiki公式），命中70~80%不受疲劳/阵型影响 */
+        ch = 0.75;
+        ap = (s.isPlayer ? cvAirPower(s) : enCVAirPower(s)) * (s.isPlayer ? fA.fp : fB.fp) * engMod * ammoMult * dmgMult(s, 'shell');
+        ap = threshold(ap, THRESHOLD.SHELL);
+      } else {
+        ch = hitChance(s, t, formAName, formBName, engMod, false);
+        ap = (s.stats.fp + 5) * (s.isPlayer ? fA.fp : fB.fp) * engMod * atk.mult * dmgMult(s, 'shell');
+        ap = threshold(ap * ammoMult, THRESHOLD.SHELL);
+      }
+      if (Math.random() > ch) { L(`${label}${s.name} 攻击 ${t.name}，未命中。`); ev('shell', s, t, false, 0, atk.name || null, false); return; }
       const dmg = calcDamage(ap, t.stats.arm, critChance(ch));
-      dealDamage(log, s, t, dmg, `${label}`, atk.name ? `发动${atk.name}！` : '');
+      const wasAlive = t.alive;
+      applyDamage(log, s, t, dmg, `${label}`, atk.name ? `发动${atk.name}！` : '', s.isPlayer ? sideB : sideA, s.isPlayer ? formBName : formAName);
+      ev('shell', s, t, true, dmg, atk.name || null, wasAlive && !t.alive);
       pushSnap();
     };
 
@@ -423,12 +608,13 @@ const Battle = (() => {
     const tryShell = (label, s) => {
       if (!s.alive) return false;                        // 击沉→轮空
       if (isCV(s) && dmgState(s) !== 'ok') return false;  // 空母中破/大破罚站
+      if (!isCV(s) && s.stats.fp <= 0) return false;
       const enemies = shellingTargets(s);
       if (!enemies.length) return 'ended';
-      const atk = resolveDayAttack(s, airSup);
+      const atk = isCV(s) ? { mult: 1, n: 1, name: null, cv: true } : resolveDayAttack(s, airSup);
       if (!atk) return false;
-      const ammoMult = s.ammo < 0.25 ? 0 : (s.ammo < 0.5 ? 0.5 : 1);
-      if (ammoMult === 0) { L(`${label}${s.name} 弹药耗尽，无法炮击。`); return false; }
+      const ammoMult = ammoBonus(s);
+      if (ammoMult === 0) { L(`${label}${s.name} 弹药耗尽，无法攻击。`); return false; }
       for (let k = 0; k < atk.n; k++) {
         if (!enemies.some(t => t.alive)) break;
         const t = pickTarget(enemies, s);
@@ -440,13 +626,29 @@ const Battle = (() => {
 
     /* 敌我交替回合制（我方先手，击沉/罚站轮空可导致连动） */
     const shellingRound = (label, mode) => {
-      const able = s => s.alive && s.stats.fp > 0 && !isSub(s) &&
-        !(isCV(s) && dmgState(s) !== 'ok');
+      const able = s => s.alive && !isSub(s) &&
+        (isCV(s) ? (dmgState(s) === 'ok' && canAirAttack(s)) : s.stats.fp > 0);
       let myQ = sideA.filter(able), enQ = sideB.filter(able);
       if (!myQ.length && !enQ.length) { L(`${label}双方均无法进行炮击。`); return; }
       if (mode === 'range') {
-        myQ.sort((a, b) => b.range - a.range);
-        enQ.sort((a, b) => b.range - a.range);
+        /* 第一轮按射程：超长→长→中→短，同射程随机（wiki） */
+        const rangeSort = arr => {
+          const groups = {};
+          for (const x of arr) (groups[x.range] = groups[x.range] || []).push(x);
+          const keys = Object.keys(groups).map(Number).sort((a, b) => b - a);
+          const out = [];
+          for (const k of keys) {
+            const g = groups[k];
+            for (let i = g.length - 1; i > 0; i--) {
+              const j = Util.ri(0, i);
+              [g[i], g[j]] = [g[j], g[i]];
+            }
+            out.push(...g);
+          }
+          return out;
+        };
+        myQ = rangeSort(myQ);
+        enQ = rangeSort(enQ);
       }
       let i = 0, j = 0, any = false;
       while (i < myQ.length || j < enQ.length) {
@@ -469,18 +671,8 @@ const Battle = (() => {
     L('—— 第二轮炮击战 ——');
     shellingRound('第二轮：', 'position');
 
-    /* ---- 雷击战（双方均可，中破/大破罚站） ---- */
+    /* ---- 雷击战（wiki：中破/大破罚站；本体雷装>0且舰种符合即可） ---- */
     const canTorp = s => s.alive && dmgState(s) === 'ok' && s.stats.tp > 0 && isTorpType(s);
-    const doTorp = (s, defSide, isMy) => {
-      const t = pickTarget(defSide, s);
-      if (!t) return;
-      const ch = hitChance(s, t, formAName, formBName, engMod, true);
-      if (Math.random() > ch) { L(`雷击战！${s.name} 的鱼雷未命中。`); return; }
-      const ap = threshold((s.stats.tp + 5) * (isMy ? fA.tp : fB.tp) * engMod * dmgMult(s), 150);
-      const dmg = calcDamage(ap, t.stats.arm, critChance(ch));
-      dealDamage(log, s, t, dmg, '雷击战！', '');
-      pushSnap();
-    };
     (() => {
       const myAlive = sideA.filter(x => x.alive);
       const enAlive = sideB.filter(x => x.alive);
@@ -494,42 +686,59 @@ const Battle = (() => {
       else { myT = myAlive.filter(canTorp); enT = enAlive.filter(canTorp); }
       if (!myT.length && !enT.length) return;
       L('—— 雷击战 ——');
+      const doTorp = (s, defSide, defForm, isMy) => {
+        const t = pickTarget(defSide, s);
+        if (!t) return;
+        const ch = hitChance(s, t, formAName, formBName, engMod, true);
+        if (Math.random() > ch) { L(`雷击战！${s.name} 的鱼雷未命中。`); ev('torp', s, t, false, 0, null, false); return; }
+        const ap = threshold((s.stats.tp + 5) * (isMy ? fA.tp : fB.tp) * engMod * dmgMult(s, 'torp') * ammoBonus(s), THRESHOLD.TORP);
+        const dmg = calcDamage(ap, t.stats.arm, critChance(ch));
+        const wasAlive = t.alive;
+        applyDamage(log, s, t, dmg, '雷击战！', '', defSide, defForm);
+        ev('torp', s, t, true, dmg, null, wasAlive && !t.alive);
+        pushSnap();
+      };
       let i = 0, j = 0;
       while (i < myT.length || j < enT.length) {
-        if (i < myT.length) { const s = myT[i++]; if (s.alive) doTorp(s, sideB, true); }
-        if (j < enT.length) { const s = enT[j++]; if (s.alive) doTorp(s, sideA, false); }
+        if (i < myT.length) { const s = myT[i++]; if (s.alive) doTorp(s, sideB, formBName, true); }
+        if (j < enT.length) { const s = enT[j++]; if (s.alive) doTorp(s, sideA, formAName, false); }
       }
     })();
 
-    /* ---- 夜战（单轮·位置交替·我方先手·大破罚站） ---- */
+    /* ---- 夜战（单轮·位置交替·我方先手·大破罚站·空母无法夜战） ---- */
+    let nightUsed = false;
     if (opts.allowNight !== false) {
       const myAlive = sideA.filter(x => x.alive);
       const enAlive = sideB.filter(x => x.alive);
       if (myAlive.length && enAlive.length) {
         L('—— 进入夜战！——');
-        const nightAct = (s, defSide) => {
+        nightUsed = true;
+        const nightAct = (s, defSide, defForm) => {
           if (!s.alive || isDaPo(s)) return;              // 大破不能夜战
+          if (isCV(s)) { L(`夜战：${s.name}（空母）未装备夜间航空兵装，无法攻击。`); return; }
           const t = pickTarget(defSide, s);
           if (!t) return;
           if (isSub(t) && !s.hasASW) { L(`夜战：${s.name} 的攻击对潜水中的 ${t.name} 无效。`); return; }
           const ch = hitChance(s, t, formAName, formBName, 1, false);
-          if (Math.random() > ch) { L(`夜战：${s.name} 攻击 ${t.name}，未命中。`); return; }
+          if (Math.random() > ch) { L(`夜战：${s.name} 攻击 ${t.name}，未命中。`); ev('night', s, t, false, 0, null, false); return; }
           const atk = resolveNightAttack(s);
           if (!atk) return;
           for (let k = 0; k < atk.n; k++) {
             if (!defSide.some(x => x.alive)) break;
             const tt = pickTarget(defSide, s);
             if (!tt) break;
-            const ap = threshold((s.stats.fp + s.stats.tp + 5) * (s.isPlayer ? fA.night : fB.night) * atk.mult * dmgMult(s), 300);
+            const ap = threshold((s.stats.fp + s.stats.tp) * (s.isPlayer ? fA.night : fB.night) * atk.mult * dmgMult(s, 'shell') * ammoBonus(s), THRESHOLD.NIGHT);
             const dmg = calcDamage(ap, tt.stats.arm, critChance(ch) + 0.05);
-            dealDamage(log, s, tt, dmg, '夜战：', atk.name ? `发动${atk.name}！` : '');
+            const wasAlive = tt.alive;
+            applyDamage(log, s, tt, dmg, '夜战：', atk.name ? `发动${atk.name}！` : '', defSide, defForm);
+            ev('night', s, tt, true, dmg, atk.name || null, wasAlive && !tt.alive);
             pushSnap();
           }
         };
         let i = 0, j = 0;
         while (i < myAlive.length || j < enAlive.length) {
-          if (i < myAlive.length) nightAct(myAlive[i++], sideB);
-          if (j < enAlive.length) nightAct(enAlive[j++], sideA);
+          if (i < myAlive.length) nightAct(myAlive[i++], sideB, formBName);
+          if (j < enAlive.length) nightAct(enAlive[j++], sideA, formAName);
         }
       } else if (enAlive.length) {
         L('我军已无力再战，夜战中止。');
@@ -548,18 +757,20 @@ const Battle = (() => {
     const gaugeA = myHpTotal ? Util.clamp(myDamage / enemyHpTotal, 0, 1) : 0;
     const gaugeB = enemyHpTotal ? Util.clamp(enDamage / myHpTotal, 0, 1) : 0;
 
-    /* 胜利判定（参照wiki，无我方击沉为前提；防沉保护下我方通常不会被击沉） */
+    /* 胜利判定（wiki：无己方被击沉为前提；S含被击沉→B；A=击沉多数；B=击沉旗舰/战果2.5倍等） */
     const enFlagKilled = sideB[0] && !sideB[0].alive;
     let rank = 'D';
     let perfect = false;
     if (enemyKilled === enemyTotal) {
-      rank = 'S';
-      perfect = myHpTotal > 0 && enDamage === 0;
+      if (myLost > 0) rank = 'B';
+      else { rank = 'S'; perfect = myHpTotal > 0 && enDamage === 0; }
     } else if (enemyTotal >= 2 && enemyKilled >= (A_SINKS[enemyTotal] || 2)) {
       rank = 'A';
     } else if (!myLost && enFlagKilled) {
       rank = 'B';
     } else if (!myLost && gaugeA >= gaugeB * 2.5) {
+      rank = 'B';
+    } else if (myLost > 0 && enFlagKilled && myLost < enemyKilled) {
       rank = 'B';
     } else if (!myLost && gaugeA >= gaugeB) {
       rank = 'C';
@@ -569,7 +780,7 @@ const Battle = (() => {
       rank = 'D';
     }
 
-    /* MVP：总伤害最高；平手时旗舰优先；全员0伤害强制旗舰；E评价无MVP */
+    /* MVP（wiki：最高总伤害；平手随机但旗舰强制；全员0伤害强制旗舰；E评价无MVP） */
     let mvpUid = null;
     if (rank !== 'E') {
       const deal = sideA.filter(s => s.dealt > 0);
@@ -586,7 +797,7 @@ const Battle = (() => {
 
     return {
       rank, perfect, log, mySide: sideA, enemySide: sideB,
-      enemyKilled, enemyTotal, myLost, myDaPo,
+      enemyKilled, enemyTotal, myLost, myDaPo, nightUsed,
       victory: rank === 'S' || rank === 'A' || rank === 'B',
       mvpUid, enemyHpTotal, myHpTotal, gaugeA, gaugeB
     };

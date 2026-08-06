@@ -1,6 +1,7 @@
 'use strict';
 /* ============================================================
- * 工厂：建造 / 装备开发
+ * 工厂：舰娘建造 / 装备开发 / 改修工厂 / 近代化改修 / 装备仓库
+ * 开发参照 kcwiki「开发」：秘书舰系×最高资源池，即时结算，预览开发池
  * ============================================================ */
 
 const FactoryUI = (() => {
@@ -13,18 +14,31 @@ const FactoryUI = (() => {
     { name: '战列舰', v: [400, 400, 500, 100] },
     { name: '潜水舰', v: [50, 30, 50, 30] }
   ];
+  /* 开发预设（参照 kcwiki 常用公式，燃料/弹药/钢材/铝） */
   const DEV_PRESETS = [
-    { name: '战斗机', v: [10, 20, 10, 40] },
-    { name: '攻击/爆击机', v: [10, 20, 10, 50] },
-    { name: '水上机', v: [10, 10, 10, 30] },
-    { name: '主炮', v: [10, 250, 250, 10] },
-    { name: '鱼雷', v: [20, 60, 50, 20] },
-    { name: '对空装备', v: [10, 60, 60, 30] },
-    { name: '反潜装备', v: [30, 30, 30, 10] }
+    { name: '舰载机通用', v: [20, 60, 10, 110], hint: '空母系：流星改·烈风级·紫电等各类飞机' },
+    { name: '舰载机狙击', v: [20, 30, 10, 40], hint: '空母系：规避稀有舰攻，狙击彗星一二型甲' },
+    { name: '主炮通用', v: [10, 251, 250, 10], hint: '炮战系：狙击 16inch Mk7' },
+    { name: '彻甲弹', v: [10, 90, 90, 30], hint: '炮战系：狙击 Mk8穿甲弹' },
+    { name: '电探通用', v: [10, 10, 250, 250], hint: '炮战/空母系：开发全部电探' },
+    { name: '反潜通用', v: [10, 30, 10, 31], hint: '水雷系：声呐/爆雷' },
+    { name: '对空通用', v: [20, 20, 10, 20], hint: '空母系：机枪/高角炮' },
+    { name: '省资材日常', v: [10, 10, 10, 11], hint: '高失败率配方，只做日常任务用' }
   ];
 
   function factory(root, arg) {
-    let tab = arg === 'dev' ? 'dev' : arg === 'improve' ? 'improve' : arg === 'modernize' ? 'modernize' : 'build';
+    let tab = arg === 'dev' ? 'dev' : arg === 'improve' ? 'improve' : arg === 'modernize' ? 'modernize' : arg === 'equip' ? 'equip' : 'build';
+    /* 当前配方（输入框值，默认舰载机通用公式） */
+    let lastDevRecipe = null;
+    function currentDevRecipe() {
+      const vals = [0, 1, 2, 3].map(i => {
+        const el = document.getElementById('df' + i);
+        return el ? Math.max(0, parseInt(el.value, 10) || 0) : (lastDevRecipe ? [lastDevRecipe.fuel, lastDevRecipe.ammo, lastDevRecipe.steel, lastDevRecipe.baux][i] : [20, 60, 10, 110][i]);
+      });
+      const r = { fuel: vals[0], ammo: vals[1], steel: vals[2], baux: vals[3] };
+      lastDevRecipe = r;
+      return r;
+    }
     render();
 
     function render() {
@@ -34,8 +48,9 @@ const FactoryUI = (() => {
           <button class="${tab === 'dev' ? 'active' : ''}" data-t="dev">装备开发</button>
           <button class="${tab === 'improve' ? 'active' : ''}" data-t="improve">改修工厂</button>
           <button class="${tab === 'modernize' ? 'active' : ''}" data-t="modernize">近代化改修</button>
+          <button class="${tab === 'equip' ? 'active' : ''}" data-t="equip">装备仓库</button>
         </div>
-        ${tab === 'build' ? buildPanel() : tab === 'dev' ? devPanel() : tab === 'improve' ? improvePanel() : modernizePanel()}`;
+        ${tab === 'build' ? buildPanel() : tab === 'dev' ? devPanel() : tab === 'improve' ? improvePanel() : tab === 'modernize' ? modernizePanel() : equipPanel()}`;
       root.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.t; render(); }));
       wirePanel();
       UI.setTick(tick);
@@ -50,10 +65,6 @@ const FactoryUI = (() => {
       });
       root.querySelectorAll('[data-claim]').forEach(b => {
         const job = Game.state.construction[parseInt(b.dataset.claim, 10)];
-        b.disabled = !(job && now >= job.end);
-      });
-      root.querySelectorAll('[data-dclaim]').forEach(b => {
-        const job = Game.state.development[parseInt(b.dataset.dclaim, 10)];
         b.disabled = !(job && now >= job.end);
       });
     }
@@ -89,35 +100,56 @@ const FactoryUI = (() => {
       </div>`;
     }
 
+    /* ============ 装备开发（参照 kcwiki「开发」：即时结算 + 开发池预览） ============ */
     function devPanel() {
       const st = Game.state;
       const sec = st.ships[st.fleet[1][0]];
+      const secKey = secretaryKey(sec ? Game.shipDef(sec) : null);
+      const devMats = st.resources.devMats || 0;
+      const recipe = currentDevRecipe();
+      const pv = Factory.developPreview(recipe, sec ? sec.uid : null);
       return `<div class="panel">
-        <h3>装备开发 <span class="dim">秘书舰：${sec ? UI.esc(Game.shipDef(sec).zh) : '无（开发池受限）'}</span></h3>
+        <h3>装备开发 <span class="dim">开发资材：<span class="devmat">◎ ${devMats}/3000</span></span></h3>
+        <div class="hint">秘书舰：${sec ? `${UI.esc(Game.shipDef(sec).zh)}（${DEV_SEC_ZH[secKey] || '无对应开发系'}）` : '无（需设置第一舰队旗舰）'}
+          ｜ 说明：${DEV_SEC_DESC[secKey] || ''}</div>
         <div class="resource-formula">
           ${['燃料', '弹药', '钢材', '铝土'].map((n, i) => {
-            const v = [10, 20, 10, 40];
-            return `<div><label>${n}</label><input type="number" min="0" max="9999" id="df${i}" value="${v[i]}"></div>`;
+            const v = recipe ? [recipe.fuel, recipe.ammo, recipe.steel, recipe.baux] : [20, 60, 10, 110];
+            return `<div><label>${n}</label><input type="number" min="0" max="9999" id="df${i}" value="${v[i]}" data-dinput="${i}"></div>`;
           }).join('')}
         </div>
         <div class="btn-row">
-          ${DEV_PRESETS.map(p => `<span class="preset-recipe" data-p="${p.v.join(',')}">${p.name}</span>`).join('')}
+          ${DEV_PRESETS.map(p => `<span class="preset-recipe" data-p="${p.v.join(',')}" title="${p.hint}">${p.name}</span>`).join('')}
         </div>
-        <div class="btn-row"><button class="btn btn-gold" data-act="dev">开始开发</button></div>
-        <div class="section-title">开发队列</div>
-        <div id="devQueue">
-          ${st.development.map((c, i) => {
-            const left = c.end - Date.now();
-            return `<div class="panel" style="margin:6px 0">
-              <div class="flex" style="justify-content:space-between;align-items:center">
-                <div><span class="dim">开发中…（${UI.esc(c.poolKey)}池）</span></div>
-                <div><span class="countdown" data-until="${c.end}">${left > 0 ? Util.fmtTime(left) : '完成！'}</span></div>
-                <button class="btn btn-gold btn-sm" data-dclaim="${i}" ${left > 0 ? 'disabled' : ''}>领取</button>
-              </div></div>`;
-          }).join('') || '<span class="dim">队列为空</span>'}
+        <div class="btn-row">
+          <button class="btn btn-gold" data-act="dev" ${devMats < 1 || !sec ? 'disabled' : ''}>开发（消耗1开发资材，${sec ? '' : '需秘书舰'}）</button>
         </div>
-        <div class="hint">秘书舰类型决定开发池：空母→舰载机、战列舰→主炮、驱逐→鱼雷/反潜、亚特兰大级→对空。</div>
+        <div id="devPoolPreview">${devPoolHtml()}</div>
+        <div class="hint">规则：投入四项资源（必消耗）+ 1开发资材（成功才消耗）。最高资源决定开发池（油/钢 &gt; 弹药 &gt; 铝）；提督等级≥装备稀有度×3 且 四项资源≥最低资源要求才会成功。开发不论成败均计入每日任务。</div>
       </div>`;
+    }
+
+    /* 开发池预览（独立渲染，供配方输入时局部刷新） */
+    function devPoolHtml() {
+      const st = Game.state;
+      const sec = st.ships[st.fleet[1][0]];
+      const pv = Factory.developPreview(currentDevRecipe(), sec ? sec.uid : null);
+      return `<div class="section-title">当前开发池：${UI.esc(pv.secZh)} · ${UI.esc(pv.poolZh)} <span class="dim">（出货率=份额×2%，每池50等份）</span></div>
+        ${pv.entries.length ? `<table class="dev-pool-table">
+          <tr><th>可出装备</th><th>类别</th><th>出货率</th><th>最低资源要求(油/弹/钢/铝)</th></tr>
+          ${pv.entries.map(e => {
+            const ed = EquipmentData[e.id];
+            const req = devMinReq(ed);
+            const needLv = (ed.r || 1) * 3;
+            return `<tr>
+              <td><b>${UI.esc(ed.zh)}</b> <span class="dim">${UI.esc(ed.en)}</span></td>
+              <td class="dim">${EQUIP_CAT_ZH[ed.cat] || ed.cat}</td>
+              <td class="num">${e.pct}%</td>
+              <td class="dim">${req.fuel}/${req.ammo}/${req.steel}/${req.baux}${st.admiral.level < needLv ? `（需Lv.${needLv}）` : ''}</td>
+            </tr>`;
+          }).join('')}
+          <tr class="dev-fail"><td colspan="4"><b>开发失败</b> <span class="dim">（失败时资源被消耗，但开发资材不消耗）</span></td><td class="num">${pv.failPct}%</td></tr>
+        </table>` : `<div class="hint">该秘书舰系在此资源比例下没有可开发的装备，请更换秘书舰或资源配方。</div>`}`;
     }
 
     /* ============ 改修工厂（参照 wiki「明石的改修工厂」） ============ */
@@ -186,14 +218,67 @@ const FactoryUI = (() => {
       </div>`;
     }
 
+    /* ============ 装备仓库（一览 + 解体，参照 wiki「装备」与解体回收） ============ */
+    function equipPanel() {
+      const st = Game.state;
+      const all = Object.values(st.equipment);
+      const groups = {};
+      for (const eq of all) {
+        const ed = EquipmentData[eq.id];
+        if (!ed) continue;
+        (groups[ed.cat] = groups[ed.cat] || []).push(eq);
+      }
+      const catOrder = ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦', '水爆', '对空电探', '对水电探', '高角炮', '机枪', '声呐', '爆雷', '穿甲弹', '设备'];
+      const usedBy = {};
+      for (const s of Object.values(st.ships)) for (const e of s.equipped || []) usedBy[e] = s.uid;
+      const total = all.length;
+      return `<div class="panel">
+        <h3>装备仓库 <span class="dim">共 ${total} 件（点击「解体」回收资源；装备中的装备需先卸下）</span></h3>
+        <div class="hint">装备可在「舰娘详情 → 点击装备槽」安装/卸下。多余装备建议解体换资源，或在「改修工厂」用作改修素材。</div>
+        ${Object.keys(groups).sort((a, b) => catOrder.indexOf(a) - catOrder.indexOf(b)).map(cat => {
+          const list = groups[cat];
+          return `<div class="section-title">${EQUIP_CAT_ZH[cat] || cat}（${list.length}）</div>
+            ${list.map(eq => {
+              const ed = EquipmentData[eq.id];
+              const stx = Object.entries(ed.stat).map(([k, v]) => `${EQUIP_STAT_ZH[k]}${v > 0 ? '+' : ''}${v}`).join(' ');
+              const eqd = usedBy[eq.uid];
+              const scrap = ed.scrap || {};
+              return `<div class="equip-row">
+                <div class="grow">
+                  <b>${UI.esc(ed.zh)}</b> ${UI.starHtml(eq)}
+                  ${eq.locked ? '<span class="state-badge morale">锁</span>' : ''}
+                  <span class="dim">(${EQUIP_CAT_ZH[ed.cat] || ed.cat}) ${stx}</span>
+                </div>
+                <div class="dim">${eqd ? `装备中·${UI.esc(UI.shipTitle(st.ships[eqd]))}` : '库存'}
+                  ｜ 解体：${Object.keys(scrap).map(k => `${EQUIP_STAT_ZH[k]}${scrap[k]}`).join(' ') || '无'}</div>
+                <div class="btn-row" style="gap:4px">
+                  ${eqd ? '' : `<button class="btn btn-sm" data-eq-lock="${eq.uid}">${eq.locked ? '解锁' : '上锁'}</button>
+                    <button class="btn btn-sm btn-red" data-eq-scrap="${eq.uid}">解体</button>`}
+                </div>
+              </div>`;
+            }).join('')}`;
+        }).join('') || '<span class="dim">仓库为空，去「装备开发」制造装备吧！</span>'}
+        <div class="hint">解体回收量：<b>燃料/弹药/钢材/铝土</b> 按装备种类返还（参照 wiki：装备解体获得钢材与铝土为主）。开发成功判定的「最低资源要求」= 解体回收值×10。</div>
+      </div>`;
+    }
+
     function wirePanel() {
       root.querySelectorAll('.preset-recipe').forEach(el => {
         el.addEventListener('click', () => {
           const v = el.dataset.p.split(',').map(Number);
           const prefix = tab === 'build' ? 'bf' : 'df';
           v.forEach((x, i) => { const inp = document.getElementById(prefix + i); if (inp) inp.value = x; });
+          if (prefix === 'df') render();
         });
       });
+      /* 开发配方变化 → 局部刷新开发池预览（避免重渲染丢失输入焦点） */
+      if (tab === 'dev') {
+        root.querySelectorAll('[data-dinput]').forEach(inp => inp.addEventListener('input', () => {
+          lastDevRecipe = null;
+          const box = document.getElementById('devPoolPreview');
+          if (box) box.innerHTML = devPoolHtml();
+        }));
+      }
       const readRecipe = prefix => ['fuel', 'ammo', 'steel', 'baux'].map((k, i) => ({ k, v: Math.max(0, parseInt(document.getElementById(prefix + i).value, 10) || 0) }));
 
       const buildBtn = root.querySelector('[data-act="build"]');
@@ -210,24 +295,32 @@ const FactoryUI = (() => {
         const rv = readRecipe('df');
         const recipe = { fuel: rv[0].v, ammo: rv[1].v, steel: rv[2].v, baux: rv[3].v };
         const sec = Game.state.ships[Game.state.fleet[1][0]];
-        const r = Factory.startDevelop(recipe, sec ? sec.uid : null);
+        const r = Factory.develop(recipe, sec ? sec.uid : null);
         if (!r.ok) { UI.toast(r.msg); return; }
-        UI.toast('开发开始！');
-        Game.save(); render();
+        Game.save();
+        if (r.success) {
+          const pv = r.pv;
+          const statsTxt = Object.entries(r.eq && EquipmentData[r.eq.id].stat || {}).map(([k, v]) => `${EQUIP_STAT_ZH[k]}+${v}`).join(' ');
+          const m = UI.modal(`
+            <span class="modal-close" data-close>×</span>
+            <h3>开发成功！</h3>
+            <div class="text-center" style="padding:16px">
+              <div style="font-size:20px">${UI.esc(EquipmentData[r.eq.id].zh)}</div>
+              <div class="dim">${UI.esc(EquipmentData[r.eq.id].en)} · ${EQUIP_CAT_ZH[EquipmentData[r.eq.id].cat]} ${statsTxt}</div>
+            </div>
+            <div class="hint">消耗 1 开发资材（剩余 ${Game.state.resources.devMats || 0}）。${UI.esc(pv.secZh)}·${UI.esc(pv.poolZh)} 出货率 ${pv.entries.find(x => x.id === r.eq.id).pct}%。</div>
+            <div class="btn-row"><button class="btn btn-gold" data-close>好</button></div>`);
+          m.root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { m.close(); render(); }));
+        } else {
+          UI.toast(r.msg);
+          render();
+        }
       });
       root.querySelectorAll('[data-claim]').forEach(b => {
         b.addEventListener('click', () => {
           const r = Factory.claimBuild(parseInt(b.dataset.claim, 10));
           if (!r.ok) { UI.toast(r.msg); return; }
           UI.toast(`建造完成！获得 ${UI.esc(Game.shipDef(r.ship).zh)}！`);
-          Game.save(); render();
-        });
-      });
-      root.querySelectorAll('[data-dclaim]').forEach(b => {
-        b.addEventListener('click', () => {
-          const r = Factory.claimDevelop(parseInt(b.dataset.dclaim, 10));
-          if (!r.ok) { UI.toast(r.msg); return; }
-          UI.toast(r.eq ? `开发成功！获得 ${UI.esc(EquipmentData[r.eq.id].zh)}！` : '开发失败……（什么也没得到）');
           Game.save(); render();
         });
       });
@@ -266,6 +359,25 @@ const FactoryUI = (() => {
       root.querySelectorAll('[data-mod-target]').forEach(b => {
         b.addEventListener('click', () => {
           Homeport.openModernize(b.dataset.modTarget, render);
+        });
+      });
+      root.querySelectorAll('[data-eq-scrap]').forEach(b => {
+        b.addEventListener('click', () => {
+          const euid = b.dataset.eqScrap;
+          const ed = Game.state.equipment[euid] && EquipmentData[Game.state.equipment[euid].id];
+          if (!confirm(`确定解体 ${ed ? UI.esc(ed.zh) : ''}？将回收资源。`)) return;
+          const r = Factory.scrapEquip(euid);
+          if (!r.ok) { UI.toast(r.msg); return; }
+          const g = Object.keys(r.gain).map(k => `${EQUIP_STAT_ZH[k]}+${r.gain[k]}`).join(' ');
+          UI.toast(`已解体 ${UI.esc(r.name)}！获得 ${g}`);
+          Game.save(); render();
+        });
+      });
+      root.querySelectorAll('[data-eq-lock]').forEach(b => {
+        b.addEventListener('click', () => {
+          const r = Factory.toggleEquipLock(b.dataset.eqLock);
+          if (!r.ok) { UI.toast(r.msg); return; }
+          Game.save(); render();
         });
       });
     }

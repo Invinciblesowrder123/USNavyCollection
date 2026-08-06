@@ -13,7 +13,12 @@ const equipMod = require('../public/js/data/equipment.js');
 Object.assign(global, {
   SLOT: equipMod.SLOT, EquipmentData: equipMod.EquipmentData,
   SECRETARY_POOL: equipMod.SECRETARY_POOL, secretaryKey: equipMod.secretaryKey,
-  EQUIP_CAT_ZH: equipMod.EQUIP_CAT_ZH, IMPROVE: equipMod.IMPROVE, IMPROVE_NEED_ZH: equipMod.IMPROVE_NEED_ZH
+  devPoolKey: equipMod.devPoolKey, devEntries: equipMod.devEntries,
+  devFailShare: equipMod.devFailShare, devMinReq: equipMod.devMinReq,
+  EQUIP_CAT_ZH: equipMod.EQUIP_CAT_ZH, EQUIP_STAT_ZH: equipMod.EQUIP_STAT_ZH,
+  IMPROVE: equipMod.IMPROVE, IMPROVE_NEED_ZH: equipMod.IMPROVE_NEED_ZH,
+  DEV_SEC: equipMod.DEV_SEC, DEV_POOL: equipMod.DEV_POOL,
+  DEV_SEC_ZH: equipMod.DEV_SEC_ZH, DEV_POOL_ZH: equipMod.DEV_POOL_ZH, DEV_SEC_DESC: equipMod.DEV_SEC_DESC
 });
 const shipsMod = require('../public/js/data/ships.js');
 Object.assign(global, {
@@ -90,7 +95,10 @@ for (let i = 0; i < 50; i++) {
 console.log(`  BOSS 胜率: ${bossWins}/50 (S胜 ${bossS})`);
 assert('强舰队BOSS胜率>50%', bossWins / 50 > 0.5, `bossWins=${bossWins}`);
 
-section('建造/开发');
+section('建造/开发（wiki：秘书舰系×资源池，即时结算，开发资材）');
+Progression.initQuests();
+Progression.resetDue();
+const starterFleetBackup = Game.state.fleet[1].slice();
 const b = Factory.startBuild({ fuel: 400, ammo: 400, steel: 500, baux: 500 });
 assert('建造入队', b.ok && Game.state.construction.length === 1, JSON.stringify(b));
 assert('资源扣除', Game.state.resources.fuel === 600);
@@ -98,11 +106,95 @@ Game.state.construction[0].end = Date.now() - 1;
 const cb = Factory.claimBuild(0);
 assert('建造完成出船', cb.ok && cb.ship && Game.state.ships[cb.ship.uid]);
 Game.gain({ fuel: 500, ammo: 500, steel: 500, baux: 500 });
-const d = Factory.startDevelop({ fuel: 10, ammo: 20, steel: 10, baux: 40 }, null);
-assert('开发入队', d.ok, JSON.stringify(d));
-Game.state.development[0].end = Date.now() - 1;
-const cd = Factory.claimDevelop(0);
-assert('开发完成', cd.ok);
+
+/* 开发池判定（参照 wiki：最高资源，优先级 燃料/钢材 > 弹药 > 铝） */
+assert('10/251/250/10 → 弹药池', devPoolKey({ fuel: 10, ammo: 251, steel: 250, baux: 10 }) === DEV_POOL.AMMO, devPoolKey({ fuel: 10, ammo: 251, steel: 250, baux: 10 }));
+assert('10/10/250/250 → 油钢池(钢=铝时钢优先)', devPoolKey({ fuel: 10, ammo: 10, steel: 250, baux: 250 }) === DEV_POOL.OIL);
+assert('20/60/10/110 → 铝池', devPoolKey({ fuel: 20, ammo: 60, steel: 10, baux: 110 }) === DEV_POOL.BAUX);
+assert('10/10/10/11 → 铝池', devPoolKey({ fuel: 10, ammo: 10, steel: 10, baux: 11 }) === DEV_POOL.BAUX);
+assert('100/90/300/250 → 油钢池', devPoolKey({ fuel: 100, ammo: 90, steel: 300, baux: 250 }) === DEV_POOL.OIL);
+assert('秘书舰系：DD=水雷系', secretaryKey(Game.shipDef(Game.state.ships[Game.state.fleet[1][0]])) === DEV_SEC.MINE);
+assert('秘书舰系：空母=空母系', secretaryKey({ type: 'CV' }) === DEV_SEC.CV);
+assert('秘书舰系：战列=炮战系', secretaryKey({ type: 'BB' }) === DEV_SEC.GUN);
+assert('秘书舰系：潜艇=潜水系', secretaryKey({ type: 'SS' }) === DEV_SEC.SUB);
+/* 开发池内容 */
+const cvEntries = devEntries(DEV_SEC.CV, DEV_POOL.BAUX);
+assert('空母系铝池含舰战', cvEntries.some(e => e.id === 'f4f'), cvEntries.map(e => e.id).join(','));
+const cvSum = cvEntries.reduce((s, e) => s + e.rate, 0);
+assert('空母系铝池总份额≤50', cvSum <= 50, 'sum=' + cvSum);
+assert('出货率=份额×2%（F4F=6份额→12%）', cvEntries.find(e => e.id === 'f4f').rate * 2 === 12);
+assert('失败份额=50-Σ', devFailShare(DEV_SEC.CV, DEV_POOL.BAUX) === 50 - cvSum);
+/* 开发资材与失败返还 */
+const devMats0 = Game.state.resources.devMats;
+assert('初始开发资材=10', devMats0 === 10);
+assert('开发资材为0时拒绝', (Game.state.resources.devMats = 0, !Factory.develop({ fuel: 10, ammo: 20, steel: 10, baux: 30 }, Game.state.fleet[1][0]).ok));
+Game.state.resources.devMats = devMats0;
+/* 确定性随机：roll=50（命中装备区），加权选份额最大者 */
+const _ri = Util.ri, _w = Util.weighted;
+Util.ri = (a, b) => b;
+Util.weighted = t => { let best = null, bv = -1; for (const k in t) if (t[k] > bv) { bv = t[k]; best = k; } return best; };
+const resBefore = { ...Game.state.resources };
+/* 高失败配方 10/10/10/11（空母系·铝池）：roll 出 f4f 但铝<门槛 → 失败，资材不消耗 */
+const cvSec = Game.createShip('enterprise', 1);
+Game.state.fleet[1] = [cvSec.uid];
+Game.state.admiral.level = 40;
+const dFail = Factory.develop({ fuel: 10, ammo: 10, steel: 10, baux: 11 }, cvSec.uid);
+assert('省资材配方开发失败(资源不足门槛)', dFail.ok && !dFail.success, JSON.stringify(dFail && dFail.msg));
+assert('失败不消耗开发资材', Game.state.resources.devMats === devMats0, 'devMats=' + Game.state.resources.devMats);
+assert('失败消耗资源', Game.state.resources.baux === resBefore.baux - 11, 'baux=' + Game.state.resources.baux);
+/* 通用飞机配方 20/60/10/110（空母系·铝池）：成功获得 F4F（份额最大） */
+const dOk = Factory.develop({ fuel: 20, ammo: 60, steel: 10, baux: 110 }, cvSec.uid);
+assert('通用飞机配方开发成功得F4F', dOk.ok && dOk.success && dOk.eq.id === 'f4f', JSON.stringify(dOk && dOk.eq && dOk.eq.id));
+assert('成功消耗1开发资材', Game.state.resources.devMats === devMats0 - 1, 'devMats=' + Game.state.resources.devMats);
+/* 主炮狙击 10/251/250/10（炮战系·弹药池）：成功获得 16inch Mk6（份额最大） */
+const bbSec = Game.createShip('iowa', 1);
+Game.state.fleet[1] = [bbSec.uid];
+const dBB = Factory.develop({ fuel: 10, ammo: 251, steel: 250, baux: 10 }, bbSec.uid);
+assert('主炮狙击开发成功得16inch Mk6', dBB.ok && dBB.success && dBB.eq.id === 'gun16in_45', JSON.stringify(dBB && dBB.eq && dBB.eq.id));
+/* 资源门槛：10/10/10/10（炮战系·油钢池）roll 出 radar_sg 但钢<120 → 失败 */
+const dLow = Factory.develop({ fuel: 10, ammo: 10, steel: 10, baux: 10 }, bbSec.uid);
+assert('低投入开发失败(不满足最低资源要求)', dLow.ok && !dLow.success, JSON.stringify(dLow && dLow.msg));
+/* 等级门槛：提督等级<稀有度×10 → 失败 */
+Game.state.admiral.level = 1;
+const dLv = Factory.develop({ fuel: 20, ammo: 60, steel: 10, baux: 110 }, cvSec.uid);
+assert('提督等级过低开发失败(需Lv.10)', dLv.ok && !dLv.success && dLv.msg.includes('Lv'), JSON.stringify(dLv && dLv.msg));
+Game.state.admiral.level = 40;
+/* 开发预览 */
+const pv = Factory.developPreview({ fuel: 10, ammo: 251, steel: 250, baux: 10 }, bbSec.uid);
+assert('预览：炮战系·弹药池', pv.secKey === DEV_SEC.GUN && pv.pool === DEV_POOL.AMMO, JSON.stringify({ s: pv.secKey, p: pv.pool }));
+Util.ri = _ri; Util.weighted = _w;
+/* 开发失败也计入每日任务 → 可领取日常（+1开发资材） */
+const devCount = Game.state.stats.develop;
+Factory.develop({ fuel: 10, ammo: 10, steel: 10, baux: 11 }, cvSec.uid);
+Factory.develop({ fuel: 10, ammo: 10, steel: 10, baux: 11 }, cvSec.uid);
+assert('开发失败计入次数', Game.state.stats.develop === devCount + 2, 'n=' + Game.state.stats.develop);
+Progression.notify('develop', 1);
+const cq6 = Progression.claimQuest('d6');
+assert('日常开发任务可领取(+1开发资材)', cq6.ok && Game.state.resources.devMats === devMats0 - 2 + 1, 'devMats=' + Game.state.resources.devMats);
+
+section('装备解体（wiki：解体回收资源，装备中/上锁不可解体）');
+const eqS = Game.createEquip('aa_20mm');
+const rScrap = Factory.scrapEquip(eqS.uid);
+assert('解体成功回收钢材', rScrap.ok && rScrap.gain.steel === 3, JSON.stringify(rScrap));
+assert('解体后装备消失', !Game.state.equipment[eqS.uid]);
+const eqU = Game.createEquip('gun5in_30');
+Game.state.ships[Game.state.fleet[1][0]].equipped.push(eqU.uid);
+assert('装备中的不能解体', !Factory.scrapEquip(eqU.uid).ok);
+const eqL = Game.createEquip('torp_mk15');
+Factory.toggleEquipLock(eqL.uid);
+assert('上锁后不能解体', !Factory.scrapEquip(eqL.uid).ok);
+Factory.toggleEquipLock(eqL.uid);
+assert('解锁后可解体', Factory.scrapEquip(eqL.uid).ok);
+/* 恢复初始舰队（后续远征/养成测试依赖） */
+Game.state.fleet[1] = starterFleetBackup;
+/* 远征奖励包含开发资材（ex8：+2） */
+const ex8DevMats = Game.state.resources.devMats;
+Game.state.fleet[1] = strongFleet.slice();
+const ex8 = Logistics.startExpedition(1, 'ex8');
+Game.state.expeditions[1].end = Date.now() - 1;
+const ex8r = Logistics.claimExpedition(1);
+Game.state.fleet[1] = starterFleetBackup;
+assert('ex8远征奖励开发资材+2(大成功+4)', ex8.ok && ex8r.ok && (Game.state.resources.devMats === ex8DevMats + 2 || Game.state.resources.devMats === ex8DevMats + 4), 'devMats=' + Game.state.resources.devMats);
 
 section('远征');
 const e1 = Logistics.startExpedition(1, 'ex1');
@@ -199,6 +291,30 @@ assert('升级曲线 Lv98→99=148500', Progression.shipExpToLevel(98) === 14850
 let cumExp = 0;
 for (let lv = 1; lv <= 98; lv++) cumExp += Progression.shipExpToLevel(lv);
 assert('Lv1→99 累计100万', cumExp === 1000000, 'cum=' + cumExp);
+/* 等级上限与婚后曲线（参照wiki：100~175/176~180/181~185/186~188） */
+assert('等级上限188', Progression.MAX_LV === 188);
+assert('升级曲线 Lv99→100=148500', Progression.shipExpToLevel(99) === 148500);
+assert('升级曲线 Lv100→101=10000', Progression.shipExpToLevel(100) === 10000);
+assert('升级曲线 Lv150→151=204000', Progression.shipExpToLevel(150) === 204000);
+assert('升级曲线 Lv165→166=100000', Progression.shipExpToLevel(165) === 100000);
+assert('升级曲线 Lv174→175=684000', Progression.shipExpToLevel(174) === 684000);
+assert('升级曲线 Lv175→176=150000', Progression.shipExpToLevel(175) === 150000);
+assert('升级曲线 Lv184→185=1000000', Progression.shipExpToLevel(184) === 1000000);
+assert('升级曲线 Lv187→188=1600000', Progression.shipExpToLevel(187) === 1600000);
+assert('满级无需经验', Progression.shipExpToLevel(188) === 0);
+assert('累计经验 Lv99=100万', Progression.shipCumExp(99) === 1000000);
+assert('累计经验 Lv188=2034.85万(含99→100的14.85万)', Progression.shipCumExp(188) === 20348500, 'cum=' + Progression.shipCumExp(188));
+/* 提督经验曲线（参照wiki：Lv99=100万、Lv120=1500万） */
+assert('提督 Lv1→2=100', Game.expForLevel(1) === 100);
+assert('提督 Lv99→100=30万', Game.expForLevel(99) === 300000, 'exp=' + Game.expForLevel(99));
+assert('提督 Lv119→120=100万', Game.expForLevel(119) === 1000000, 'exp=' + Game.expForLevel(119));
+assert('提督满级120', Game.expForLevel(120) === 0);
+assert('头衔：Lv1=新米少佐', Game.admiralTitle(1) === '新米少佐');
+assert('头衔：Lv40=中坚少佐', Game.admiralTitle(40) === '中坚少佐');
+assert('头衔：Lv46=少佐', Game.admiralTitle(46) === '少佐');
+assert('头衔：Lv60=新米中佐', Game.admiralTitle(60) === '新米中佐');
+assert('头衔：Lv80=大佐', Game.admiralTitle(80) === '大佐');
+assert('头衔：Lv120=元帅', Game.admiralTitle(120) === '元帅');
 /* 升级变慢：5万经验只能升到~33级 */
 const slowShip = Game.createShip('mahan', 1);
 Progression.addShipExp(slowShip.uid, 50000);
@@ -222,7 +338,7 @@ assert('MVP正常产生', sawMvp);
 /* 出击经验：基础=敌HP/2 ×评价×旗舰×MVP */
 const expRes = Battle.battle(strongFleet, ENEMY_FLEETS.F01.ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
 assert('F01敌总HP=60', expRes.enemyHpTotal === 60);
-const expGains = Progression.applyBattleResult(1, expRes, false);
+const expGains = Progression.applyBattleResult(1, expRes, false).gains;
 const expBase = expRes.perfect ? Math.floor(30 * 1.2) : 30;
 const plainGain = expGains.find(g => g.uid !== strongFleet[0] && g.uid !== expRes.mvpUid) || expGains[0];
 assert('基础经验=敌HP总和/2' + (expRes.perfect ? '×1.2' : ''), plainGain.exp === expBase, 'exp=' + plainGain.exp);
@@ -230,11 +346,14 @@ const expMvp = expGains.find(g => g.uid === expRes.mvpUid);
 const expFlag = expGains.find(g => g.uid === strongFleet[0]);
 assert('MVP经验×2', !!expMvp && expMvp.exp === expBase * 2 * (expMvp === expFlag ? 1.5 : 1), 'exp=' + (expMvp && expMvp.exp));
 assert('旗舰经验×1.5', !!expFlag && expFlag.exp === expBase * 1.5 * (expFlag === expMvp ? 2 : 1), 'exp=' + (expFlag && expFlag.exp));
-/* 演习经验：旗舰必要exp/100 + 第2舰/300（>500 时开根） */
+/* 演习经验：敌方旗舰累计/100 + 第2舰累计/300（>500 时开根，S×1.2） */
 const pracRes = Battle.battle(strongFleet, pr.fleets[0].ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
-const pracGains = Progression.applyBattleResult(1, pracRes, true);
+const pracGains = Progression.applyBattleResult(1, pracRes, true).gains;
 assert('演习经验按wiki公式', pracGains.every(g => g.exp > 0 && g.exp < 5000), 'exp=' + pracGains.map(g => g.exp).join(','));
-/* 远征经验：基础×旗舰1.5 */
+/* 演习提督经验：20~160 且为20的倍数 */
+const pracAdm = Progression.applyBattleResult(1, pracRes, true).adm;
+assert('演习提督经验∈[20,160]且为20倍数', pracAdm.exp >= 20 && pracAdm.exp <= 160 && pracAdm.exp % 20 === 0, 'adm=' + pracAdm.exp);
+/* 远征经验：基础(30)×旗舰1.5×(随机2倍)×(大成功2倍) */
 const exFleet = [];
 for (const id of ['fletcher', 'kidd']) {
   const s = Game.createShip(id, 1);
@@ -245,8 +364,9 @@ Game.state.fleet[2] = exFleet;
 const exStart = Logistics.startExpedition(2, 'ex1');
 Game.state.expeditions[2].end = Date.now() - 1;
 Logistics.claimExpedition(2);
-assert('远征经验：旗舰1.5倍', Game.state.ships[exFleet[0]].exp === Math.round(30 * 1.5) && Game.state.ships[exFleet[1]].exp === 30,
-  `flag=${Game.state.ships[exFleet[0]].exp} other=${Game.state.ships[exFleet[1]].exp}`);
+const exFlagExp = Game.state.ships[exFleet[0]].exp, exOtherExp = Game.state.ships[exFleet[1]].exp;
+assert('远征经验：基础30×(旗舰1.5×随机2倍×大成功2倍)', exFlagExp > 0 && exOtherExp > 0 && exFlagExp % 15 === 0 && exOtherExp % 15 === 0 && exFlagExp >= exOtherExp,
+  `flag=${exFlagExp} other=${exOtherExp}`);
 /* 旗舰大破禁出击 */
 Game.state.fleet[1] = strongFleet;
 const fs = Game.state.ships[strongFleet[0]];
@@ -426,14 +546,16 @@ assert('改修日常任务进度', Game.state.quests.d9.progress === 1, 'p=' + G
 const cq9 = Progression.claimQuest('d9');
 assert('领取改修日常（+1螺丝+50弹）', cq9.ok && Game.state.resources.screws >= 1 && Game.state.resources.ammo >= 50, JSON.stringify(cq9 && cq9.q && cq9.q.id));
 
-section('账号系统（注册/登录/云存档）');
+section('账号系统（注册/登录/云存档/管理员）');
 const A = authMod;
 A.clearSessions();
 const uName = 'test_' + Date.now() % 100000;
 const rReg = A.registerUser(uName, 'secret123');
 assert('注册成功', rReg.ok && rReg.username === uName, JSON.stringify(rReg));
 assert('注册无存档(首次)', rReg.save === null);
+assert('注册角色为 user', rReg.role === 'user');
 assert('注册重复被拒', !A.registerUser(uName, 'secret123').ok);
+assert('保留用户名 admin 不可注册', !A.registerUser('admin', 'whatever1').ok);
 assert('非法用户名被拒', !A.registerUser('a', 'secret123').ok);
 assert('非法用户名被拒2', !A.registerUser('bad name!', 'secret123').ok);
 assert('短密码被拒', !A.registerUser('newuser01', '123').ok);
@@ -453,6 +575,21 @@ const rLog2 = A.loginUser(uName, 'secret123');
 assert('登录返回已有存档', rLog2.save && rLog2.save.foo === 'bar');
 A.revoke(token);
 assert('登出后 token 失效', A.authenticate(token) === null);
+/* 管理员账号 */
+const rAdm = A.ensureAdmin();
+assert('ensureAdmin 创建成功', rAdm.ok && rAdm.username === 'admin');
+assert('ensureAdmin 幂等', A.ensureAdmin().existed === true);
+const rAdmL = A.loginUser('admin', 'admin');
+assert('admin 登录成功且 role=admin', rAdmL.ok && rAdmL.role === 'admin', JSON.stringify(rAdmL));
+const admToken = rAdmL.token;
+assert('sessionInfo 返回角色', A.sessionInfo(admToken) && A.sessionInfo(admToken).role === 'admin');
+/* 普通用户 sessionInfo */
+const uTok = A.loginUser(uName, 'secret123').token;
+assert('普通用户角色为 user', A.sessionInfo(uTok).role === 'user');
+/* cookie 解析 */
+assert('cookie 解析正常', A.cookieToken('foo=1; usnc_session=abc123; bar=2') === 'abc123');
+assert('cookie 无会话返回空', A.cookieToken('foo=1') === '');
+assert('cookie 空头返回空', A.cookieToken(null) === '');
 /* 与游戏存档互操作：Game.serialize 可被 putSave 存下并被 loadData 恢复 */
 const snap = Game.serialize();
 A.putSave(uName, snap);
@@ -461,6 +598,37 @@ assert('游戏存档可入云', gs2 && gs2.ships && Object.keys(gs2.ships).lengt
 Game.newGame();
 Game.loadData(gs2);
 assert('云存档可恢复游戏状态', Object.keys(Game.state.ships).length === Object.keys(gs2.ships).length && Game.state.resources.fuel >= gs2.resources.fuel, 'fuel=' + Game.state.resources.fuel);
+/* 游客旧档迁移逻辑（模拟登录无档账号时带走本地档） */
+Game.newGame();
+const localSave = Game.serialize();
+global.localStorage.setItem('usnc_save_v1', JSON.stringify(localSave));
+Game.newGame();
+Game.loadData(JSON.parse(global.localStorage.getItem('usnc_save_v1')));
+assert('游客档可被账号载入(迁移)', Object.keys(Game.state.ships).length === Object.keys(localSave.ships).length);
+/* 破损存档修复：服务器坏档（无舰船/无海域进度）加载后自动补发初始舰队与海域进度 */
+const brokenSave = { version: 1, admiral: { name: '迁移测试', level: 9, exp: 0 }, resources: { fuel: 999999, ammo: 999999, steel: 999999, baux: 999999, screws: 3000 }, fleet: { 1: [], 2: [] }, ships: {}, equipment: {}, mapProgress: {} };
+Game.newGame();
+Game.loadData(brokenSave);
+assert('坏档修复：补发初始双舰', Object.keys(Game.state.ships).length === 2, JSON.stringify(Object.keys(Game.state.ships)));
+assert('坏档修复：初始舰编入舰队1', Game.state.fleet[1].length === 2, 'fleet1=' + Game.state.fleet[1].length);
+assert('坏档修复：海域进度补全', Object.keys(Game.state.mapProgress).length === MAPS.length && Game.state.mapProgress[MAPS[0].id].cleared === false, 'maps=' + Object.keys(Game.state.mapProgress).length);
+assert('坏档迁移：开发资材默认10', Game.state.resources.devMats === 10, 'devMats=' + Game.state.resources.devMats);
+/* 测试模式管理员校验：非 admin 环境下 isTestMode 恒为 false */
+assert('非管理员无法开启测试模式', Game.setTestMode(true) === undefined && !Game.isTestMode());
+Game.setTestMode(false);
+
+section('旧档迁移（提督经验曲线）');
+/* 旧曲线=1000×lv；旧Lv40 累计78万 → 新wiki曲线 Lv97 */
+Game.newGame();
+Game.state.admiral = { name: '提督', level: 40, exp: 0 };
+delete Game.state.expMigrated;
+Game.loadData(Game.serialize());
+assert('旧档迁移：旧Lv40映射到新曲线Lv97', Game.state.admiral.level === 97 && Game.state.admiral.exp === 18500, 'lv=' + Game.state.admiral.level + ' exp=' + Game.state.admiral.exp);
+/* 旧档 Lv1 不迁移 */
+Game.newGame();
+Game.state.admiral = { name: '提督', level: 1, exp: 100 };
+Game.loadData(Game.serialize());
+assert('旧档 Lv1 不迁移', Game.state.admiral.level === 1, 'lv=' + Game.state.admiral.level);
 
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);

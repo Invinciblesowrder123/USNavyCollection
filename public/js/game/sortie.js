@@ -129,14 +129,12 @@ const Sortie = (() => {
       losReq: 0, fleetIdx: so.fleetIdx
     });
 
-    /* 消耗：油弹（按消耗×节点系数），疲劳-15 */
+    /* 消耗：油弹（wiki：普通战斗点 油20%/弹20%，进入夜战 弹30%），疲劳-15 */
     for (const uid of fleet) {
       const s = st.ships[uid];
       if (!s) continue;
-      const defD = G.shipDef(s);
-      const fuelCost = defD.consum.fuel * 0.35, ammoCost = defD.consum.ammo * 0.35;
-      s.supply.fuel = Math.max(0, s.supply.fuel - fuelCost / (defD.consum.fuel * 4));
-      s.supply.ammo = Math.max(0, s.supply.ammo - ammoCost / (defD.consum.ammo * 4));
+      s.supply.fuel = Math.max(0, s.supply.fuel - 0.2);
+      s.supply.ammo = Math.max(0, s.supply.ammo - (result.nightUsed ? 0.3 : 0.2));
       s.morale = Math.max(0, s.morale - 15);
     }
 
@@ -154,9 +152,22 @@ const Sortie = (() => {
       G.destroyShip(uid);
     }
 
-    /* 提督经验（参照wiki：道中/BOSS基础值×评价补正） */
-    const admRankMult = { S: 1.0, A: 0.8, B: 0.5 }[result.rank] || 0;
-    G.addAdmiralExp(Math.round((isBoss ? 20 : 10) * admRankMult));
+    /* 提督经验（参照wiki「提督经验值·出击」：海域S值×评价补正）
+     * 道中：S x1.0 / A x0.8 / B x0.5 / C·D·E x0
+     * BOSS：S = BOSS_S；A = BOSS_S - 道中S x0.5；B = BOSS_S - 道中S x0.8；C = 道中S；D·E x0 */
+    const admExp = map.admExp || { node: 10, boss: 20 };
+    const nodeS = admExp.node, bossS = admExp.boss;
+    let admGain = 0;
+    if (isBoss) {
+      if (result.rank === 'S') admGain = bossS;
+      else if (result.rank === 'A') admGain = bossS - nodeS * 0.5;
+      else if (result.rank === 'B') admGain = bossS - nodeS * 0.8;
+      else if (result.rank === 'C') admGain = nodeS;
+    } else {
+      admGain = { S: 1.0, A: 0.8, B: 0.5 }[result.rank] * nodeS || 0;
+    }
+    admGain = Math.round(admGain);
+    if (admGain > 0) G.addAdmiralExp(admGain);
 
     /* 掉落 */
     let drop = null;
@@ -166,6 +177,7 @@ const Sortie = (() => {
       dropTable.forEach(id => weights[id] = RARITY_W[ShipData[id].rarity] || 10);
       const id = Util.weighted(weights);
       drop = G.createShip(id, 1);
+      G.equipDefaults(drop.uid);   // 掉落舰船自带默认装备
     }
 
     /* 血条与进度 */
@@ -193,7 +205,7 @@ const Sortie = (() => {
     if (result.rank === 'S') st.stats.sWin++;
     st.stats.sink += result.enemyKilled;
 
-    return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true };
+    return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true, admExp: admGain };
   }
 
   /* 战斗结束后移动到下一节点 */
@@ -241,8 +253,9 @@ const Sortie = (() => {
       const s = st.ships[uid];
       if (!s) continue;
       const d = G.shipDef(s);
-      fuel += d.consum.fuel * 0.35 * battleNodes;
-      ammo += d.consum.ammo * 0.35 * battleNodes;
+      /* wiki：普通战斗点消耗 油20%/弹20%（满补给=消耗值×4） */
+      fuel += d.consum.fuel * 0.8 * battleNodes;
+      ammo += d.consum.ammo * 0.8 * battleNodes;
     }
     return { fuel: Math.ceil(fuel), ammo: Math.ceil(ammo) };
   }

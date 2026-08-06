@@ -1,25 +1,30 @@
 'use strict';
 /* ============================================================
- * 启动引导：会话恢复 → 读档 → 时钟/存档 → 路由
- * 双模式：账号（云存档）/ 游客（localStorage）
+ * 启动引导：会话恢复 → 登录校验 → 读档 → 时钟/存档 → 路由
+ * 必须登录后才能进入游戏（Cookie 免登录直进）。
+ * 测试模式（无限资源/瞬间建造/瞬间入渠）为管理员独有功能。
  * ============================================================ */
 
 (function () {
   const $ = s => document.querySelector(s);
   let booted = false;
 
-  /* ---- 调试模式：无限资源开关 ---- */
+  /* ---- 测试模式开关（仅管理员可见可用）：无限资源/瞬间建造/瞬间入渠 ---- */
   const dbgBtn = $('#debugToggle');
   function syncDebugBtn() {
-    const on = Game.isInfiniteRes();
-    dbgBtn.textContent = on ? '无限资源 ON' : '无限资源 OFF';
+    const isAdm = Account.isAdmin();
+    dbgBtn.style.display = isAdm ? '' : 'none';
+    if (!isAdm && Game.isTestMode()) Game.setTestMode(false);
+    const on = Game.isTestMode() && isAdm;
+    dbgBtn.textContent = on ? '测试模式 ON' : '测试模式 OFF';
     dbgBtn.classList.toggle('on', on);
   }
   dbgBtn.addEventListener('click', () => {
-    Game.setInfiniteRes(!Game.isInfiniteRes());
+    if (!Account.isAdmin()) { UI.toast('测试模式为管理员专属功能'); return; }
+    Game.setTestMode(!Game.isTestMode());
     syncDebugBtn();
     UI.refreshTop();
-    UI.toast(Game.isInfiniteRes() ? '调试：无限资源已开启（消耗免除，资源保持最大）' : '调试：无限资源已关闭');
+    UI.toast(Game.isTestMode() ? '调试：测试模式已开启（无限资源 / 瞬间建造 / 瞬间入渠）' : '调试：测试模式已关闭');
   });
   syncDebugBtn();
 
@@ -28,29 +33,28 @@
   const accInfo = $('#accountInfo');
   function syncAccount() {
     if (Account.isAccount()) {
-      accInfo.textContent = '@' + Account.username();
+      accInfo.textContent = (Account.isAdmin() ? '👑 ' : '') + '@' + Account.username();
       accBtn.textContent = '退出登录';
     } else {
-      accInfo.textContent = '游客模式';
-      accBtn.textContent = '登录账号';
+      accInfo.textContent = '';
+      accBtn.textContent = '';
+      accBtn.style.display = 'none';
+      return;
     }
+    accBtn.style.display = '';
   }
   accBtn.addEventListener('click', () => {
-    if (Account.isAccount()) {
-      /* 退出：先上传当前档到服务器，再回游客档 */
-      Account.saveGame(Game.serialize()).finally(() => {
-        Account.logout();
-        Game.load();
-        UI.refreshTop();
-        UI.go('home');
-        syncAccount();
-      });
-    } else {
+    if (!Account.isAccount()) return;
+    /* 退出：先上传当前档，再回登录页 */
+    Account.saveGame(Game.serialize()).finally(() => {
+      Account.logout();
+      if (Game.isTestMode()) Game.setTestMode(false);
       document.body.classList.add('unauth');
       UI.go('login');
-    }
+      syncAccount();
+    });
   });
-  Account.onChange(syncAccount);
+  Account.onChange(() => { syncAccount(); syncDebugBtn(); });
   syncAccount();
 
   /* ---- 时钟（每秒）与自动存档 ---- */
@@ -76,19 +80,31 @@
 
   /* ---- 进入游戏 ---- */
   function enterGame(saveData) {
-    if (saveData) {
-      Game.loadData(saveData);                    // 账号：服务器存档
-    } else if (Account.isAccount()) {
-      /* 新账号无档：带走本地游客档（若有），否则新档，并立即上传 */
+    const hasShips = !!(saveData && saveData.ships && Object.keys(saveData.ships).length > 0);
+    if (hasShips) {
+      Game.loadData(saveData);                    // 账号：服务器存档（正常）
+    } else {
+      /* 无存档或服务器存档破损（无舰船）：
+       * 优先迁移本地游客旧档（若有），否则加载/重建存档（applySave 会补发初始舰队） */
       let migrated = false;
       try {
         const raw = localStorage.getItem('usnc_save_v1');
-        if (raw) { Game.loadData(JSON.parse(raw)); migrated = true; }
+        if (raw) {
+          const guest = JSON.parse(raw);
+          if (guest && guest.ships && Object.keys(guest.ships).length > 0) {
+            Game.loadData(guest);
+            migrated = true;
+          }
+        }
       } catch (e) { /* ignore */ }
-      if (!migrated) Game.newGame();
+      if (migrated) {
+        /* 游客旧档已接管；破损的服务器存档内容被丢弃 */
+      } else if (saveData) {
+        Game.loadData(saveData);                    // 破损存档 → applySave 自动修复
+      } else {
+        Game.newGame();
+      }
       Game.save();
-    } else {
-      Game.load();                                 // 游客：本地存档
     }
 
     Progression.initQuests();
@@ -102,15 +118,22 @@
     UI.refreshTop();
     UI.go('home');
     syncAccount();
+    syncDebugBtn();
   }
 
-  /* 登录/注册成功 / 游客模式 回调（由 login.js 触发） */
-  window.__onAccountEnter = save => enterGame(save);
-  window.__onGuestEnter = () => enterGame(null);
+  function showLogin() {
+    document.body.classList.add('unauth');
+    UI.go('login');
+    syncAccount();
+    syncDebugBtn();
+  }
 
-  /* ---- 启动：恢复会话 → 决定入口 ---- */
+  /* 登录/注册成功回调（由 login.js 触发） */
+  window.__onAccountEnter = save => enterGame(save);
+
+  /* ---- 启动：恢复会话（Cookie 免登录直进）→ 决定入口 ---- */
   Account.restore().then(r => {
-    if (r.ok) enterGame(r.save);       // 会话有效（save 可能为 null）
-    else enterGame(null);              // 无 token / 会话过期 → 游客模式
+    if (r.ok) enterGame(r.save);
+    else showLogin();                     // 未登录/会话过期 → 登录页
   });
 })();

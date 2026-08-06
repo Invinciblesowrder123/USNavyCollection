@@ -53,7 +53,9 @@ USNavyCollection/
 
 - 舰船字段：`id, en, zh, cls(舰级), type(BB/CV/...), rarity(1-5), stats{hp,fp,tp,aa,arm,evd,asw,los,lck}, slots[{types,size}], equip[装备id], consumption{fuel,ammo}, build{fuel,ammo,steel,baux,time,hours}, kai:{lv,needs,stats...} | null`
 - 类型代码：`BB BBV CV CVL CA CAV CL CLT DD SS AV AS AR DE`
-- 装备字段：`id, en, zh, cat(主炮小/主炮中/主炮大/副炮/鱼雷/舰战/舰攻/舰爆/水侦/水爆/电探/高角炮/机枪/声呐/爆雷/穿甲弹/设备), stat{fp,tp,aa,arm,asw,los,evd,bmb,avg,radius,speed}, slotType, cost, buildable, kai(改修上限,>0 可改修)`
+- 装备字段：`id, en, zh, cat(主炮小/主炮中/主炮大/副炮/鱼雷/舰战/舰攻/舰爆/水侦/水爆/电探/高角炮/机枪/声呐/爆雷/穿甲弹/设备), stat{fp,tp,aa,arm,asw,los,evd,bmb,avg,radius,speed}, slotType, cost, buildable, kai(改修上限,>0 可改修), r(稀有度1~4→开发等级门槛=稀有度×3), scrap(解体回收→开发最低资源要求=×10), dev(开发条目: 秘书舰系→池→份额, 出货率=份额×2%)`
+- 开发系统：秘书舰系 炮战GUN(BB/CA)/水雷MINE(DD/DE/CL/CLT)/空母CV(CV/CVL/BBV/CAV/AV)/潜水SUB(SS/SSV/AS) × 最高资源池 油钢OIL/弹药AMMO/铝BAUX（优先顺序 燃料钢材>弹药>铝，平局归前者）；每池50等份，失败份额=50-Σ；roll后判定 提督等级≥r×3 且 资源≥scrap×10；成功消耗1开发资材，失败返还；即时结算
+- 开发资材(devMats)：上限3000；初始10；日常d6「装备开发3次」+1、周常w5+3、月常m1+5/m2+8、一次性o16「狙击开发」+5、远征ex7+1/ex8+2
 - 装备实例：`{uid, id, star(0~10, ★MAX=10)}`；改修效果=类别系数×√★（大主炮1.5/鱼雷1.2/其余1.0，舰战/舰攻★×0.2，电探·水侦→索敌，声呐·爆雷→对潜）
 - 改修配置（equipment.js `IMPROVE`）：`{need(basic/dd/cl/bb/cv/as 二号舰解锁), screws, res[4], matFrom(默认6), update{to,mats[2]}}`
 - 近代化素材值（progression.js `MOD_VALUE`/`MOD_KAI_BONUS`）：舰种决定素材属性值（参照 wiki 素材列表）；奖励值=(n+1)÷5+n，偏斜=((n+2)÷5+n)÷2；上限 火力/雷装/对空/装甲=基础×1.3，耐久+2/对潜+9/运+8（仅DE素材）；改造重置 fp/tp/aa/arm
@@ -74,6 +76,14 @@ USNavyCollection/
 - 装备改修工厂：维斯塔尔(AS)秘书舰解锁 / 二号舰解锁类别 / 每日次数1~3 / ★0~MAX(10) / wiki成功率表 / 确定化 / ★6+素材 / ★MAX更新进化(23条路线) / 螺丝经济(上限3000)
 - 引擎测试：328 项全过（`npm run sim`）；浏览器 E2E 45 项全过（`test_flow.html`）
 - 分支：`main`（v0.1）+ `develop`（开发中）
+
+**v0.3 完成（2026-08-05）**：装备系统 v2（参照 kcwiki「开发」「开发资材」「装备」）。
+- 开发资材（新资源，上限3000）：成功消耗/失败返还；日常/周常/月常/远征/一次性任务多渠道获取
+- 开发系统按 wiki 重做：秘书舰系(炮战/水雷/空母/潜水)×最高资源池(油钢/弹药/铝)=开发池、50等份出货率、roll后等级+资源双判定、即时结算、UI 实时开发池预览+8个常用配方
+- 装备解体 + 装备仓库页签（分类一览/★/锁定/装备中状态）
+- 装备数据 44→50 件（新增 Mk28/Mk30/FM-2/F6F-5/GFCS/初期SG），全部带稀有度/解体回收/开发条目
+- 引擎测试 389 项全过；E2E 48 项全过
+- 存档迁移：devMats 默认10；废弃旧开发队列
 
 **迭代候选（未做）**：活动海域(贴条/削甲/友军) / 图鉴 / 音效 / 更多海域。
 

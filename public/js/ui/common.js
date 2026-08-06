@@ -144,12 +144,13 @@ const UI = (() => {
       <span class="res"><span class="ico ico-ammo"></span><b>${r.ammo}</b><span class="dim">/${cap}</span></span>
       <span class="res"><span class="ico ico-steel"></span><b>${r.steel}</b><span class="dim">/${cap}</span></span>
       <span class="res"><span class="ico ico-baux"></span><b>${r.baux}</b><span class="dim">/${cap}</span></span>
-      <span class="res"><span class="ico ico-screw"></span><b>${r.screws || 0}</b></span>`;
+      <span class="res"><span class="ico ico-screw"></span><b>${r.screws || 0}</b></span>
+      <span class="res"><span class="ico ico-devmat"></span><b>${r.devMats || 0}</b></span>`;
   }
 
   function refreshTop() {
     $('#admiralInfo').textContent =
-      `${Game.state.admiral.name} · Lv.${Game.state.admiral.level} · EXP ${Game.state.admiral.exp}/${Game.expForLevel(Game.state.admiral.level)}`;
+      `${Game.state.admiral.name} · ${Game.admiralTitle(Game.state.admiral.level)} · Lv.${Game.state.admiral.level} · EXP ${Game.state.admiral.exp}/${Game.expForLevel(Game.state.admiral.level)}`;
     $('#resBar').innerHTML = resHtml();
   }
 
