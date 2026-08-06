@@ -95,6 +95,138 @@ for (let i = 0; i < 50; i++) {
 console.log(`  BOSS 胜率: ${bossWins}/50 (S胜 ${bossS})`);
 assert('强舰队BOSS胜率>50%', bossWins / 50 > 0.5, `bossWins=${bossWins}`);
 
+section('弹药后勤（参照wiki：弹药补正/1-2资源点/消耗）');
+/* 弹药补正公式：残弹率≥50%→1，<50%→残弹率/50（0%无法炮击） */
+assert('弹药补正 残弹60%=1', Battle.ammoBonus({ ammo: 0.6 }) === 1);
+assert('弹药补正 残弹50%=1', Battle.ammoBonus({ ammo: 0.5 }) === 1);
+assert('弹药补正 残弹40%=0.8', Math.abs(Battle.ammoBonus({ ammo: 0.4 }) - 0.8) < 1e-9);
+assert('弹药补正 残弹25%=0.5', Math.abs(Battle.ammoBonus({ ammo: 0.25 }) - 0.5) < 1e-9);
+assert('弹药补正 残弹0%=0（无法炮击）', Battle.ammoBonus({ ammo: 0 }) === 0);
+/* 1-2 地图按 wiki：C 点为弹药资源点（不消耗油弹/士气），BOSS 无重巡以上且≤5艘（驱逐/轻巡/雷巡） */
+const map12 = MAPS.find(m => m.id === '1-2');
+assert('1-2 C点为弹药资源点', map12.defs.C && map12.defs.C.type === 'resource' && map12.defs.C.reward[0] === 'ammo', JSON.stringify(map12.defs.C));
+const f06 = ENEMY_FLEETS.F06.ships;
+assert('1-2 BOSS舰队≤5艘', f06.length <= 5, 'n=' + f06.length);
+assert('1-2 BOSS无重巡以上舰种', f06.every(k => ['DD', 'CL', 'CLT'].includes(DEEP_TEMPLATES[k].type)), f06.map(k => DEEP_TEMPLATES[k].type).join(','));
+assert('1-2 BOSS旗舰为重雷装巡洋舰CHI级', DEEP_TEMPLATES[f06[0]].type === 'CLT' && DEEP_TEMPLATES[f06[0]].boss === true, JSON.stringify(DEEP_TEMPLATES[f06[0]]));
+
+section('新海域数据校验（1-4 / 2-X / 3-X，参照wiki）');
+assert('海域总数12（1-1~3-4）', MAPS.length === 12, 'n=' + MAPS.length);
+/* 通用结构校验：节点可达、BOSS可达、掉落id存在、敌军key存在、分支目标为合法边 */
+function reachable(map, from) {
+  const seen = new Set([from]);
+  const q = [from];
+  while (q.length) {
+    const n = q.shift();
+    for (const [a, b] of map.edges) {
+      if (a === n && !seen.has(b)) { seen.add(b); q.push(b); }
+    }
+  }
+  return seen;
+}
+for (const m of MAPS) {
+  const nodes = Object.keys(m.nodes);
+  const reach = reachable(m, m.start);
+  assert(`${m.id} 全部节点从出发点可达`, nodes.every(n => reach.has(n)), [...nodes].filter(n => !reach.has(n)).join(','));
+  assert(`${m.id} BOSS可达`, reach.has(m.boss));
+  assert(`${m.id} BOSS定义存在`, m.defs[m.boss] && m.defs[m.boss].type === 'boss', JSON.stringify(m.defs[m.boss]));
+  for (const d of (m.drops || []).concat(m.bossDrops || [])) {
+    assert(`${m.id} 掉落「${d}」存在于舰船数据`, !!ShipData[d], d);
+  }
+  for (const def of Object.values(m.defs)) {
+    if (def.enemy) {
+      assert(`${m.id} 敌军舰队「${def.enemy}」存在`, !!ENEMY_FLEETS[def.enemy], def.enemy);
+      assert(`${m.id} 敌军模板全部存在`, ENEMY_FLEETS[def.enemy].ships.every(k => !!DEEP_TEMPLATES[k]), ENEMY_FLEETS[def.enemy].ships.join(','));
+    }
+  }
+  const brs = Array.isArray(m.branch) ? m.branch : (m.branch ? [m.branch] : []);
+  for (const b of brs) {
+    const outEdges = m.edges.filter(e => e[0] === b.at).map(e => e[1]);
+    assert(`${m.id} 分支点${b.at}目标为合法边`, (b.to || []).every(t => outEdges.includes(t)), JSON.stringify(b));
+    assert(`${m.id} 分支点${b.at}有可用的兜底路线`, outEdges.some(t => !(b.to || []).includes(t)), JSON.stringify(b));
+  }
+}
+/* 难度梯度：星级单调不减；新图BOSS舰队≥4艘（后期图不加水）；最高难度的3-4必须远超前图 */
+const seq = ['1-1', '1-2', '1-3', '1-4', '2-1', '2-2', '2-3', '2-4', '3-1', '3-2', '3-3', '3-4'];
+const bossHp = m => ENEMY_FLEETS[m.defs[m.boss].enemy].ships.reduce((s, k) => s + DEEP_TEMPLATES[k].stats[0], 0);
+let prevStars = 0;
+for (const id of seq) {
+  const m = MAPS.find(x => x.id === id);
+  assert(`难度梯度 ${id} 星级≥前图`, m.stars >= prevStars, `${prevStars}→${m.stars}`);
+  prevStars = m.stars;
+}
+for (const id of ['1-4', '2-1', '2-2', '2-3', '2-4', '3-1', '3-2', '3-3', '3-4']) {
+  const m = MAPS.find(x => x.id === id);
+  const bossFleet = ENEMY_FLEETS[m.defs[m.boss].enemy].ships;
+  assert(`难度梯度 ${id} BOSS舰队≥4艘`, bossFleet.length >= 4, 'n=' + bossFleet.length);
+}
+const hp14 = bossHp(MAPS.find(m => m.id === '1-4')), hp34 = bossHp(MAPS.find(m => m.id === '3-4'));
+assert('3-4 BOSS舰队总HP ≥ 1-4 ×1.5（后期图强度翻倍）', hp34 >= hp14 * 1.5, `${hp14}→${hp34}`);
+/* 各新栖姬 BOSS 类型正确 */
+const m22 = MAPS.find(m => m.id === '2-2');
+assert('2-2 BOSS为深海潜水栖姬（SS）', DEEP_TEMPLATES[ENEMY_FLEETS[m22.defs[m22.boss].enemy].ships[0]].type === 'SS' && DEEP_TEMPLATES[ENEMY_FLEETS[m22.defs[m22.boss].enemy].ships[0]].boss === true);
+const m24 = MAPS.find(m => m.id === '2-4');
+assert('2-4 BOSS为深海飞行场栖姬（CV）', DEEP_TEMPLATES[ENEMY_FLEETS[m24.defs[m24.boss].enemy].ships[0]].name === '深海飞行场栖姬');
+const m34 = MAPS.find(m => m.id === '3-4');
+assert('3-4 BOSS为深海北方栖姬（BB）', DEEP_TEMPLATES[ENEMY_FLEETS[m34.defs[m34.boss].enemy].ships[0]].name === '深海北方栖姬');
+/* 新海域冒烟测试：满编强舰队对 2-3/3-1/3-4 BOSS、2-2 潜水栖姬、2-3 输送舰队，无崩溃且胜率合理 */
+const smoke = [['2-3 BOSS F26', 'F26', 0.30], ['3-1 BOSS F35', 'F35', 0.30], ['3-4 BOSS F46', 'F46', 0.25], ['2-2 潜水栖姬 F21', 'F21', 0.20], ['2-3 输送舰队 F24', 'F24', 0.75]];
+for (const [label, fk, thr] of smoke) {
+  let w = 0, s = 0;
+  for (let i = 0; i < 30; i++) {
+    const r = Battle.battle(strongFleet, ENEMY_FLEETS[fk].ships, '单纵阵', ENEMY_FLEETS[fk].formation, { allowNight: true, fleetIdx: 1 });
+    assert(`${label} 战斗#${i} 无异常`, typeof r.rank === 'string' && Array.isArray(r.log));
+    if (r.rank === 'S' || r.rank === 'A' || r.rank === 'B') w++;
+    if (r.rank === 'S') s++;
+  }
+  assert(`${label} 胜率≥${thr * 100}%`, w / 30 >= thr, `wins=${w}/30 (S${s})`);
+  console.log(`  ${label} 胜率: ${w}/30 (S胜 ${s})`);
+}
+/* 满补给舰队走 C→D 路线（索敌≥20 发现弹药补给路线），BOSS战时弹药仍≥50% 可全力攻击 */
+const logiPrevFleet = Game.state.fleet[1].slice();
+const logiFleet = [];
+for (const id of ['mahan', 'benson']) {
+  const s = Game.createShip(id, 10);
+  Game.equipDefaults(s.uid);
+  s.supply = { fuel: 1, ammo: 1 };
+  logiFleet.push(s.uid);
+}
+Game.state.fleet[1] = logiFleet;
+assert('初始双驱逐索敌≥20（走C补给路线）', Game.fleetLos(1) >= 20, 'los=' + Game.fleetLos(1));
+const lStart = Sortie.start('1-2', 1);
+assert('1-2 出击启动', lStart.ok, JSON.stringify(lStart));
+assert('满补给出击无低油弹警告', !lStart.warn, lStart.warn || '');
+Sortie.advance('单纵阵', true); Sortie.moveToNext();                 // S → C（分支：索敌达标走C）
+assert('1-2 索敌达标走C弹药资源点', Game.state.sortie.node === 'C', 'node=' + Game.state.sortie.node);
+const lRes = Sortie.advance('单纵阵', true);
+assert('C点收集弹药资源（不消耗油弹）', lRes.ok && lRes.type === 'resource' && lRes.res === 'ammo', JSON.stringify(lRes));
+assert('C点后油弹未消耗', logiFleet.every(u => Game.state.ships[u].supply.ammo === 1 && Game.state.ships[u].supply.fuel === 1));
+Sortie.moveToNext();                                                  // C → D（BOSS）
+assert('C→D直达BOSS', Game.state.sortie.node === 'D', 'node=' + Game.state.sortie.node);
+const lBoss = Sortie.advance('单纵阵', true);
+assert('1-2 BOSS战正常', lBoss.ok && lBoss.type === 'boss', JSON.stringify(lBoss));
+assert('BOSS战全程无「弹药耗尽」', !lBoss.result.log.some(l => typeof l === 'string' && l.includes('弹药耗尽')));
+assert('一战到BOSS后弹药≥50%（满补给足够）', logiFleet.every(u => Game.state.ships[u].supply.ammo >= 0.5),
+  logiFleet.map(u => Math.round(Game.state.ships[u].supply.ammo * 100) + '%').join(','));
+Sortie.returnHome();
+/* 低油弹出击警告 */
+logiFleet.forEach(u => {
+  const s = Game.state.ships[u];
+  s.supply = { fuel: 1, ammo: 0.1 };
+  s.hp = Game.shipStats(u).hpMax;
+});
+const lWarn = Sortie.start('1-2', 1);
+assert('弹药不足出击返回警告', lWarn.ok && lWarn.warn && lWarn.warn.includes('弹10%'), JSON.stringify(lWarn));
+Sortie.returnHome();
+/* 弹药0%时炮击战无法攻击（wiki：残弹0无法炮击），战斗仍正常结算 */
+logiFleet.forEach(u => { Game.state.ships[u].supply = { fuel: 1, ammo: 0 }; });
+const lZero = Battle.battle(logiFleet, ENEMY_FLEETS.F06.ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
+assert('弹药0%出现弹药耗尽提示', lZero.log.some(l => typeof l === 'string' && l.includes('弹药耗尽')), JSON.stringify(lZero.log.filter(l => typeof l === 'string' && l.includes('弹药耗尽'))));
+assert('弹药0%战斗仍可结算', typeof lZero.rank === 'string' && lZero.rank.length === 1);
+/* 恢复后续测试所需状态 */
+Game.state.fleet[1] = logiPrevFleet;
+for (const uid of logiFleet) Game.destroyShip(uid);
+
 section('建造/开发（wiki：秘书舰系×资源池，即时结算，开发资材）');
 Progression.initQuests();
 Progression.resetDue();

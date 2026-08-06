@@ -33,8 +33,19 @@ const Sortie = (() => {
     if (flag && flag.hp > 0 && flag.hp <= Math.floor(G.shipDef(flag).stats[0] * 0.25)) {
       return { ok: false, msg: '旗舰大破！无法出击！' };
     }
+    /* 油弹状态提示（wiki：弹药<50%伤害减半、0%无法炮击；每战斗点耗油弹各20%） */
+    let minFuel = 1, minAmmo = 1;
+    for (const uid of fleet) {
+      const s = st.ships[uid];
+      if (!s) continue;
+      minFuel = Math.min(minFuel, s.supply.fuel);
+      minAmmo = Math.min(minAmmo, s.supply.ammo);
+    }
+    const warn = (minFuel < 0.5 || minAmmo < 0.5)
+      ? `舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！弹药<50%伤害减半，0%无法炮击，建议先在后勤补给！`
+      : null;
     st.sortie = { mapId, fleetIdx, node: map.start, path: [map.start], finished: false, nightDisabled: false };
-    return { ok: true };
+    return { ok: true, warn };
   }
 
   /* 当前舰队中处于大破状态的僚舰（非旗舰） */
@@ -58,23 +69,26 @@ const Sortie = (() => {
 
   function nodeDef(map, nodeId) { return map.defs[nodeId] || { type: 'empty' }; }
 
-  /* 路线分歧：满足分支条件走分支路线，否则走其余可选节点；无分支走默认边 */
+  /* 路线分歧：满足分支条件走分支路线，否则走其余可选节点；无分支走默认边
+   * branch 支持单对象 {at, if, to} 或数组 [{at, if, to}, ...]（每个分歧点一条） */
   function nextNodes(map, fromNode) {
     const def = nodeDef(map, fromNode);
     const fromEdges = map.edges.filter(e => e[0] === fromNode).map(e => e[1]);
-    if (map.branch && map.branch.at === fromNode) {
+    const branches = map.branch ? (Array.isArray(map.branch) ? map.branch : [map.branch]) : [];
+    const br = branches.find(b => b.at === fromNode);
+    if (br) {
       const st = GameRef().state;
       if (!st.sortie) return fromEdges;
-      const c = map.branch.if || {};
+      const c = br.if || {};
       let ok = true;
       if (c.los !== undefined && GameRef().fleetLos(st.sortie.fleetIdx) < c.los) ok = false;
       if (c.dd !== undefined) {
         const dds = st.fleet[st.sortie.fleetIdx].filter(u => st.ships[u] && st.ships[u].id && ShipData[st.ships[u].id].type === 'DD').length;
         if (dds < c.dd) ok = false;
       }
-      if (ok) return map.branch.to;
+      if (ok) return br.to;
       /* 条件不满足：走非分支的其余路线（如 1-3 索敌不足绕 E 补给点） */
-      const alt = fromEdges.filter(n => !(map.branch.to || []).includes(n));
+      const alt = fromEdges.filter(n => !(br.to || []).includes(n));
       return alt.length ? alt : fromEdges;
     }
     return fromEdges;
@@ -130,12 +144,17 @@ const Sortie = (() => {
     });
 
     /* 消耗：油弹（wiki：普通战斗点 油20%/弹20%，进入夜战 弹30%），疲劳-15 */
+    let ammoZero = false;
     for (const uid of fleet) {
       const s = st.ships[uid];
       if (!s) continue;
       s.supply.fuel = Math.max(0, s.supply.fuel - 0.2);
       s.supply.ammo = Math.max(0, s.supply.ammo - (result.nightUsed ? 0.3 : 0.2));
       s.morale = Math.max(0, s.morale - 15);
+      if (s.supply.ammo <= 0) ammoZero = true;
+    }
+    if (ammoZero) {
+      result.log.push('舰队弹药已耗尽！返回母港后请及时补给，否则舰娘将无法炮击。');
     }
 
     /* 命中同步：战斗对象的hp写回存档 */

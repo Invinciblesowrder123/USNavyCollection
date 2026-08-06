@@ -180,7 +180,7 @@ const LogisticsUI = (() => {
           <button class="btn btn-green" data-sup="1">补给第一舰队</button>
           <button class="btn btn-green" data-sup="2">补给第二舰队</button>
         </div>
-        <div class="hint">油弹决定出击战斗能力：弹药<50%伤害减半，<25%无法炮击。航母补给会消耗铝土补充机队。</div>
+        <div class="hint">油弹决定出击战斗能力（参照 wiki 弹药补正）：弹药≥50%伤害100%，<50%按残弹率/50减半，0%无法炮击。每个战斗点消耗燃料20%、弹药20%（进入夜战弹药30%），请于出击前补给。航母补给会消耗铝土补充机队。</div>
       </div>`);
       root.querySelectorAll('[data-sup]').forEach(b => {
         b.addEventListener('click', () => {

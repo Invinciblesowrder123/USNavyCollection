@@ -340,11 +340,40 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
   padding: 18px;
 }
 #modal-root .modal h3 { color: var(--gold); margin-bottom: 12px; }
+/* 次级浮窗（叠在主弹窗之上，如装备选择器） */
+#sub-modal-root .sub-modal-mask {
+  position: fixed; inset: 0; background: rgba(2,6,12,0.55); z-index: 150;
+  display: flex; align-items: center; justify-content: center;
+}
+#sub-modal-root .modal {
+  background: linear-gradient(180deg, #1a2c4a, #0e1b30);
+  border: 1px solid #c8a050; border-radius: 10px;
+  max-width: 720px; width: 92%; max-height: 84vh; overflow: auto;
+  padding: 18px;
+}
+#sub-modal-root .modal h3 { color: var(--gold); margin-bottom: 12px; }
 .modal-close { float: right; cursor: pointer; color: var(--dim); font-size: 18px; }
 .modal-close:hover { color: var(--red); }
 
+/* ---------- 装备选择器（按装备种类分组单列） ---------- */
+.eq-picker .eq-cat-title {
+  color: var(--blue); font-size: 13px; margin: 10px 0 4px; font-weight: bold;
+  border-bottom: 1px solid rgba(120,150,190,0.25); padding-bottom: 2px;
+}
+.eq-pick-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  border: 1px solid var(--line); border-radius: 5px; padding: 6px 10px; margin: 3px 0;
+  font-size: 13px; background: rgba(10,20,36,0.5); cursor: pointer;
+}
+.eq-pick-item:hover { border-color: var(--gold); background: rgba(232,194,74,0.08); }
+.eq-pick-item .eq-stat { color: var(--dim); font-size: 11px; }
+
 /* ---------- 战斗 ---------- */
 .battlefield { display: flex; flex-direction: column; gap: 10px; position: relative; }
+#bf.night .battle-row { filter: brightness(.62) saturate(.8) hue-rotate(8deg); transition: filter .6s; }
+#bf.night .battle-mid {
+  height: 22px; border-radius: 6px; background: radial-gradient(ellipse at 50% 50%, rgba(24,34,96,.55), rgba(2,4,18,.85));
+}
 .battle-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .battle-mid { height: 22px; }
 .battle-ship {
@@ -503,21 +532,207 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 }
 @keyframes puff { 0% { transform: scale(.4); opacity: .95; } 100% { transform: scale(2); opacity: 0; } }
 
-/* ---------- 海域地图 ---------- */
-.map-wrap { position: relative; height: 320px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
-  background: radial-gradient(ellipse at 50% 40%, #12325a 0%, #081527 70%); }
-.map-node {
-  position: absolute; width: 44px; height: 44px; transform: translate(-50%, -50%);
-  border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  border: 2px solid var(--line); background: #1d314f; font-size: 18px; cursor: default;
+/* ---------- 海域地图（Kancolle风格海图） ---------- */
+.map-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.map-head h3 { border-bottom: none; padding-bottom: 0; margin: 0; }
+.map-board-wrap { overflow-x: auto; }
+.map-stars { color: var(--gold); font-size: 12px; letter-spacing: 2px; vertical-align: 1px; }
+.map-topbar { display: flex; gap: 16px; align-items: center; margin: 2px 0 10px; flex-wrap: wrap; }
+.map-gauge { flex: 1; min-width: 200px; }
+.gauge-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); }
+.gauge-head b { color: var(--text); font-weight: normal; }
+.gauge-bar { height: 10px; border: 1px solid var(--line); border-radius: 5px; background: #0a1424; overflow: hidden; margin-top: 2px; }
+.gauge-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #a83040, #ff5560); transition: width .5s; box-shadow: 0 0 6px rgba(255, 85, 96, .4); }
+.gauge-fill.full { background: linear-gradient(90deg, #c9a43a, #ffd700); box-shadow: 0 0 6px rgba(255, 215, 0, .4); }
+.map-stat { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.map-stat b { color: var(--text); }
+.map-stat b.red { color: var(--red); }
+.map-nodeinfo { margin-top: 10px; font-size: 13px; }
+.map-nodeinfo b { color: var(--gold); }
+
+/* 海图画布：经纬网格 + 深蓝海面 */
+.map-board {
+  position: relative; width: 760px; height: 460px; margin: 0 auto;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 46px),
+    repeating-linear-gradient(90deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 46px),
+    radial-gradient(ellipse at 50% 30%, #13406a 0%, #0a2338 55%, #061625 100%);
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, .45);
 }
-.map-node.battle { border-color: #d06060; }
-.map-node.boss { border-color: #e05555; background: radial-gradient(circle, #5a1a1a, #2a0a0a); color: #ff8080; }
-.map-node.resource { border-color: #5cc45c; color: #7fe07f; }
-.map-node.supply { border-color: #5aa8e8; color: #8fd0ff; }
-.map-node.current { box-shadow: 0 0 0 4px rgba(255,215,0,0.5); border-color: var(--gold); }
-.map-node.cleared { opacity: 0.45; }
-.map-edge { position: absolute; height: 3px; background: rgba(44,66,104,0.8); transform-origin: left center; }
+.map-board.mini { width: 236px; height: 168px; border-radius: 6px; margin: 0; }
+.map-routes { position: absolute; left: 0; top: 0; z-index: 1; }
+.map-edge { stroke: rgba(96, 130, 180, .7); stroke-width: 2; stroke-dasharray: 7 6; }
+.map-edge.next { stroke: rgba(170, 210, 255, .95); stroke-dasharray: 3 7; }
+.map-edge.traveled { stroke: #ffd700; stroke-width: 2.6; stroke-dasharray: none; filter: drop-shadow(0 0 3px rgba(255, 215, 0, .65)); }
+
+/* 节点格子：类型着色 + 图标 + 节点字母 */
+.map-node {
+  position: absolute; width: 56px; height: 56px; transform: translate(-50%, -50%);
+  border-radius: 11px; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--line); background: linear-gradient(180deg, #243a5e, #16263f);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .5);
+  cursor: default; z-index: 2; transition: transform .12s;
+}
+.map-node:hover { transform: translate(-50%, -50%) scale(1.12); }
+.node-icon { font-size: 22px; line-height: 1; pointer-events: none; }
+.node-label {
+  position: absolute; top: -21px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; color: #93abcf; letter-spacing: 1px; white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
+}
+.map-node.start { border-color: #e8c24a; background: linear-gradient(180deg, #4d3d18, #26200e); }
+.map-node.start .node-icon { font-size: 13px; font-weight: bold; color: var(--gold); letter-spacing: 1px; }
+.map-node.battle { border-color: #e07070; background: linear-gradient(180deg, #4d2631, #2b161e); color: #ffb0b0; }
+.map-node.boss { border-color: #ff5560; background: radial-gradient(circle, #7a2429, #2b0a0e); color: #ff8585; box-shadow: 0 0 16px rgba(255, 60, 80, .3); }
+.map-node.boss .node-icon { font-size: 28px; }
+.map-node.boss::before { content: ''; position: absolute; inset: -7px; border: 1px dashed rgba(255, 90, 100, .55); border-radius: 14px; pointer-events: none; }
+.map-node.resource { border-color: #5cc45c; background: linear-gradient(180deg, #1e4a2c, #11271a); color: #7fe07f; }
+.map-node.res-fuel { border-color: #d8a048; background: linear-gradient(180deg, #4a3a16, #26200c); color: #e8c060; }
+.map-node.res-ammo { border-color: #c8d0e0; background: linear-gradient(180deg, #343c4d, #1c222e); color: #dde5f2; }
+.map-node.res-steel { border-color: #98a8b8; background: linear-gradient(180deg, #313c46, #1a2026); color: #aebfcd; }
+.map-node.res-baux { border-color: #98d8c8; background: linear-gradient(180deg, #24493c, #122820); color: #9fe0cf; }
+.map-node.resource .node-icon { font-size: 15px; font-weight: bold; }
+.map-node.supply { border-color: #5aa8e8; background: linear-gradient(180deg, #1e3a5e, #12243c); color: #8fd0ff; }
+.map-node.empty { border-color: #4a5a75; background: #1a2333; color: #8fa3c4; }
+
+/* 当前节点：金色脉冲 + 舰队标记 */
+.map-node.current { border-color: var(--gold); animation: nodePulse 1.5s ease-out infinite; }
+@keyframes nodePulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 215, 0, .55); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 215, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
+}
+.fleet-mark {
+  position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  font-size: 16px; z-index: 4; filter: drop-shadow(0 0 4px rgba(255, 215, 0, .9));
+  animation: fleetBounce 1.1s ease-in-out infinite; pointer-events: none;
+}
+@keyframes fleetBounce { 0%, 100% { margin-top: 0; } 50% { margin-top: -5px; } }
+.map-node.cleared { opacity: .38; filter: grayscale(.6); }
+
+/* 罗盘装饰 + 图例 */
+.map-compass {
+  position: absolute; right: 16px; bottom: 14px; width: 52px; height: 52px;
+  border-radius: 50%; border: 1px solid rgba(140, 175, 225, .35); opacity: .5;
+  display: flex; align-items: center; justify-content: center; z-index: 2; pointer-events: none;
+  background:
+    conic-gradient(from 45deg, rgba(160, 195, 240, .22) 0 90deg, transparent 90deg 180deg,
+      rgba(160, 195, 240, .22) 180deg 270deg, transparent 270deg 360deg),
+    radial-gradient(circle, rgba(160, 195, 240, .16), transparent 65%);
+}
+.map-compass::before { content: '✚'; color: rgba(160, 195, 240, .5); font-size: 14px; }
+.map-compass::after { content: 'N'; position: absolute; top: -3px; left: 50%; transform: translateX(-50%); font-size: 9px; color: rgba(200, 225, 255, .75); }
+.map-legend {
+  position: absolute; left: 10px; bottom: 8px; display: flex; gap: 12px;
+  font-size: 10px; color: #93abcf; background: rgba(6, 13, 24, .6);
+  padding: 4px 10px; border-radius: 5px; z-index: 2; pointer-events: none;
+}
+.map-legend b { font-weight: normal; margin-right: 3px; }
+
+/* 缩略图模式 */
+.map-board.mini .map-node { width: 26px; height: 26px; border-radius: 6px; border-width: 1px; }
+.map-board.mini .map-node:hover { transform: translate(-50%, -50%) scale(1.05); }
+.map-board.mini .node-icon { font-size: 12px; }
+.map-board.mini .map-node.start .node-icon { font-size: 8px; }
+.map-board.mini .map-node.boss .node-icon { font-size: 15px; }
+.map-board.mini .map-node.boss::before { inset: -4px; border-radius: 8px; }
+.map-board.mini .map-node.resource .node-icon { font-size: 9px; }
+.map-board.mini .node-label, .map-board.mini .fleet-mark, .map-board.mini .map-compass, .map-board.mini .map-legend { display: none; }
+
+/* ---------- 出击海域选择（Kancolle世界地图风格） ---------- */
+.area-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.area-tabs button {
+  background: linear-gradient(180deg, rgba(29,49,79,.9), rgba(18,32,54,.92));
+  color: var(--dim); border: 1px solid var(--line); border-radius: 6px;
+  padding: 7px 16px; cursor: pointer; font-size: 13px; transition: all .12s;
+}
+.area-tabs button b { color: var(--blue); margin-right: 6px; font-size: 15px; }
+.area-tabs button:hover { border-color: var(--gold); color: var(--gold); transform: translateY(-1px); }
+.area-tabs button.active {
+  background: linear-gradient(180deg, #e8c24a, #b8912a); color: #1a1404; border-color: #d4ae38;
+}
+.area-tabs button.active b { color: #1a1404; }
+
+.sortie-mapview { display: flex; gap: 12px; align-items: stretch; }
+
+/* 海图面板（区域世界地图）：经纬网格 + 区域标题 + 地图位置标记 */
+.area-map {
+  position: relative; flex: 1.35; min-width: 0; min-height: 420px;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 42px),
+    repeating-linear-gradient(90deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 42px),
+    radial-gradient(ellipse at 22% 88%, rgba(70, 140, 220, .16), transparent 55%),
+    radial-gradient(ellipse at 78% 26%, rgba(60, 120, 200, .12), transparent 50%),
+    linear-gradient(180deg, #0a1626, #0d1f38);
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, .45);
+}
+.area-routes { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.area-routes line { stroke: rgba(96, 130, 180, .4); stroke-width: 1.2; stroke-dasharray: 6 5; }
+.area-map-title {
+  position: absolute; left: 14px; top: 12px; z-index: 2;
+  color: var(--gold); font-size: 16px; font-weight: bold; letter-spacing: 1px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .8);
+}
+.area-map-title .dim { font-size: 11px; font-weight: normal; margin-left: 8px; }
+.area-compass {
+  position: absolute; right: 12px; bottom: 10px; width: 40px; height: 40px;
+  border-radius: 50%; border: 1px solid rgba(140, 175, 225, .35); opacity: .55;
+  z-index: 2; pointer-events: none; background: radial-gradient(circle, rgba(160,195,240,.14), transparent 65%);
+}
+.area-compass::before { content: '✚'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(160,195,240,.45); font-size: 12px; }
+.area-compass::after { content: 'N'; position: absolute; top: -4px; left: 50%; transform: translateX(-50%); font-size: 9px; color: rgba(200,225,255,.7); }
+
+/* 地图位置标记（Kancolle地图编号按钮） */
+.spot-btn {
+  position: absolute; transform: translate(-50%, -50%); z-index: 2;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: none; border: none; cursor: pointer; padding: 0; color: var(--text);
+}
+.spot-no {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 35% 30%, #3a5a90, #152c4e);
+  border: 2px solid #4a6ca0; color: #e8f0ff; font-size: 17px; font-weight: bold;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .15);
+  transition: all .15s;
+}
+.spot-btn:hover .spot-no { border-color: var(--gold); transform: scale(1.1); }
+.spot-btn.sel .spot-no {
+  border-color: var(--gold);
+  background: radial-gradient(circle at 35% 30%, #e8c24a, #9a7418);
+  color: #1a1404;
+  box-shadow: 0 0 0 4px rgba(232, 194, 74, .22), 0 3px 12px rgba(0, 0, 0, .5);
+}
+.spot-btn.cleared .spot-no {
+  border-color: #5cc45c;
+  background: radial-gradient(circle at 35% 30%, #2f6e3f, #173d24);
+  color: #b8f0b8;
+}
+.spot-name {
+  font-size: 11px; color: var(--text); white-space: nowrap;
+  text-shadow: 0 1px 3px #000;
+}
+.spot-btn.sel .spot-name { color: var(--gold); }
+.spot-prog { font-size: 10px; color: var(--dim); text-shadow: 0 1px 3px #000; }
+
+/* 地图详情面板 */
+.map-detail {
+  flex: 0 0 340px; min-width: 0;
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+  background: rgba(10, 20, 36, .55);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.map-detail .md-board { margin: 0 auto; }
+.md-title { font-size: 15px; font-weight: bold; color: var(--gold); }
+.map-clear-badge { color: var(--green); font-size: 12px; font-weight: bold; margin-left: 8px; }
+.md-desc { color: var(--dim); font-size: 12px; line-height: 1.6; }
+.md-rows { font-size: 11.5px; line-height: 1.9; color: var(--text); }
+.md-rows b { color: var(--blue); }
+.md-rows .red { color: var(--red); }
+.md-btn { margin-top: auto; font-size: 15px; padding: 9px 0; }
+
 
 /* ---------- 任务 ---------- */
 .quest-card {
@@ -547,6 +762,9 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .preset-recipe { display: inline-block; margin: 2px; padding: 3px 8px; font-size: 11px; border: 1px solid var(--line);
   border-radius: 4px; cursor: pointer; color: var(--dim); background: rgba(10,20,36,0.5); }
 .preset-recipe:hover { color: var(--gold); border-color: var(--gold); }
+.preset-recipe.active { color: var(--gold); border-color: var(--gold); background: rgba(255, 215, 0, 0.12); }
+.roster-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-bottom: 10px; }
+.roster-tools .preset-recipe { margin: 2px 0; }
 .eq-slot {
   border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; font-size: 12px;
   display: inline-block; margin: 2px; background: rgba(10,20,36,0.5); cursor: pointer;

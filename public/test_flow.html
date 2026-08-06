@@ -8,6 +8,7 @@
 <main id="screen"></main>
 <div id="toast"></div>
 <div id="modal-root"></div>
+<div id="sub-modal-root"></div>
 <script src="js/core/utils.js"></script>
 <script src="js/data/equipment.js"></script>
 <script src="js/data/ships.js"></script>
@@ -45,20 +46,35 @@
         R(document.querySelector('#screen').innerHTML.length > 50, 'screen:' + s.join('/'));
       }
 
-      /* 1.5 舰娘详情弹窗（母港点击舰艇 → 属性/立绘/装备槽 → 装卸装备） */
+      /* 1.5 舰娘详情弹窗（母港点击舰艇 → 属性/立绘/装备槽；装备选择器为次级浮窗，关闭不影响详情页） */
       UI.go('home');
       const homeCards = document.querySelectorAll('#screen .ship-card');
       R(homeCards.length >= 2, 'shipdetail:cards', 'n=' + homeCards.length);
+      const firstUid = homeCards[0].dataset.uid;
       homeCards[0].click();
       const dtlHtml = document.querySelector('#modal-root').innerHTML;
       R(dtlHtml.includes('耐久') && dtlHtml.includes('装备') && dtlHtml.includes('data-slot'), 'shipdetail:modal', dtlHtml.slice(0, 60));
       const dtlSlot = document.querySelector('#modal-root [data-slot]');
       if (dtlSlot) {
         dtlSlot.click();
-        const pickerHtml = document.querySelector('#modal-root').innerHTML;
-        R(pickerHtml.includes('选择装备'), 'shipdetail:equipPicker', pickerHtml.slice(0, 60));
-        const pick = document.querySelector('#modal-root [data-eq]');
+        const pickerHtml = document.querySelector('#sub-modal-root').innerHTML;
+        R(pickerHtml.includes('更换装备') && pickerHtml.includes('eq-cat-title'), 'shipdetail:equipPicker', pickerHtml.slice(0, 60));
+        R(document.querySelector('#modal-root').innerHTML.includes('耐久'), 'shipdetail:detailStaysOpen');
+        const pick = document.querySelector('#sub-modal-root [data-eq]');
         R(!!pick, 'shipdetail:pickable', pick && pick.textContent.slice(0, 20));
+        if (pick) {
+          const euid = pick.dataset.eq;
+          pick.click();
+          R(document.querySelector('#sub-modal-root').innerHTML === '', 'shipdetail:pickerClosed');
+          R(document.querySelector('#modal-root').innerHTML.includes('耐久'), 'shipdetail:detailStillOpen');
+          R(Game.state.ships[firstUid].equipped.includes(euid), 'shipdetail:equippedChanged');
+          /* 刷新后的详情页 × 仍可关闭（回到主页） */
+          const dtlClose = document.querySelector('#modal-root [data-close]');
+          if (dtlClose) {
+            dtlClose.click();
+            R(document.querySelector('#modal-root').innerHTML === '', 'shipdetail:detailClosedByX');
+          }
+        }
       }
       document.querySelector('#modal-root').innerHTML = '';
 

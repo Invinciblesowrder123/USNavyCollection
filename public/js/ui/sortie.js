@@ -12,64 +12,283 @@ const SortieUI = (() => {
     '单横阵': '火力60%，对潜火力+20。反潜作战专用。'
   };
 
-  function mapList(root) {
-    const st = Game.state;
-    root.innerHTML = `<div class="panel">
-      <h3>出击 —— 选择海域</h3>
-      ${MAPS.map(m => {
-        const mp = st.mapProgress[m.id];
-        const cleared = mp.cleared;
-        const losNeed = m.branch ? m.branch.if.los : 0;
-        const myLos = Game.fleetLos(1);
-        const canGo = !st.sortie && st.fleet[1].length > 0;
-        return `<div class="panel" style="border-color:${cleared ? 'var(--green)' : 'var(--line)'}">
-          <div class="flex" style="justify-content:space-between;align-items:center">
-            <div>
-              <b style="color:var(--gold)">${m.id} ${m.name}</b>
-              <span class="dim"> ｜ ${m.desc}</span>
-              <div class="hint">血条进度：${cleared ? '已通关 ★' : `${mp.kills}/${mp.gauge + mp.kills} 次击破`}${losNeed ? ` ｜ 分支索敌要求：${losNeed}（当前 ${myLos}）` : ''}</div>
-              <div class="hint">掉落：${m.drops.map(id => ShipData[id].zh).join('、')} ｜ BOSS掉落：${m.bossDrops.map(id => ShipData[id].zh).join('、')}</div>
-            </div>
-            <button class="btn btn-gold" data-map="${m.id}" ${canGo ? '' : 'disabled'}>出击</button>
-          </div>
-        </div>`;
-      }).join('')}
-      <div class="hint">出击将消耗油弹（按战斗节点数）。舰队1出击。舰娘大破时请先入渠修理。</div>
-    </div>`;
+  /* ---------- 海域地图（参考Kancolle海图UI） ---------- */
+  const MAP_BOARD = { w: 760, h: 460 };
+  const MAP_MINI = { w: 236, h: 168 };
+  const NODE_TYPE_ZH = { start: '出击点', battle: '战斗点', boss: 'BOSS点', resource: '资源点', supply: '补给点', empty: '航路节点' };
+  const RES_ICON = { fuel: ['油', 'res-fuel'], ammo: ['弹', 'res-ammo'], steel: ['钢', 'res-steel'], baux: ['铝', 'res-baux'] };
+  const RES_NAME = { fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土' };
+  let _boardUid = 0;
 
-    root.querySelectorAll('[data-map]').forEach(b => {
-      b.addEventListener('click', () => {
-        const r = Sortie.start(b.dataset.map, 1);
-        if (!r.ok) { UI.toast(r.msg); return; }
-        const daPo = Sortie.daPoShips();
-        if (daPo.length) UI.toast(`警告：${daPo.map(u => UI.esc(Game.shipDef(Game.state.ships[u]).zh)).join('、')} 大破出击，进击有轰沉风险！`);
-        Game.save();
-        UI.go('sortie');
-      });
-    });
+  /* 将地图坐标适配到画布：等比缩放+居中偏移 */
+  function boardGeom(map, w, h, pad) {
+    const xs = [], ys = [];
+    Object.values(map.nodes).forEach(p => { xs.push(p.x); ys.push(p.y); });
+    const minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+    const minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    const cw = Math.max(1, maxX - minX), ch = Math.max(1, maxY - minY);
+    const s = Math.min((w - pad) / cw, (h - pad) / ch, 2.2);
+    return { s, ox: (w - cw * s) / 2 - minX * s, oy: (h - ch * s) / 2 - minY * s };
   }
 
-  /* 地图渲染 */
-  function renderMap(root, map, so) {
-    const defs = map.defs;
+  function nodeMeta(def) {
+    switch (def.type) {
+      case 'start': return { cls: 'start', icon: '出撃' };
+      case 'battle': return { cls: 'battle', icon: '⚔' };
+      case 'boss': return { cls: 'boss', icon: '☠' };
+      case 'resource': {
+        const m = RES_ICON[def.reward && def.reward[0]] || RES_ICON.fuel;
+        return { cls: 'resource ' + m[1], icon: m[0] };
+      }
+      case 'supply': return { cls: 'supply', icon: '⚓' };
+      default: return { cls: 'empty', icon: '?' };
+    }
+  }
+
+  /* 海图画布：网格海图背景 + 罗盘 + 箭头航路 + 类型节点 + 舰队位置标记 */
+  function mapBoard(map, so, opts = {}) {
+    const mini = !!opts.mini;
+    const bw = mini ? MAP_MINI.w : MAP_BOARD.w;
+    const bh = mini ? MAP_MINI.h : MAP_BOARD.h;
+    const g = boardGeom(map, bw, bh, mini ? 70 : 120);
+    const X = x => Math.round(g.ox + x * g.s);
+    const Y = y => Math.round(g.oy + y * g.s);
+    const uid = ++_boardUid;
+    const path = so ? so.path : [];
+    const traveled = new Set();
+    for (let i = 0; i + 1 < path.length; i++) traveled.add(path[i] + '>' + path[i + 1]);
+
     const edges = map.edges.map(([a, b]) => {
       const na = map.nodes[a], nb = map.nodes[b];
-      const dx = nb.x - na.x, dy = nb.y - na.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      const ang = Math.atan2(dy, dx) * 180 / Math.PI;
-      const cx = (na.x + nb.x) / 2, cy = (na.y + nb.y) / 2;
-      return `<div class="map-edge" style="left:${cx}px;top:${cy}px;width:${len}px;transform:rotate(${ang}deg)"></div>`;
+      const isT = traveled.has(a + '>' + b) || traveled.has(b + '>' + a);
+      const isNext = !!(so && so.node === a);
+      const cls = 'map-edge' + (isT ? ' traveled' : '') + (isNext ? ' next' : '');
+      return `<line class="${cls}" x1="${X(na.x)}" y1="${Y(na.y)}" x2="${X(nb.x)}" y2="${Y(nb.y)}" marker-end="url(#${isT ? 'arr-gold' : 'arr-gray'}-${uid})"/>`;
     }).join('');
-    const nodeIcons = { battle: '⚔', boss: '☠', resource: '◆', supply: '⚓', start: '●', empty: '·' };
+
     const nodes = Object.entries(map.nodes).map(([id, p]) => {
-      const def = defs[id] || { type: 'empty' };
-      const cur = so && so.node === id ? ' current' : '';
-      const visited = so && so.path.includes(id) && so.node !== id ? ' cleared' : '';
-      return `<div class="map-node ${def.type}${cur}${visited}" style="left:${p.x}px;top:${p.y}px" data-node="${id}">
-        ${nodeIcons[def.type] || nodeIcons.empty}
+      const def = map.defs[id] || { type: 'empty' };
+      const meta = nodeMeta(def);
+      const cur = !!(so && so.node === id);
+      const visited = !!(so && !cur && path.includes(id));
+      return `<div class="map-node ${meta.cls}${cur ? ' current' : ''}${visited ? ' cleared' : ''}" style="left:${X(p.x)}px;top:${Y(p.y)}px">
+        ${cur ? '<span class="fleet-mark">⛵</span>' : ''}
+        <span class="node-icon">${meta.icon}</span>
+        ${id === 'S' ? '' : `<span class="node-label">${id}</span>`}
       </div>`;
     }).join('');
-    return `<div class="map-wrap">${edges}${nodes}</div>`;
+
+    return `<div class="map-board${mini ? ' mini' : ''}">
+      <svg class="map-routes" width="${bw}" height="${bh}" viewBox="0 0 ${bw} ${bh}">
+        <defs>
+          <marker id="arr-gray-${uid}" viewBox="0 0 10 10" refX="7.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="rgba(96,130,180,.8)"/></marker>
+          <marker id="arr-gold-${uid}" viewBox="0 0 10 10" refX="7.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ffd700"/></marker>
+        </defs>
+        ${edges}
+      </svg>
+      ${nodes}
+      <div class="map-compass"></div>
+      ${mini ? '' : `<div class="map-legend">
+        <span><b style="color:#ffb0b0">⚔</b>战斗</span>
+        <span><b style="color:#ff8585">☠</b>BOSS</span>
+        <span><b style="color:#7fe07f">◆</b>资源</span>
+        <span><b style="color:#8fd0ff">⚓</b>补给</span>
+      </div>`}
+    </div>`;
+  }
+
+  /* 出击中的海域信息条：血条 + 索敌 + 油弹 */
+  function mapTopbar(map, so) {
+    const mp = Game.state.mapProgress[map.id];
+    const total = mp.gauge + mp.kills;
+    const pct = mp.cleared ? 100 : Math.round(mp.gauge / total * 100);
+    const fleet = Game.state.fleet[so.fleetIdx] || [];
+    let minFuel = 1, minAmmo = 1;
+    for (const uid of fleet) {
+      const s = Game.state.ships[uid];
+      if (!s) continue;
+      minFuel = Math.min(minFuel, s.supply.fuel);
+      minAmmo = Math.min(minAmmo, s.supply.ammo);
+    }
+    return `<div class="map-topbar">
+      <div class="map-gauge">
+        <div class="gauge-head"><span>海域血条</span><b>${mp.cleared ? '★ 已攻略' : `${mp.kills} / ${total} 次击破`}</b></div>
+        <div class="gauge-bar"><div class="gauge-fill${mp.cleared ? ' full' : ''}" style="width:${pct}%"></div></div>
+      </div>
+      <div class="map-stat">索敌 <b>${Game.fleetLos(so.fleetIdx)}</b></div>
+      <div class="map-stat">油 <b class="${minFuel < 0.5 ? 'red' : ''}">${Math.round(minFuel * 100)}%</b> ｜ 弹 <b class="${minAmmo < 0.5 ? 'red' : ''}">${Math.round(minAmmo * 100)}%</b></div>
+    </div>`;
+  }
+
+  /* ============================================================
+   * 海域选择（Kancolle世界地图风格：海域导航页签 + 海图位置标记 + 地图详情）
+   * ============================================================ */
+  const AREA_ZH = { '1': '镇守府海域', '2': '南西群岛海域', '3': '北方海域' };
+  const AREA_DESC = {
+    '1': '母港所在的近海防线，深海军前哨部队蠢蠢欲动。',
+    '2': '所罗门群岛与铁底湾，反潜与夜战的高发海域。',
+    '3': '阿留申群岛的北大平洋，深海北方舰队的据点。'
+  };
+  /* 各海域地图在海图上的位置（百分比坐标） */
+  const AREA_SPOTS = {
+    '1': { '1-1': [12, 74], '1-2': [30, 50], '1-3': [46, 26], '1-4': [66, 56] },
+    '2': { '2-1': [14, 70], '2-2': [34, 46], '2-3': [50, 22], '2-4': [72, 60] },
+    '3': { '3-1': [16, 72], '3-2': [36, 46], '3-3': [26, 24], '3-4': [68, 28] }
+  };
+  const areaOf = m => m.id.split('-')[0];
+  const areaMaps = no => MAPS.filter(m => areaOf(m) === no);
+  /* 地图「出现物品」（由节点类型推导：资源/补给点） */
+  function mapItems(m) {
+    const items = [];
+    Object.values(m.defs).forEach(d => {
+      if (d.type === 'resource') (d.reward || []).forEach(r => {
+        const n = RES_NAME[r];
+        if (n && !items.includes(n)) items.push(n);
+      });
+      if (d.type === 'supply' && !items.includes('补给点')) items.push('补给点');
+    });
+    return items;
+  }
+
+  /* 海图面板：海域名 + 地图位置标记（可点击选择）+ 虚线航路 */
+  function areaMapPanel(areaNo, selId) {
+    const st = Game.state;
+    const ms = areaMaps(areaNo);
+    const spots = AREA_SPOTS[areaNo] || {};
+    const routes = ms.slice(0, -1).map((m, i) => {
+      const a = spots[m.id], b = spots[ms[i + 1].id];
+      if (!a || !b) return '';
+      return `<line class="area-route" x1="${a[0]}%" y1="${a[1]}%" x2="${b[0]}%" y2="${b[1]}%"/>`;
+    }).join('');
+    const markers = ms.map(m => {
+      const mp = st.mapProgress[m.id];
+      const [x, y] = spots[m.id] || [50, 50];
+      const no = m.id.split('-')[1];
+      return `<button class="spot-btn${m.id === selId ? ' sel' : ''}${mp.cleared ? ' cleared' : ''}"
+          data-map="${m.id}" title="${m.name}" style="left:${x}%;top:${y}%">
+        <span class="spot-no">${mp.cleared ? '✓' : no}</span>
+        <span class="spot-name">${m.name}</span>
+        <span class="spot-prog">${mp.cleared ? '已攻略' : `击破 ${mp.kills}/${mp.gauge + mp.kills}`}</span>
+      </button>`;
+    }).join('');
+    return `<div class="area-map">
+      <svg class="area-routes" viewBox="0 0 100 100" preserveAspectRatio="none">${routes}</svg>
+      <div class="area-map-title">${AREA_ZH[areaNo]}<span class="dim">${AREA_DESC[areaNo]}</span></div>
+      <div class="area-compass"></div>
+      ${markers}
+    </div>`;
+  }
+
+  /* 地图详情面板：迷你海图预览 + 血条 + 出击 */
+  function mapDetailPanel(m) {
+    const st = Game.state;
+    const mp = st.mapProgress[m.id];
+    const total = mp.gauge + mp.kills;
+    const pct = mp.cleared ? 100 : Math.round(mp.gauge / total * 100);
+    const items = mapItems(m);
+    const brs = Array.isArray(m.branch) ? m.branch : (m.branch ? [m.branch] : []);
+    const losNeed = brs.reduce((mx, b) => Math.max(mx, b.if.los || 0), 0);
+    const ddNeed = brs.reduce((mx, b) => Math.max(mx, b.if.dd || 0), 0);
+    const los = Game.fleetLos(1);
+    const canGo = !st.sortie && st.fleet[1].length > 0;
+    return `<div class="map-detail">
+      <div class="md-board">${mapBoard(m, null, { mini: true })}</div>
+      <div class="md-title">${m.id} ${m.name} <span class="map-stars">${'★'.repeat(m.stars || 0)}</span>
+        ${mp.cleared ? '<span class="map-clear-badge">★ 已攻略</span>' : ''}</div>
+      <div class="md-gauge">
+        <div class="gauge-head"><span>海域血条</span><b>${mp.cleared ? '★ 已攻略' : `${mp.kills} / ${total} 次击破`}</b></div>
+        <div class="gauge-bar"><div class="gauge-fill${mp.cleared ? ' full' : ''}" style="width:${pct}%"></div></div>
+      </div>
+      <div class="md-desc">${m.desc}</div>
+      <div class="md-rows">
+        ${items.length ? `<div><b>出现物品</b>：${items.join('、')}</div>` : ''}
+        ${losNeed ? `<div><b>分支索敌</b>：≥${losNeed}<span class="${los >= losNeed ? '' : 'red'}">（当前 ${los}${los >= losNeed ? '，满足' : '，不足' }）</span></div>` : ''}
+        ${ddNeed ? `<div><b>分支驱逐</b>：≥${ddNeed} 艘</div>` : ''}
+        <div><b>道中掉落</b>：${m.drops.map(id => ShipData[id].zh).join('、')}</div>
+        <div><b>BOSS掉落</b>：${m.bossDrops.map(id => ShipData[id].zh).join('、')}</div>
+      </div>
+      <button class="btn btn-gold md-btn" data-start ${canGo ? '' : 'disabled'}>出击</button>
+    </div>`;
+  }
+
+  function mapList(root) {
+    const st = Game.state;
+    const fleet = st.fleet[1];
+    let minFuel = 1, minAmmo = 1;
+    for (const uid of fleet) {
+      const s = st.ships[uid];
+      if (!s) continue;
+      minFuel = Math.min(minFuel, s.supply.fuel);
+      minAmmo = Math.min(minAmmo, s.supply.ammo);
+    }
+    const lowSupply = minFuel < 0.5 || minAmmo < 0.5;
+    /* 默认选中：首个存在未攻略海域的区域及其首张未攻略地图 */
+    const nos = Object.keys(AREA_ZH);
+    let selArea = nos.find(no => areaMaps(no).some(m => !st.mapProgress[m.id].cleared)) || nos[0];
+    let selMap = (areaMaps(selArea).find(m => !st.mapProgress[m.id].cleared) || areaMaps(selArea)[0]).id;
+
+    function draw() {
+      const sel = MAPS.find(m => m.id === selMap);
+      root.innerHTML = `<div class="panel">
+        <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0;border:none;padding:0">出击 —— 选择海域</h3>
+          <div class="flex" style="align-items:center;gap:10px">
+            <span class="dim">第一舰队油弹：油 <b style="color:${minFuel < 0.5 ? 'var(--red)' : 'inherit'}">${Math.round(minFuel * 100)}%</b> ｜ 弹 <b style="color:${minAmmo < 0.5 ? 'var(--red)' : 'inherit'}">${Math.round(minAmmo * 100)}%</b>
+              ${lowSupply ? '<span style="color:var(--red)">（弹药<50%伤害减半！）</span>' : ''}</span>
+            <button class="btn btn-green btn-sm" data-supply>一键补给（油${Logistics.supplyCost(1).fuel} 弹${Logistics.supplyCost(1).ammo}）</button>
+          </div>
+        </div>
+        <div class="area-tabs">
+          ${nos.map(no => `<button class="${no === selArea ? 'active' : ''}" data-area="${no}"><b>${no}</b> ${AREA_ZH[no]}</button>`).join('')}
+        </div>
+        <div class="sortie-mapview">
+          ${areaMapPanel(selArea, sel.id)}
+          ${mapDetailPanel(sel)}
+        </div>
+        <div class="hint">消耗规则（wiki）：每个战斗点消耗燃料20%、弹药20%（进入夜战弹药改为30%）；资源点/补给点不消耗油弹。弹药&lt;50%时伤害按残弹率/50减半，0%时无法炮击。</div>
+      </div>`;
+
+      root.querySelector('[data-supply]').addEventListener('click', () => {
+        const r = Logistics.supplyFleet(1);
+        if (!r.ok) { UI.toast(r.msg); return; }
+        UI.toast('第一舰队补给完毕！');
+        Game.save();
+        draw();
+      });
+      root.querySelectorAll('[data-area]').forEach(b => {
+        b.addEventListener('click', () => {
+          selArea = b.dataset.area;
+          const ms = areaMaps(selArea);
+          selMap = (ms.find(m => !st.mapProgress[m.id].cleared) || ms[0]).id;
+          Game.save();
+          draw();
+        });
+      });
+      root.querySelectorAll('[data-map]').forEach(b => {
+        b.addEventListener('click', () => {
+          selMap = b.dataset.map;
+          Game.save();
+          draw();
+        });
+      });
+      const startBtn = root.querySelector('[data-start]');
+      if (startBtn) {
+        startBtn.addEventListener('click', () => {
+          if (lowSupply) {
+            const ok = confirm(`第一舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！\n弹药<50%伤害减半，0%无法炮击。建议先补给再出击！\n\n仍然出击？`);
+            if (!ok) return;
+          }
+          const r = Sortie.start(selMap, 1);
+          if (!r.ok) { UI.toast(r.msg); return; }
+          if (r.warn) UI.toast(r.warn);
+          const daPo = Sortie.daPoShips();
+          if (daPo.length) UI.toast(`警告：${daPo.map(u => UI.esc(Game.shipDef(Game.state.ships[u]).zh)).join('、')} 大破出击，进击有轰沉风险！`);
+          Game.save();
+          UI.go('sortie');
+        });
+      }
+    }
+    draw();
   }
 
   /* 出击中 */
@@ -79,17 +298,24 @@ const SortieUI = (() => {
     if (!map || !st.sortie) { UI.go('sortie'); return; }
     const so = st.sortie;
     const def = Sortie.nodeDef(map, so.node);
-    const mp = st.mapProgress[map.id];
 
     function renderNode() {
-      const isBoss = def.type === 'boss';
       root.innerHTML = `
         <div class="panel">
-          <h3>${map.id} ${map.name} <span class="dim">血条：${mp.cleared ? '★ 已攻略' : `${mp.kills}/${mp.gauge + mp.kills}`}</span>
-            <button class="btn btn-red btn-sm" style="float:right" data-act="retreat">撤退返回</button>
-          </h3>
-          ${renderMap(root, map, so)}
-          <div class="hint" style="margin-top:8px">路径：${so.path.join(' → ')}</div>
+          <div class="map-head">
+            <h3>${map.id} ${map.name} <span class="map-stars">${'★'.repeat(map.stars || 0)}</span></h3>
+            <button class="btn btn-red btn-sm" data-act="retreat">撤退返回</button>
+          </div>
+          ${mapTopbar(map, so)}
+          <div class="map-board-wrap">${mapBoard(map, so)}</div>
+          <div class="map-nodeinfo">
+            <b>当前节点 ${so.node}</b>：${NODE_TYPE_ZH[def.type] || def.type}
+            ${def.type === 'battle' || def.type === 'boss'
+              ? `<span class="dim">｜ 敌军：${(ENEMY_FLEETS[def.enemy] || { ships: [], formation: '未知' }).ships.length} 舰（${(ENEMY_FLEETS[def.enemy] || { formation: '未知' }).formation}）</span>`
+              : def.type === 'resource'
+                ? `<span class="dim">｜ 可获得：${(def.reward || []).map(r => RES_NAME[r] || r).join('、')}</span>`
+                : def.type === 'supply' ? `<span class="dim">｜ 恢复一半油弹</span>` : ''}
+          </div>
           ${nodeAction()}
         </div>`;
       root.querySelector('[data-act="retreat"]').addEventListener('click', () => {
@@ -445,6 +671,29 @@ const SortieUI = (() => {
       }
     }
 
+    /* ---- 放飞机：双方机群从各自航母同时起飞 ---- */
+    function launchAnim(ev) {
+      const t = 460;
+      for (const letter of ['A', 'B']) {
+        for (const idx of (ev.ships && ev.ships[letter]) || []) {
+          const el = shipEl(letter, idx);
+          if (!el) continue;
+          el.classList.add('firing');
+          setTimeout(() => el.classList.remove('firing'), t + 100);
+          const from = centerOf(el);
+          for (let k = 0; k < 3; k++) {
+            const pl = mkEl('proj-plane', k === 1 ? '✈' : '⌃');
+            const bx = from.x - 16 + k * 16, by = from.y + 6 - k * 5;
+            put(pl, bx, by);
+            document.body.appendChild(pl);
+            const tx = bx + (Math.random() - 0.5) * 70, ty = by - 140 - Math.random() * 40;
+            requestAnimationFrame(() => fly(pl, tx, ty, t, 'cubic-bezier(.3,.6,.5,1)'));
+            setTimeout(() => pl.remove(), t + 50);
+          }
+        }
+      }
+    }
+
     /* ---- S1 空战：敌我机群对冲，中空被击落 ---- */
     function airFightAnim(ev) {
       const b = bfBox();
@@ -587,6 +836,7 @@ const SortieUI = (() => {
         case 'air': (ev.strikes ? airStrikeBulkAnim(ev) : airAnim(ev, atkEl, tgtEl)); break;
         case 'asw': aswAnim(ev, atkEl, tgtEl); break;
         case 'airfight': airFightAnim(ev); break;
+        case 'launch': launchAnim(ev); break;
         case 'flak': (ev.shots ? flakBulkAnim(ev) : flakAnim(ev, atkEl, tgtEl)); break;
       }
     }
@@ -596,6 +846,7 @@ const SortieUI = (() => {
         case 'air': return ev.strikes ? flightAir + 350 : flightAir + 260;
         case 'asw': return 540;
         case 'airfight': return Math.max(140, Math.round(flight * 0.4)) + 130 + Math.min(ev.dmg || 4, 10) * 25;
+        case 'launch': return 520;
         case 'flak': return ev.shots ? (Math.max(110, Math.round(flight * 0.32)) + 230) : (Math.max(120, Math.round(flight * 0.35)) + 150 + Math.min(Math.max(ev.dmg || 3, 3), 4) * 30);
         default: return flight + 230;
       }
@@ -636,6 +887,7 @@ const SortieUI = (() => {
       if (typeof e === 'string') {
         const isPhase = e.includes('——') || e.includes('进入夜战') || e.includes('航空战') || e.includes('交战形态') || e.includes('索敌');
         const isAir = e.includes('空袭') || e.includes('空战') || e.includes('对空');
+        if (e.includes('进入夜战')) bf.classList.add('night');
         const line = document.createElement('div');
         line.className = 'line' + (e.includes('击沉') ? ' sink'
           : (e.includes('发动') || e.includes('空袭') || e.includes('Cut-in')) ? ' ci'
@@ -668,6 +920,7 @@ const SortieUI = (() => {
     }
 
     function showResult() {
+      bf.classList.remove('night');
       const res = opts.gains ? { gains: opts.gains, adm: opts.adm } : Progression.applyBattleResult(1, r.result, isPractice);
       const gains = res.gains || [];
       const admExp = r.admExp || (res.adm ? res.adm.exp : 0);

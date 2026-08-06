@@ -179,6 +179,7 @@ const Game = (() => {
     state.ships[uid] = {
       uid, id: shipId, kai: 0, lv, exp: 0,
       hp: st[0], morale: 49,
+      obtainedAt: Date.now(),        // 获取时间（用于编成列表排序；旧存档无此字段时回退 uid 序号）
       equipped: [],                  // 装备 uid 列表
       modern: { fp: 0, tp: 0, aa: 0, arm: 0, evd: 0, asw: 0, los: 0 },
       supply: { fuel: 1, ammo: 1 },  // 0~1 补给比例

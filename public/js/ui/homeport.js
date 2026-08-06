@@ -5,149 +5,204 @@
 
 const Homeport = (() => {
 
+  /* 舰船列表排序（key: 'lv' | 'time'，dir: 1 升序 / -1 降序） */
+  function shipCmp(key, dir) {
+    return (a, b) => {
+      let r;
+      if (key === 'time') {
+        const ta = a.obtainedAt || parseInt(a.uid.slice(1), 10);
+        const tb = b.obtainedAt || parseInt(b.uid.slice(1), 10);
+        r = ta - tb;
+      } else {
+        r = a.lv - b.lv;
+      }
+      if (r === 0) r = parseInt(a.uid.slice(1), 10) - parseInt(b.uid.slice(1), 10);
+      return r * dir;
+    };
+  }
+
+  /* 编成-母港列表：舰种筛选与排序（会话内保留，切换舰队/离开页面不重置） */
+  let rosterType = 'ALL';
+  let rosterSort = { key: 'lv', dir: -1 };
+  /* 近代化改修-素材舰列表：舰种筛选与排序（会话内保留） */
+  let matType = 'ALL';
+  let matSort = { key: 'lv', dir: -1 };
+
   /* ============ 舰娘详情模态 ============ */
   function openShipDetail(uid, back = () => {}) {
     const st = Game.state;
     const s = st.ships[uid];
     if (!s) return;
-    const def = Game.shipDef(s);
-    const stats = Game.shipStats(uid);
     const stNames = [['hp', '耐久'], ['fp', '火力'], ['tp', '雷装'], ['aa', '对空'], ['arm', '装甲'], ['evd', '回避'], ['asw', '对潜'], ['los', '索敌'], ['lck', '幸运']];
-    const rmInfo = Progression.remodelInfo(uid);
-    const modInfo = Progression.modernizeInfo(uid);
-    const capOf = modInfo ? modInfo.gains : {};
-    const modMax = !Object.keys(capOf).length;
-    const supply = Math.round(s.supply.fuel * 100);
+    let m = null;
 
-    const statHtml = stNames.map(([k, zh]) => {
-      const base = def.stats[stNames.findIndex(x => x[0] === k)];
-      const mod = s.modern[k] || 0;
-      const capLeft = capOf[k];
-      const modTxt = mod ? `<span style="color:#7fe07f">(+${mod})</span>` : '';
-      const capTxt = capLeft ? `<span class="dim"> [可改修+${capLeft}]</span>` : '';
-      return `<div class="stat-item"><div class="label">${zh}</div><div class="value num">${stats[k]} ${modTxt}${capTxt}</div></div>`;
-    }).join('');
+    function detailHtml() {
+      const def = Game.shipDef(s);
+      const stats = Game.shipStats(uid);
+      const rmInfo = Progression.remodelInfo(uid);
+      const modInfo = Progression.modernizeInfo(uid);
+      const capOf = modInfo ? modInfo.gains : {};
+      const modMax = !Object.keys(capOf).length;
+      const supply = Math.round(s.supply.fuel * 100);
 
-    const eqHtml = def.slots.map((sl, i) => {
-      const euid = s.equipped[i];
-      const eq = euid ? st.equipment[euid] : null;
-      const ed = eq ? EquipmentData[eq.id] : null;
-      const types = (sl.types || sl).map(t => ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦/水爆', '电探', '高角炮', '机枪', '声呐/爆雷', '设备'][t - 1]).join('/');
-      const size = def.sizes ? def.sizes[i] : 24;
-      return `<div class="eq-slot" data-slot="${i}">
-        ${ed ? `<b>${Util.esc(ed.zh)}</b> ${UI.starHtml(eq)}` : `<span class="dim">空槽</span>`}
-        <span class="dim">[${types}${def.sizes ? ` · ${size}机` : ''}]</span>
-      </div>`;
-    }).join('');
+      const statHtml = stNames.map(([k, zh]) => {
+        const base = def.stats[stNames.findIndex(x => x[0] === k)];
+        const mod = s.modern[k] || 0;
+        const capLeft = capOf[k];
+        const modTxt = mod ? `<span style="color:#7fe07f">(+${mod})</span>` : '';
+        const capTxt = capLeft ? `<span class="dim"> [可改修+${capLeft}]</span>` : '';
+        return `<div class="stat-item"><div class="label">${zh}</div><div class="value num">${stats[k]} ${modTxt}${capTxt}</div></div>`;
+      }).join('');
 
-    const m = UI.modal(`
-      <span class="modal-close" data-close>×</span>
-      <h3>${UI.esc(def.zh)} <span class="dim">${UI.esc(def.en)}</span> <span class="dim">${SHIP_TYPE_ZH[def.type]}</span></h3>
-      <div class="flex">
-        <div style="width:170px">${UI.portraitImg(s.id, 'portrait')}
-          <div class="text-center dim">Lv.${s.lv} ${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} · 补给${supply}%</div>
-        </div>
-        <div class="grow">
-          <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">${statHtml}</div>
-          <div class="section-title">装备</div>
-          <div>${eqHtml}</div>
-          <div class="section-title">操作</div>
-          <div class="btn-row">
-            <button class="btn btn-green btn-sm" data-act="supply">补给</button>
-            <button class="btn btn-sm" data-act="lock">${s.locked ? '解锁' : '锁定'}</button>
-            ${(st.fleet[1].includes(uid) || st.fleet[2].includes(uid)) ? `<button class="btn btn-sm" data-act="remove">移出舰队</button>` : ''}
-            ${rmInfo ? `<button class="btn btn-gold btn-sm" data-act="remodel">改造(Lv.${rmInfo.lvNeed}，${rmInfo.cost.fuel}油/${rmInfo.cost.ammo}弹/${rmInfo.cost.steel}钢)</button>` : ''}
-            ${modMax ? '<span class="dim">改修MAX</span>' : ''}
-            <button class="btn btn-red btn-sm" data-act="scrap">解体</button>
+      const eqHtml = def.slots.map((sl, i) => {
+        const euid = s.equipped[i];
+        const eq = euid ? st.equipment[euid] : null;
+        const ed = eq ? EquipmentData[eq.id] : null;
+        const types = (sl.types || sl).map(t => ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦/水爆', '电探', '高角炮', '机枪', '声呐/爆雷', '设备'][t - 1]).join('/');
+        const size = def.sizes ? def.sizes[i] : 24;
+        return `<div class="eq-slot" data-slot="${i}">
+          ${ed ? `<b>${Util.esc(ed.zh)}</b> ${UI.starHtml(eq)}` : `<span class="dim">空槽</span>`}
+          <span class="dim">[${types}${def.sizes ? ` · ${size}机` : ''}]</span>
+        </div>`;
+      }).join('');
+
+      return `
+        <span class="modal-close" data-close>×</span>
+        <h3>${UI.esc(def.zh)} <span class="dim">${UI.esc(def.en)}</span> <span class="dim">${SHIP_TYPE_ZH[def.type]}</span></h3>
+        <div class="flex">
+          <div style="width:170px">${UI.portraitImg(s.id, 'portrait')}
+            <div class="text-center dim">Lv.${s.lv} ${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} · 补给${supply}%</div>
           </div>
-          <div class="hint">近代化改修（用多余舰娘强化属性）请前往「工厂 → 近代化改修」。</div>
-          <div class="hint">${Util.esc(def.line || '')}</div>
-        </div>
-      </div>
-    `, () => back());
+          <div class="grow">
+            <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">${statHtml}</div>
+            <div class="section-title">装备 <span class="dim">（点击装备槽更换/卸下）</span></div>
+            <div>${eqHtml}</div>
+            <div class="section-title">操作</div>
+            <div class="btn-row">
+              <button class="btn btn-green btn-sm" data-act="supply">补给</button>
+              <button class="btn btn-sm" data-act="lock">${s.locked ? '解锁' : '锁定'}</button>
+              ${(st.fleet[1].includes(uid) || st.fleet[2].includes(uid)) ? `<button class="btn btn-sm" data-act="remove">移出舰队</button>` : ''}
+              ${rmInfo ? `<button class="btn btn-gold btn-sm" data-act="remodel">改造(Lv.${rmInfo.lvNeed}，${rmInfo.cost.fuel}油/${rmInfo.cost.ammo}弹/${rmInfo.cost.steel}钢)</button>` : ''}
+              ${!modMax ? `<button class="btn btn-gold btn-sm" data-act="modernize">近代化改修</button>` : ''}
+              ${modMax ? '<span class="dim">改修MAX</span>' : ''}
+              <button class="btn btn-red btn-sm" data-act="scrap">解体</button>
+            </div>
+            <div class="hint">近代化改修：用多余的舰娘强化属性，消耗 油30/弹30，素材舰将被解体（详细规则见「工厂 → 近代化改修」）。</div>
+            <div class="hint">${Util.esc(def.line || '')}</div>
+          </div>
+        </div>`;
+    }
 
-    m.root.querySelector('[data-act="supply"]').addEventListener('click', () => {
-      const r = Logistics.supplyShip(uid);
-      if (!r.ok) { UI.toast(r.msg); return; }
-      UI.toast(`${def.zh} 补给完毕`);
-      m.close(); back();
-    });
-    m.root.querySelector('[data-act="lock"]').addEventListener('click', () => {
-      s.locked = !s.locked;
-      m.close(); back();
-    });
-    const removeBtn = m.root.querySelector('[data-act="remove"]');
-    if (removeBtn) removeBtn.addEventListener('click', () => {
-      for (const f in st.fleet) st.fleet[f] = st.fleet[f].filter(x => x !== uid);
-      Game.save();
-      UI.toast(`${def.zh} 已移出舰队`);
-      m.close(); back();
-    });
-    if (rmInfo) m.root.querySelector('[data-act="remodel"]').addEventListener('click', () => {
-      const hasMod = ['fp', 'tp', 'aa', 'arm'].some(k => (s.modern[k] || 0) > 0);
-      if (hasMod && !confirm('改造后 火力/雷装/对空/装甲 的近代化改修值将不被继承（运/对潜/耐久可继承）。确定改造？')) return;
-      const r = Progression.remodel(uid);
-      if (!r.ok) { UI.toast(r.msg); return; }
-      UI.toast(`${def.zh} 改造完成！`);
-      Game.save();
-      m.close(); back();
-    });
-    m.root.querySelector('[data-act="scrap"]').addEventListener('click', () => {
-      if (!confirm(`确定解体 ${def.zh}？\n（解体后其装备一并销毁）`)) return;
-      Game.destroyShip(uid);
-      Game.save();
-      UI.toast(`${def.zh} 已解体`);
-      m.close(); back();
-    });
+    function wire() {
+      /* refresh() 重建 DOM 后需重新绑定关闭按钮（×），否则详情页无法关闭 */
+      m.root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => m.close()));
+      m.root.querySelector('[data-act="supply"]').addEventListener('click', () => {
+        const r = Logistics.supplyShip(uid);
+        if (!r.ok) { UI.toast(r.msg); return; }
+        UI.toast(`${Game.shipDef(s).zh} 补给完毕`);
+        Game.save(); refresh();
+      });
+      m.root.querySelector('[data-act="lock"]').addEventListener('click', () => {
+        s.locked = !s.locked;
+        Game.save(); refresh();
+      });
+      const removeBtn = m.root.querySelector('[data-act="remove"]');
+      if (removeBtn) removeBtn.addEventListener('click', () => {
+        for (const f in st.fleet) st.fleet[f] = st.fleet[f].filter(x => x !== uid);
+        Game.save();
+        UI.toast(`${Game.shipDef(s).zh} 已移出舰队`);
+        m.close();
+      });
+      const rmBtn = m.root.querySelector('[data-act="remodel"]');
+      if (rmBtn) rmBtn.addEventListener('click', () => {
+        const hasMod = ['fp', 'tp', 'aa', 'arm'].some(k => (s.modern[k] || 0) > 0);
+        if (hasMod && !confirm('改造后 火力/雷装/对空/装甲 的近代化改修值将不被继承（运/对潜/耐久可继承）。确定改造？')) return;
+        const r = Progression.remodel(uid);
+        if (!r.ok) { UI.toast(r.msg); return; }
+        UI.toast(`${Game.shipDef(s).zh} 改造完成！`);
+        Game.save(); refresh();
+      });
+      m.root.querySelector('[data-act="scrap"]').addEventListener('click', () => {
+        if (!confirm(`确定解体 ${Game.shipDef(s).zh}？\n（解体后其装备一并销毁）`)) return;
+        Game.destroyShip(uid);
+        Game.save();
+        UI.toast(`${Game.shipDef(s).zh} 已解体`);
+        m.close();
+      });
+      const modBtn = m.root.querySelector('[data-act="modernize"]');
+      if (modBtn) modBtn.addEventListener('click', () => openModernize(uid, refresh));
+      /* 装备槽点击 → 装备选择（次级浮窗，关闭后仍停留在详情页） */
+      m.root.querySelectorAll('.eq-slot').forEach(el => {
+        el.addEventListener('click', () => openEquipPicker(uid, parseInt(el.dataset.slot, 10), refresh));
+      });
+    }
 
-    /* 装备槽点击 → 装备选择 */
-    m.root.querySelectorAll('.eq-slot').forEach(el => {
-      el.addEventListener('click', () => openEquipPicker(uid, parseInt(el.dataset.slot, 10), () => m.close() || back()));
-    });
+    function refresh() {
+      m.root.innerHTML = detailHtml();
+      wire();
+    }
+
+    m = UI.modal(detailHtml(), () => back());
+    wire();
   }
 
-  /* 装备选择器 */
+  /* 装备选择器（次级浮窗：叠在舰艇详情之上，按装备种类分组单列；关闭不影响详情页） */
   function openEquipPicker(uid, slotIdx, onDone) {
     const st = Game.state;
     const s = st.ships[uid];
     const def = Game.shipDef(s);
     const slot = def.slots[slotIdx];
+    const cur = s.equipped[slotIdx] ? st.equipment[s.equipped[slotIdx]] : null;
+    const types = (slot.types || slot).map(t => ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦/水爆', '电探', '高角炮', '机枪', '声呐/爆雷', '设备'][t - 1]).join('/');
     const inv = Object.values(st.equipment).filter(eq => {
       const ed = EquipmentData[eq.id];
       if (!ed) return false;
       const used = Object.values(st.ships).some(x => x.equipped.includes(eq.uid));
       return !used && (slot.types || slot).includes(ed.slot);
     });
+    /* 按装备种类分组 */
+    const groups = {};
+    for (const eq of inv) {
+      const cat = EquipmentData[eq.id].cat;
+      (groups[cat] = groups[cat] || []).push(eq);
+    }
+    const catOrder = ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦', '水爆', '对空电探', '对水电探', '高角炮', '机枪', '声呐', '爆雷', '穿甲弹', '设备'];
+    const groupHtml = Object.keys(groups).sort((a, b) => catOrder.indexOf(a) - catOrder.indexOf(b)).map(cat => `
+      <div class="eq-cat-title">${EQUIP_CAT_ZH[cat] || cat}（${groups[cat].length}）</div>
+      ${groups[cat].map(eq => {
+        const ed = EquipmentData[eq.id];
+        const stx = Object.entries(ed.stat).map(([k, v]) => `${EQUIP_STAT_ZH[k]}${v > 0 ? '+' : ''}${v}`).join(' ');
+        return `<div class="eq-pick-item" data-eq="${eq.uid}">
+          <span><b>${UI.esc(ed.zh)}</b> ${UI.starHtml(eq)}</span>
+          <span class="eq-stat">${stx}</span>
+        </div>`;
+      }).join('')}`).join('');
+
     const html = `
       <span class="modal-close" data-close>×</span>
-      <h3>选择装备（槽位 ${slotIdx + 1}）</h3>
-      <div class="flex">
-        ${inv.length ? inv.map(eq => {
-          const ed = EquipmentData[eq.id];
-          const stx = Object.entries(ed.stat).map(([k, v]) => `${k}:${v}`).join(' ');
-          return `<div class="eq-slot" data-eq="${eq.uid}"><b>${Util.esc(ed.zh)}</b> ${UI.starHtml(eq)} <span class="dim">(${EQUIP_CAT_ZH[ed.cat] || ed.cat}) ${stx}</span></div>`;
-        }).join('') : '<span class="dim">没有可用装备。去工厂开发吧！</span>'}
-      </div>
+      <h3>更换装备 <span class="dim">${UI.esc(UI.shipTitle(s))} · 槽位 ${slotIdx + 1} [${types}]</span></h3>
+      <div class="hint">当前装备：${cur ? UI.esc(EquipmentData[cur.id].zh) : '<span class="dim">（空）</span>'} ｜ 点击下方装备替换；「卸下」将装备放回仓库。</div>
+      <div class="eq-picker">${groupHtml || '<div class="hint">没有可用的同类装备。去工厂开发吧！</div>'}</div>
       <div class="btn-row"><button class="btn btn-red btn-sm" data-clear>卸下当前装备</button></div>`;
-    const m = UI.modal(html, onDone);
+
+    const m = UI.subModal(html);
     m.root.querySelectorAll('[data-eq]').forEach(el => {
       el.addEventListener('click', () => {
         const euid = el.dataset.eq;
-        const old = s.equipped[slotIdx];
-        if (old) { st.equipment[old]._free = true; }
         s.equipped[slotIdx] = euid;
-        delete st.equipment[euid]._free;
         Game.save();
         UI.toast('装备更换完成');
-        m.close(); onDone();
+        m.close();
+        if (onDone) onDone();
       });
     });
     const clearBtn = m.root.querySelector('[data-clear]');
     if (clearBtn) clearBtn.addEventListener('click', () => {
-      const old = s.equipped[slotIdx];
-      if (old) delete s.equipped[slotIdx];
+      if (s.equipped[slotIdx]) delete s.equipped[slotIdx];
       Game.save();
-      m.close(); onDone();
+      UI.toast('已卸下装备');
+      m.close();
+      if (onDone) onDone();
     });
   }
 
@@ -187,20 +242,39 @@ const Homeport = (() => {
     function render() {
       const pv = selected.length ? Progression.modernizePreview(targetUid, selected) : null;
       const canStart = !!(pv && pv.ok);
+      const list = mats
+        .filter(x => matType === 'ALL' || Game.shipDef(x).type === matType)
+        .sort(shipCmp(matSort.key, matSort.dir));
+      const typeNames = Object.keys(SHIP_TYPE_ZH).filter(t => mats.some(x => Game.shipDef(x).type === t));
+      const sortOpts = [
+        ['lv:-1', '等级 高→低'], ['lv:1', '等级 低→高'],
+        ['time:-1', '入手 新→旧'], ['time:1', '入手 旧→新']
+      ];
       const html = `
         <span class="modal-close" data-close>×</span>
         <h3>近代化改修 —— ${UI.esc(UI.shipTitle(st.ships[targetUid]))}</h3>
         <div class="hint">剩余可改修：${Object.keys(caps).map(k => `${zh[k]} ${caps[k]}`).join(' / ') || '无（改修MAX）'}</div>
         <div class="section-title">选择素材舰（最多5艘，消耗 油30/弹30）</div>
+        <div class="roster-tools">
+          <span class="dim">舰种</span>
+          ${['ALL', ...typeNames].map(t =>
+            `<span class="preset-recipe ${matType === t ? 'active' : ''}" data-mtype="${t}">${t === 'ALL' ? '全部' : SHIP_TYPE_ZH[t]}</span>`
+          ).join('')}
+          <span class="dim" style="margin-left:14px">排序</span>
+          ${sortOpts.map(([key, label]) =>
+            `<span class="preset-recipe ${matSort.key + ':' + matSort.dir === key ? 'active' : ''}" data-msort="${key}">${label}</span>`
+          ).join('')}
+          <span class="dim">共 ${list.length} 艘</span>
+        </div>
         <div class="flex" style="gap:4px">
-          ${mats.map(x => {
+          ${list.map(x => {
             const d = Game.shipDef(x);
             const on = selected.includes(x.uid);
             return `<div class="mat-card ${on ? 'selected' : ''}" data-mat="${x.uid}">
               <div><b>${UI.esc(d.zh)}</b> ${x.kai === 1 ? '改' : x.kai >= 2 ? '改二' : ''} <span class="dim">Lv.${x.lv}</span></div>
               <div class="mat-val">${UI.esc(matValText(x.uid))}</div>
             </div>`;
-          }).join('') || '<span class="dim">没有可用的素材舰</span>'}
+          }).join('') || `<span class="dim">${matType !== 'ALL' ? '没有符合条件的素材舰' : '没有可用的素材舰'}</span>`}
         </div>
         <div class="section-title">预计上升量</div>
         ${previewHtml()}
@@ -218,6 +292,15 @@ const Homeport = (() => {
 
     function wire() {
       m.root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => m.close()));
+      /* 素材舰筛选 / 排序 */
+      m.root.querySelectorAll('[data-mtype]').forEach(el =>
+        el.addEventListener('click', () => { matType = el.dataset.mtype; render(); }));
+      m.root.querySelectorAll('[data-msort]').forEach(el =>
+        el.addEventListener('click', () => {
+          const [key, dir] = el.dataset.msort.split(':');
+          matSort = { key, dir: parseInt(dir, 10) };
+          render();
+        }));
       m.root.querySelectorAll('.mat-card').forEach(el => {
         el.addEventListener('click', () => {
           const uid = el.dataset.mat;
@@ -344,8 +427,17 @@ const Homeport = (() => {
       const fleet = st.fleet[fleetIdx];
       const inOther = st.fleet[fleetIdx === 1 ? 2 : 1];
       const allShips = Object.values(st.ships).filter(s => !inOther.includes(s.uid));
+      const list = allShips
+        .filter(s => rosterType === 'ALL' || Game.shipDef(s).type === rosterType)
+        .sort(shipCmp(rosterSort.key, rosterSort.dir));
+      const typeNames = Object.keys(SHIP_TYPE_ZH)
+        .filter(t => allShips.some(s => Game.shipDef(s).type === t));
       const los = Game.fleetLos(fleetIdx);
       const types = fleet.map(uid => SHIP_TYPE_ZH[Game.shipDef(st.ships[uid]).type]).join('、') || '无';
+      const sortOpts = [
+        ['lv:-1', '等级 高→低'], ['lv:1', '等级 低→高'],
+        ['time:-1', '入手 新→旧'], ['time:1', '入手 旧→新']
+      ];
 
       root.innerHTML = `
         <div class="tabs">
@@ -363,13 +455,34 @@ const Homeport = (() => {
             }).join('')}
           </div>
           <div class="section-title">母港舰娘（拖拽图标编入舰队；舰队内拖拽可调整/换位；拖回母港区脱出舰队）</div>
+          <div class="roster-tools">
+            <span class="dim">舰种</span>
+            ${['ALL', ...typeNames].map(t =>
+              `<span class="preset-recipe ${rosterType === t ? 'active' : ''}" data-type="${t}">${t === 'ALL' ? '全部' : SHIP_TYPE_ZH[t]}</span>`
+            ).join('')}
+            <span class="dim" style="margin-left:14px">排序</span>
+            ${sortOpts.map(([key, label]) =>
+              `<span class="preset-recipe ${rosterSort.key + ':' + rosterSort.dir === key ? 'active' : ''}" data-sort="${key}">${label}</span>`
+            ).join('')}
+            <span class="dim">共 ${list.length} 艘</span>
+          </div>
           <div class="flex roster-area" data-drop="roster">
-            ${allShips.map(s => `<div style="width:10%">${UI.shipCard(s.uid)}</div>`).join('') ||
-            '<div class="hint">没有其他舰娘，去工厂建造吧！</div>'}
+            ${list.map(s => `<div style="width:10%">${UI.shipCard(s.uid)}</div>`).join('') ||
+            `<div class="hint">${rosterType !== 'ALL' ? '没有符合筛选条件的舰娘' : '没有其他舰娘，去工厂建造吧！'}</div>`}
           </div>
         </div>`;
 
       root.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => formation(root, parseInt(b.dataset.f, 10))));
+
+      /* ---- 舰种筛选 / 排序 ---- */
+      root.querySelectorAll('.roster-tools [data-type]').forEach(el =>
+        el.addEventListener('click', () => { rosterType = el.dataset.type; render(); }));
+      root.querySelectorAll('.roster-tools [data-sort]').forEach(el =>
+        el.addEventListener('click', () => {
+          const [key, dir] = el.dataset.sort.split(':');
+          rosterSort = { key, dir: parseInt(dir, 10) };
+          render();
+        }));
 
       /* ---- 点击：空位选舰 / 舰队内详情 / 母港快捷编入 ---- */
       root.querySelectorAll('.fleet-slot:not(.filled)').forEach(el => {
@@ -481,17 +594,57 @@ const Homeport = (() => {
   function pickShipFor(fleetIdx, slotIdx, onDone) {
     const st = Game.state;
     const inOther = st.fleet[fleetIdx === 1 ? 2 : 1];
-    const others = Object.values(st.ships).filter(s => !st.fleet[fleetIdx].includes(s.uid) &&
+    const base = Object.values(st.ships).filter(s => !st.fleet[fleetIdx].includes(s.uid) &&
       !inOther.includes(s.uid) && !Game.fleetHasName(fleetIdx, s.id));
-    const html = `
-      <span class="modal-close" data-close>×</span>
-      <h3>选择舰娘编入第${fleetIdx}舰队</h3>
-      <div class="flex" style="gap:8px">
-        ${others.map(s => `<div style="width:12%">${UI.shipCard(s.uid)}</div>`).join('') || '<span class="dim">没有可用舰娘</span>'}
-      </div>
-      <div class="hint">同名舰娘不可编入同一舰队。</div>`;
-    const m = UI.modal(html, onDone);
-    m.root.querySelectorAll('.ship-card').forEach(c => {
+    let m = null;
+
+    function render() {
+      const list = base
+        .filter(s => rosterType === 'ALL' || Game.shipDef(s).type === rosterType)
+        .sort(shipCmp(rosterSort.key, rosterSort.dir));
+      const typeNames = Object.keys(SHIP_TYPE_ZH).filter(t => base.some(s => Game.shipDef(s).type === t));
+      const sortOpts = [
+        ['lv:-1', '等级 高→低'], ['lv:1', '等级 低→高'],
+        ['time:-1', '入手 新→旧'], ['time:1', '入手 旧→新']
+      ];
+      const html = `
+        <span class="modal-close" data-close>×</span>
+        <h3>选择舰娘编入第${fleetIdx}舰队</h3>
+        <div class="roster-tools">
+          <span class="dim">舰种</span>
+          ${['ALL', ...typeNames].map(t =>
+            `<span class="preset-recipe ${rosterType === t ? 'active' : ''}" data-picktype="${t}">${t === 'ALL' ? '全部' : SHIP_TYPE_ZH[t]}</span>`
+          ).join('')}
+          <span class="dim" style="margin-left:14px">排序</span>
+          ${sortOpts.map(([key, label]) =>
+            `<span class="preset-recipe ${rosterSort.key + ':' + rosterSort.dir === key ? 'active' : ''}" data-picksort="${key}">${label}</span>`
+          ).join('')}
+          <span class="dim">共 ${list.length} 艘</span>
+        </div>
+        <div class="flex" style="gap:8px">
+          ${list.map(s => `<div style="width:12%">${UI.shipCard(s.uid)}</div>`).join('') ||
+          `<span class="dim">${rosterType !== 'ALL' ? '没有符合条件的舰娘' : '没有可用舰娘'}</span>`}
+        </div>
+        <div class="hint">同名舰娘不可编入同一舰队。</div>`;
+      if (!m) {
+        m = UI.modal(html, onDone);
+      } else {
+        m.root.innerHTML = html;
+      }
+      wire();
+    }
+
+    function wire() {
+      m.root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => m.close()));
+      m.root.querySelectorAll('[data-picktype]').forEach(el =>
+        el.addEventListener('click', () => { rosterType = el.dataset.picktype; render(); }));
+      m.root.querySelectorAll('[data-picksort]').forEach(el =>
+        el.addEventListener('click', () => {
+          const [key, dir] = el.dataset.picksort.split(':');
+          rosterSort = { key, dir: parseInt(dir, 10) };
+          render();
+        }));
+      m.root.querySelectorAll('.ship-card').forEach(c => {
       c.addEventListener('click', () => {
         const uid = c.dataset.uid;
         if (st.repairs.some(r => r && r.ship === uid)) { UI.toast('入渠中的舰娘无法编入'); return; }
@@ -503,6 +656,8 @@ const Homeport = (() => {
       });
     });
   }
+  render();
+}
 
   return { home, formation, openShipDetail, openModernize };
 })();

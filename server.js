@@ -16,6 +16,8 @@ app.use(express.static(path.join(__dirname, 'public'), {
     if (filePath.endsWith('.svg')) {
       res.setHeader('Content-Type', 'image/svg+xml');
     }
+    /* 开发期不缓存：始终重新校验，避免浏览器沿用旧版 JS/CSS */
+    res.setHeader('Cache-Control', 'no-cache');
   }
 }));
 

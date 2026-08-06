@@ -26,6 +26,22 @@ const FactoryUI = (() => {
     { name: '省资材日常', v: [10, 10, 10, 11], hint: '高失败率配方，只做日常任务用' }
   ];
 
+  /* 近代化改修列表：舰种筛选与排序（会话内保留，切换标签不重置） */
+  let modType = 'ALL';
+  let modSort = { key: 'lv', dir: -1 };
+  function cmpModShip(a, b) {
+    let r;
+    if (modSort.key === 'time') {
+      const ta = a.obtainedAt || parseInt(a.uid.slice(1), 10);
+      const tb = b.obtainedAt || parseInt(b.uid.slice(1), 10);
+      r = ta - tb;
+    } else {
+      r = a.lv - b.lv;
+    }
+    if (r === 0) r = parseInt(a.uid.slice(1), 10) - parseInt(b.uid.slice(1), 10);
+    return r * modSort.dir;
+  }
+
   function factory(root, arg) {
     let tab = arg === 'dev' ? 'dev' : arg === 'improve' ? 'improve' : arg === 'modernize' ? 'modernize' : arg === 'equip' ? 'equip' : 'build';
     /* 当前配方（输入框值，默认舰载机通用公式） */
@@ -196,10 +212,29 @@ const FactoryUI = (() => {
     function modernizePanel() {
       const st = Game.state;
       const zh = { fp: '火力', tp: '雷装', aa: '对空', arm: '装甲', hp: '耐久', asw: '对潜', lck: '运' };
-      const ships = Object.values(st.ships);
+      const allShips = Object.values(st.ships);
+      const ships = allShips
+        .filter(s => modType === 'ALL' || Game.shipDef(s).type === modType)
+        .sort(cmpModShip);
+      const typeNames = Object.keys(SHIP_TYPE_ZH).filter(t => allShips.some(s => Game.shipDef(s).type === t));
+      const sortOpts = [
+        ['lv:-1', '等级 高→低'], ['lv:1', '等级 低→高'],
+        ['time:-1', '入手 新→旧'], ['time:1', '入手 旧→新']
+      ];
       return `<div class="panel">
         <h3>近代化改修 <span class="dim">（利用多余的舰娘强化目标舰属性，最多选5艘素材）</span></h3>
-        ${ships.length ? `<div class="mod-ship-list">
+        ${ships.length ? `<div class="roster-tools">
+          <span class="dim">舰种</span>
+          ${['ALL', ...typeNames].map(t =>
+            `<span class="preset-recipe ${modType === t ? 'active' : ''}" data-mtype="${t}">${t === 'ALL' ? '全部' : SHIP_TYPE_ZH[t]}</span>`
+          ).join('')}
+          <span class="dim" style="margin-left:14px">排序</span>
+          ${sortOpts.map(([key, label]) =>
+            `<span class="preset-recipe ${modSort.key + ':' + modSort.dir === key ? 'active' : ''}" data-msort="${key}">${label}</span>`
+          ).join('')}
+          <span class="dim">共 ${ships.length} 艘</span>
+        </div>
+        <div class="mod-ship-list">
           ${ships.map(s => {
             const def = Game.shipDef(s);
             const modInfo = Progression.modernizeInfo(s.uid);
@@ -214,7 +249,7 @@ const FactoryUI = (() => {
               ${avail ? `<button class="btn btn-gold btn-sm" data-mod-target="${s.uid}">近代化改修</button>` : '<span class="dim">改修MAX</span>'}
             </div>`;
           }).join('')}
-        </div>` : '<span class="dim">还没有舰娘，先去建造吧！</span>'}
+        </div>` : allShips.length ? '<span class="dim">没有符合条件的舰娘</span>' : '<span class="dim">还没有舰娘，先去建造吧！</span>'}
         <div class="hint">规则：消耗 油30/弹30，素材舰将被解体（装备一并销毁）。素材属性由舰种/改造形态决定（参照 wiki 素材列表）；奖励/偏斜各50%，素材合计 +4/+9/+14/+19/+24 额外奖励点。上限：火力/雷装/对空/装甲=基础×1.3；海防舰(DE)素材可喂 耐久+2/对潜+9/运+8（改造后继承）。改造会重置 火力/雷装/对空/装甲 的改修值。</div>
       </div>`;
     }
@@ -264,7 +299,7 @@ const FactoryUI = (() => {
     }
 
     function wirePanel() {
-      root.querySelectorAll('.preset-recipe').forEach(el => {
+      root.querySelectorAll('.preset-recipe[data-p]').forEach(el => {
         el.addEventListener('click', () => {
           const v = el.dataset.p.split(',').map(Number);
           const prefix = tab === 'build' ? 'bf' : 'df';
@@ -272,6 +307,15 @@ const FactoryUI = (() => {
           if (prefix === 'df') render();
         });
       });
+      /* 近代化改修列表：舰种筛选 / 排序 */
+      root.querySelectorAll('[data-mtype]').forEach(el =>
+        el.addEventListener('click', () => { modType = el.dataset.mtype; render(); }));
+      root.querySelectorAll('[data-msort]').forEach(el =>
+        el.addEventListener('click', () => {
+          const [key, dir] = el.dataset.msort.split(':');
+          modSort = { key, dir: parseInt(dir, 10) };
+          render();
+        }));
       /* 开发配方变化 → 局部刷新开发池预览（避免重渲染丢失输入焦点） */
       if (tab === 'dev') {
         root.querySelectorAll('[data-dinput]').forEach(inp => inp.addEventListener('input', () => {

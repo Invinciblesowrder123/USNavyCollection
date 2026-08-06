@@ -70,6 +70,21 @@ const UI = (() => {
     return { root: root.querySelector('.modal'), close };
   }
 
+  /* 次级浮窗（叠在主弹窗之上）：关闭只影响本浮窗，不影响下层弹窗（如 装备选择器/舰艇详情） */
+  function subModal(html) {
+    const root = $('#sub-modal-root');
+    root.innerHTML = `<div class="sub-modal-mask"><div class="modal">${html}</div></div>`;
+    const mask = root.querySelector('.sub-modal-mask');
+    mask.addEventListener('click', e => {
+      if (e.target === mask) close();
+    });
+    root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+    function close() {
+      root.innerHTML = '';
+    }
+    return { root: root.querySelector('.modal'), close };
+  }
+
   function esc(s) { return Util.esc(s); }
 
   /* 立绘占位（暂时用舰种占位符替代，后续可替换为真实立绘资源） */
@@ -168,7 +183,7 @@ const UI = (() => {
     return `<span class="countdown">${Util.fmtTime(ms)}</span>`;
   }
 
-  return { go, Screens, toast, modal, esc, portraitImg, shipCard, shipTitle, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml };
+  return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipTitle, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml };
 })();
 
 window.UI = UI;

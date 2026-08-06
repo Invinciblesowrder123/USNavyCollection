@@ -42,6 +42,10 @@ const QUESTS = [
     cond: { kind: 'clear_map', param: '1-2', count: 1 }, reward: { fuel: 400, steel: 300, equip: ['aa_40mm'] } },
   { id: 'w7', type: 'weekly', name: '改修工厂作业', desc: '在改修工厂进行5次装备改修。',
     cond: { kind: 'improve', count: 5 }, reward: { screws: 3, steel: 200 } },
+  { id: 'w8', type: 'weekly', name: '圣克鲁斯制海权', desc: '通关 2-3 圣克鲁斯海域。',
+    cond: { kind: 'clear_map', param: '2-3', count: 1 }, reward: { fuel: 600, steel: 400, equip: ['radar_mk22'] } },
+  { id: 'w9', type: 'weekly', name: '北方海域警戒', desc: '通关 3-2 基斯卡岛近海。',
+    cond: { kind: 'clear_map', param: '3-2', count: 1 }, reward: { ammo: 500, baux: 300, screws: 3 } },
 
   /* ---------------- 月常 ---------------- */
   { id: 'm1', type: 'monthly', name: '远征30次', desc: '完成30次远征任务。',
@@ -50,6 +54,8 @@ const QUESTS = [
     cond: { kind: 'sink', count: 100 }, reward: { ammo: 600, steel: 600, devMats: 8, equip: ['ap_mk8'] } },
   { id: 'm3', type: 'monthly', name: '月间改修任务', desc: '在改修工厂进行10次装备改修。',
     cond: { kind: 'improve', count: 10 }, reward: { screws: 5, baux: 200 } },
+  { id: 'm4', type: 'monthly', name: '北方决战', desc: '通关 3-4 北方海域全域。',
+    cond: { kind: 'clear_map', param: '3-4', count: 1 }, reward: { devMats: 10, steel: 800, baux: 500, equip: ['torp_mk15r'] } },
 
   /* ---------------- 一次性（新手引导链） ---------------- */
   { id: 'o1', type: 'once', name: '驱逐队的组建', desc: '在编成界面编入1艘驱逐舰。',
@@ -83,7 +89,25 @@ const QUESTS = [
   { id: 'o15', type: 'once', name: '改修工厂开启！', desc: '获得工作舰维斯塔尔（任务「舰队之母」奖励）。',
     cond: { kind: 'get_type', param: 'AS', count: 1 }, reward: { screws: 10, fuel: 300 } },
   { id: 'o16', type: 'once', name: '狙击开发', desc: '开发成功1次装备（高资源配方提高成功率）。',
-    cond: { kind: 'develop_success', count: 1 }, reward: { devMats: 5, baux: 200 } }
+    cond: { kind: 'develop_success', count: 1 }, reward: { devMats: 5, baux: 200 } },
+  { id: 'o17', type: 'once', name: '防卫线突破', desc: '击破 1-4 近海防卫线的海域血条。',
+    cond: { kind: 'clear_map', param: '1-4', count: 1 }, reward: { equip: ['radar_sg'], fuel: 400 } },
+  { id: 'o18', type: 'once', name: '所罗门桥头堡', desc: '击破 2-1 图拉吉急袭的海域血条。',
+    cond: { kind: 'clear_map', param: '2-1', count: 1 }, reward: { equip: ['searchlight'], ammo: 300 } },
+  { id: 'o19', type: 'once', name: '潜水栖姬讨伐', desc: '在 2-2 取得对深海潜水栖姬的S胜利。',
+    cond: { kind: 'boss_s_win', param: '2-2', count: 1 }, reward: { equip: ['sonar_qc'], steel: 300 } },
+  { id: 'o20', type: 'once', name: '圣克鲁斯哨戒', desc: '击破 2-3 圣克鲁斯海域的海域血条。',
+    cond: { kind: 'clear_map', param: '2-3', count: 1 }, reward: { ship: ['reno'], baux: 400 } },
+  { id: 'o21', type: 'once', name: '飞行场栖姬讨伐', desc: '在 2-4 取得对深海飞行场栖姬的S胜利。',
+    cond: { kind: 'boss_s_win', param: '2-4', count: 1 }, reward: { equip: ['f6f'], baux: 800 } },
+  { id: 'o22', type: 'once', name: '北大平洋进击', desc: '击破 3-1 北大平洋哨戒的海域血条。',
+    cond: { kind: 'clear_map', param: '3-1', count: 1 }, reward: { ship: ['westvirginia'], fuel: 600 } },
+  { id: 'o23', type: 'once', name: '基斯卡收容作战', desc: '击破 3-2 基斯卡岛近海的海域血条。',
+    cond: { kind: 'clear_map', param: '3-2', count: 1 }, reward: { screws: 15, ammo: 500 } },
+  { id: 'o24', type: 'once', name: '阿图岛防卫线', desc: '击破 3-3 阿图岛方向的海域血条。',
+    cond: { kind: 'clear_map', param: '3-3', count: 1 }, reward: { ship: ['northcarolina'], steel: 800 } },
+  { id: 'o25', type: 'once', name: '北方栖姬讨伐', desc: '击破 3-4 北方海域全域的海域血条。',
+    cond: { kind: 'clear_map', param: '3-4', count: 1 }, reward: { ship: ['saratoga'], screws: 20 } }
 ];
 
 /* 领取奖励时合并（资源部分） */
