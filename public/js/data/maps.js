@@ -88,7 +88,7 @@ const ENEMY_FLEETS = {
   F10: { formation: '轮形阵', ships: ['ecv1e', 'ebb1e', 'edd2e', 'ecl1e'] },
   F11: { formation: '梯形阵', ships: ['ess1', 'ess1e', 'edd2'] },
   F12: { formation: '单纵阵', ships: ['edd2e', 'edd2e', 'eca1e', 'ecl1e'] },
-  /* ---- 1-4 近海防卫线（wiki 1-4 南西群岛防卫线：驱逐栖姬 + 水雷战队） ---- */
+  /* ---- 1-4 欧胡岛防卫线（wiki 1-4 南西群岛防卫线：驱逐栖姬 + 水雷战队） ---- */
   F13: { formation: '单纵阵', ships: ['ecl1e', 'edd2e', 'edd2e'] },
   F14: { formation: '单纵阵', ships: ['eclt1', 'edd2e', 'edd2e', 'ecl1e'] },
   F15: { formation: '单纵阵', ships: ['eB1', 'edd2e', 'edd2e', 'ecl1e', 'eca1'] },
@@ -127,20 +127,20 @@ const ENEMY_FLEETS = {
   F41: { formation: '轮形阵', ships: ['ecvl1e', 'eca2e', 'ecl1e', 'edd3', 'edd3'] },
   F42: { formation: '单纵阵', ships: ['eclt1e', 'edd3e', 'edd3e', 'eca2e', 'ecl1e'] },
   F43: { formation: '单纵阵', ships: ['ebb1e', 'ebb1e', 'eca2e', 'ecl1e', 'edd3', 'edd3'] },
-  /* ---- 3-4 北方海域全域（wiki 3-4 北方海域全域：北方栖姬 BOSS） ---- */
+  /* ---- 3-4 基斯卡攻略战（wiki 3-4 北方海域全域：北方栖姬 BOSS） ---- */
   F44: { formation: '单纵阵', ships: ['eca2e', 'eca2e', 'ecl2', 'edd3', 'edd3', 'edd2'] },
   F45: { formation: '轮形阵', ships: ['ecvl1e', 'ebb2e', 'eca2e', 'edd3e', 'edd3e'] },
   F46: { formation: '轮形阵', ships: ['eB7', 'ebb2e', 'ebb2e', 'ecvl1e', 'edd3e', 'edd3e'] },
-  /* ---- 1-5 近海对潜警戒（wiki 1-5 镇守府近海：EO 对潜哨戒，BOSS=潜水Yo级flagship；反潜点不耗弹药） ---- */
+  /* ---- 1-5 夏威夷近海哨戒（wiki 1-5 镇守府近海：EO 对潜哨戒，BOSS=潜水Yo级flagship；反潜点不耗弹药） ---- */
   F47: { formation: '梯形阵', ships: ['ess3', 'ess3'] },
   F48: { formation: '梯形阵', ships: ['ess3e', 'ess2', 'ess2'] },
   F49: { formation: '梯形阵', ships: ['ess2e', 'ess2e', 'ess2'] },
   F50: { formation: '梯形阵', ships: ['ess3f', 'ess2e', 'ess2e', 'edd3e'] },
-  /* ---- 2-5 冲之岛近海（wiki 2-5：EO 制空决战，BOSS=空母Wo级flagship×2） ---- */
+  /* ---- 2-5 萨沃岛近海（wiki 2-5：EO 制空决战，BOSS=空母Wo级flagship×2） ---- */
   F51: { formation: '轮形阵', ships: ['ecv1e', 'ecvl1e', 'edd3e', 'edd3e'] },
   F52: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'edd3e', 'edd3e'] },
   F53: { formation: '轮形阵', ships: ['ecv1f', 'ecv1f', 'ebb2e', 'ecl2e', 'edd3e', 'edd3e'] },
-  /* ---- 3-5 北方阿留申海域（wiki 3-5：EO，北方栖姬为道中，BOSS=轻巡Tsu级+输送舰队） ---- */
+  /* ---- 3-5 阿留申海域决战（wiki 3-5：EO，北方栖姬为道中，BOSS=轻巡Tsu级+输送舰队） ---- */
   F54: { formation: '单纵阵', ships: ['ecl2e', 'eclt1e', 'edd3e', 'edd3e', 'ecl1e'] },
   F55: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'ebb1e', 'edd3e', 'edd3e'] },
   F56: { formation: '轮形阵', ships: ['eB7', 'eca2e', 'ecl2e', 'edd3e', 'edd3e'] },
@@ -253,7 +253,7 @@ const MAPS = [
     bossDrops: ['iowa', 'missouri', 'essex', 'baltimore']
   },
   {
-    id: '1-4', name: '近海防卫线', desc: '深海军夜袭部队反扑近海！驱逐栖姬率领的水雷战队逼近母港！', stars: 6,
+    id: '1-4', name: '欧胡岛防卫线', desc: '深海军夜袭部队反扑近海！驱逐栖姬率领的水雷战队逼近欧胡岛！', stars: 6,
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 50, boss: 500 },     // 提督经验（wiki 1-4: 道中+50 / BOSS+500）
     nodes: {
@@ -271,7 +271,7 @@ const MAPS = [
     drops: ['laffey', 'heermann', 'porter'],
     bossDrops: ['johnston', 'sanfrancisco', 'quincy']
   },
-  /* ==================== 2.南西群岛海域（所罗门群岛） ==================== */
+  /* ==================== 2.所罗门群岛海域 ==================== */
   {
     id: '2-1', name: '图拉吉急袭', desc: '所罗门群岛的桥头堡！重巡旗舰镇守的登陆海域。', stars: 6,
     start: 'S', boss: 'C', gauge: 4,
@@ -349,7 +349,7 @@ const MAPS = [
     drops: ['archerfish', 'tang'],
     bossDrops: ['northcarolina', 'washington', 'wasp']
   },
-  /* ==================== 3.北方海域（阿留申群岛） ==================== */
+  /* ==================== 3.阿留申群岛海域 ==================== */
   {
     id: '3-1', name: '北大平洋哨戒', desc: '舰队挺进北大平洋！深海战列舰精锐组成的侵攻舰队逼近！', stars: 9,
     start: 'S', boss: 'G', gauge: 5,
@@ -421,7 +421,7 @@ const MAPS = [
     bossDrops: ['essex', 'southdakota', 'massachusetts']
   },
   {
-    id: '3-4', name: '北方海域全域', desc: '深海北方栖姬的决战海域！击破北方的钢铁要塞！', stars: 10,
+    id: '3-4', name: '基斯卡攻略战', desc: '深海北方栖姬的决战海域！夺回基斯卡岛，击破北方的钢铁要塞！', stars: 10,
     start: 'S', boss: 'D', gauge: 6,
     admExp: { node: 120, boss: 1990 },   // 提督经验（wiki 3-4: 道中+120 / BOSS+1990）
     nodes: {
@@ -441,7 +441,7 @@ const MAPS = [
   },
   /* ==================== BOSS海域（EO，need 同区域4号图） ==================== */
   {
-    id: '1-5', name: '近海对潜警戒', desc: '深海潜水舰队潜伏近海！编成对潜警戒部队，扫荡镇守府近海的潜水威胁！', stars: 7,
+    id: '1-5', name: '夏威夷近海哨戒', desc: '深海潜水舰队潜伏夏威夷近海！编成对潜警戒部队，扫荡航线上的潜水威胁！', stars: 7,
     start: 'S', boss: 'J', gauge: 6, need: '1-4',
     admExp: { node: 130, boss: 2200 },   // 提督经验（wiki 1-5: 道中+130 / BOSS+2200）
     nodes: {
@@ -459,7 +459,7 @@ const MAPS = [
     bossDrops: ['atlanta', 'juneau', 'wichita']
   },
   {
-    id: '2-5', name: '冲之岛近海', desc: '深海机动部队的制空决战！冲之岛近海的天空由舰队掌控！', stars: 9,
+    id: '2-5', name: '萨沃岛近海', desc: '深海机动部队的制空决战！萨沃岛近海的天空由舰队掌控！', stars: 9,
     start: 'S', boss: 'D', gauge: 6, need: '2-4',
     admExp: { node: 140, boss: 2400 },   // 提督经验（wiki 2-5: 道中+140 / BOSS+2400）
     nodes: {
@@ -478,7 +478,7 @@ const MAPS = [
     bossDrops: ['lexington', 'ranger', 'washington']
   },
   {
-    id: '3-5', name: '北方阿留申海域', desc: '北方栖姬坐镇的AL泊地挡在前方！突入阿留申，击破敌增援主力！', stars: 11,
+    id: '3-5', name: '阿留申海域决战', desc: '北方栖姬坐镇的阿留申泊地挡在前方！突入阿留申，击破敌增援主力！', stars: 11,
     start: 'S', boss: 'K', gauge: 7, need: '3-4',
     admExp: { node: 150, boss: 2600 },   // 提督经验（wiki 3-5: 道中+150 / BOSS+2600）
     nodes: {
@@ -500,7 +500,7 @@ const MAPS = [
     drops: ['tang', 'barb'],
     bossDrops: ['saratoga', 'intrepid', 'westvirginia']
   },
-  /* ==================== 4.中部海域（马里亚纳/中太平洋，wiki 6-X） ==================== */
+  /* ==================== 4.中太平洋海域（马绍尔/马里亚纳，wiki 6-X） ==================== */
   {
     id: '4-1', name: '马绍尔群岛近海', desc: '挺进中太平洋！深海在环礁之间布下了哨戒线。', stars: 11,
     start: 'S', boss: 'D', gauge: 5,
@@ -594,7 +594,7 @@ const MAPS = [
     drops: ['indiana', 'westvirginia'],
     bossDrops: ['enterprise', 'iowa', 'essex']
   },
-  /* ==================== 5.南方海域（菲律宾/莱特湾，wiki 5-X） ==================== */
+  /* ==================== 5.菲律宾海域（莱特湾，wiki 5-X） ==================== */
   {
     id: '5-1', name: '莱特湾前哨', desc: '菲律宾的大门已经敞开！扫清莱特湾的前哨防线。', stars: 13,
     start: 'S', boss: 'C', gauge: 5,

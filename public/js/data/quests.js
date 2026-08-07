@@ -58,7 +58,7 @@ const QUESTS = [
     cond: { kind: 'sink', count: 100 }, reward: { ammo: 600, steel: 600, devMats: 8, equip: ['ap_mk8'] } },
   { id: 'm3', type: 'monthly', name: '月间改修任务', desc: '在改修工厂进行10次装备改修。',
     cond: { kind: 'improve', count: 10 }, reward: { screws: 5, baux: 200 } },
-  { id: 'm4', type: 'monthly', name: '北方决战', desc: '通关 3-4 北方海域全域。',
+  { id: 'm4', type: 'monthly', name: '北方决战', desc: '通关 3-4 基斯卡攻略战。',
     cond: { kind: 'clear_map', param: '3-4', count: 1 }, reward: { devMats: 10, steel: 800, baux: 500, equip: ['torp_mk15r'] } },
   { id: 'm5', type: 'monthly', name: '中部海域制压', desc: '通关 4-5 硫磺岛近海。',
     cond: { kind: 'clear_map', param: '4-5', count: 1 }, reward: { devMats: 15, fuel: 1000, steel: 1000, screws: 8 } },
@@ -98,7 +98,7 @@ const QUESTS = [
     cond: { kind: 'get_type', param: 'AS', count: 1 }, reward: { screws: 10, fuel: 300 } },
   { id: 'o16', type: 'once', name: '狙击开发', desc: '开发成功1次装备（高资源配方提高成功率）。',
     cond: { kind: 'develop_success', count: 1 }, reward: { devMats: 5, baux: 200 } },
-  { id: 'o17', type: 'once', name: '防卫线突破', desc: '击破 1-4 近海防卫线的海域血条。',
+  { id: 'o17', type: 'once', name: '防卫线突破', desc: '击破 1-4 欧胡岛防卫线的海域血条。',
     cond: { kind: 'clear_map', param: '1-4', count: 1 }, reward: { equip: ['radar_sg'], fuel: 400 } },
   { id: 'o18', type: 'once', name: '所罗门桥头堡', desc: '击破 2-1 图拉吉急袭的海域血条。',
     cond: { kind: 'clear_map', param: '2-1', count: 1 }, reward: { equip: ['searchlight'], ammo: 300 } },
@@ -114,7 +114,7 @@ const QUESTS = [
     cond: { kind: 'clear_map', param: '3-2', count: 1 }, reward: { screws: 15, ammo: 500 } },
   { id: 'o24', type: 'once', name: '阿图岛防卫线', desc: '击破 3-3 阿图岛方向的海域血条。',
     cond: { kind: 'clear_map', param: '3-3', count: 1 }, reward: { ship: ['northcarolina'], steel: 800 } },
-  { id: 'o25', type: 'once', name: '北方栖姬讨伐', desc: '击破 3-4 北方海域全域的海域血条。',
+  { id: 'o25', type: 'once', name: '北方栖姬讨伐', desc: '击破 3-4 基斯卡攻略战的海域血条。',
     cond: { kind: 'clear_map', param: '3-4', count: 1 }, reward: { ship: ['saratoga'], screws: 20 } },
 
   /* ---------------- 一次性（舰队解锁链） ---------------- */
@@ -124,11 +124,11 @@ const QUESTS = [
     cond: { kind: 'clear_map', param: '2-1', count: 1 }, reward: { unlockFleet: 4, steel: 400, baux: 400 } },
 
   /* ---------------- 一次性（BOSS海域 / 后期主线链） ---------------- */
-  { id: 'o28', type: 'once', name: '近海清剿', desc: '击破 1-5 近海对潜警戒的海域血条。',
+  { id: 'o28', type: 'once', name: '近海清剿', desc: '击破 1-5 夏威夷近海哨戒的海域血条。',
     cond: { kind: 'clear_map', param: '1-5', count: 1 }, reward: { screws: 20, baux: 500 } },
-  { id: 'o29', type: 'once', name: '冲之岛制空权', desc: '击破 2-5 冲之岛近海的海域血条。',
+  { id: 'o29', type: 'once', name: '萨沃岛制空权', desc: '击破 2-5 萨沃岛近海的海域血条。',
     cond: { kind: 'clear_map', param: '2-5', count: 1 }, reward: { equip: ['f4u'], baux: 800 } },
-  { id: 'o30', type: 'once', name: '阿留申肃清', desc: '击破 3-5 北方阿留申海域的海域血条。',
+  { id: 'o30', type: 'once', name: '阿留申肃清', desc: '击破 3-5 阿留申海域决战的海域血条。',
     cond: { kind: 'clear_map', param: '3-5', count: 1 }, reward: { ship: ['indiana'], screws: 25 } },
   { id: 'o31', type: 'once', name: '中太平洋出击', desc: '击破 4-1 马绍尔群岛近海的海域血条。',
     cond: { kind: 'clear_map', param: '4-1', count: 1 }, reward: { equip: ['radar_fc37'], fuel: 800 } },
