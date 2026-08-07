@@ -123,17 +123,21 @@ const SortieUI = (() => {
   /* ============================================================
    * 海域选择（Kancolle世界地图风格：海域导航页签 + 海图位置标记 + 地图详情）
    * ============================================================ */
-  const AREA_ZH = { '1': '镇守府海域', '2': '南西群岛海域', '3': '北方海域' };
+  const AREA_ZH = { '1': '镇守府海域', '2': '南西群岛海域', '3': '北方海域', '4': '中部海域', '5': '南方海域' };
   const AREA_DESC = {
     '1': '母港所在的近海防线，深海军前哨部队蠢蠢欲动。',
     '2': '所罗门群岛与铁底湾，反潜与夜战的高发海域。',
-    '3': '阿留申群岛的北大平洋，深海北方舰队的据点。'
+    '3': '阿留申群岛的北大平洋，深海北方舰队的据点。',
+    '4': '马里亚纳与马绍尔群岛，中太平洋的航空决战海域。',
+    '5': '菲律宾与莱特湾，联合舰队最后的决战之地。'
   };
-  /* 各海域地图在海图上的位置（百分比坐标） */
+  /* 各海域地图在海图上的位置（百分比坐标）；第5张为 BOSS 海域（EO） */
   const AREA_SPOTS = {
-    '1': { '1-1': [12, 74], '1-2': [30, 50], '1-3': [46, 26], '1-4': [66, 56] },
-    '2': { '2-1': [14, 70], '2-2': [34, 46], '2-3': [50, 22], '2-4': [72, 60] },
-    '3': { '3-1': [16, 72], '3-2': [36, 46], '3-3': [26, 24], '3-4': [68, 28] }
+    '1': { '1-1': [10, 76], '1-2': [28, 52], '1-3': [46, 28], '1-4': [64, 48], '1-5': [74, 18] },
+    '2': { '2-1': [12, 72], '2-2': [32, 48], '2-3': [48, 22], '2-4': [70, 62], '2-5': [36, 16] },
+    '3': { '3-1': [14, 74], '3-2': [34, 48], '3-3': [24, 26], '3-4': [66, 30], '3-5': [52, 10] },
+    '4': { '4-1': [12, 70], '4-2': [32, 44], '4-3': [48, 22], '4-4': [70, 52], '4-5': [58, 76] },
+    '5': { '5-1': [14, 66], '5-2': [32, 44], '5-3': [48, 20], '5-4': [70, 40], '5-5': [56, 80] }
   };
   const areaOf = m => m.id.split('-')[0];
   const areaMaps = no => MAPS.filter(m => areaOf(m) === no);
@@ -150,6 +154,9 @@ const SortieUI = (() => {
     return items;
   }
 
+  /* 地图是否处于锁定状态（BOSS海域需先击破同区域4号图） */
+  const mapLocked = m => !!m.need && !Game.state.mapProgress[m.need].cleared;
+
   /* 海图面板：海域名 + 地图位置标记（可点击选择）+ 虚线航路 */
   function areaMapPanel(areaNo, selId) {
     const st = Game.state;
@@ -163,14 +170,15 @@ const SortieUI = (() => {
     const markers = ms.map(m => {
       const mp = st.mapProgress[m.id];
       const [x, y] = spots[m.id] || [50, 50];
+      const locked = mapLocked(m);
       const no = m.id.split('-')[1];
-      return `<button class="spot-btn${m.id === selId ? ' sel' : ''}${mp.cleared ? ' cleared' : ''}"
+      return `<button class="spot-btn${m.id === selId ? ' sel' : ''}${mp.cleared ? ' cleared' : ''}${locked ? ' locked' : ''}"
           data-map="${m.id}" title="${m.name}" style="left:${x}%;top:${y}%">
-        <span class="spot-no">${mp.cleared ? '✓' : no}</span>
+        <span class="spot-no">${locked ? '🔒' : (mp.cleared ? '✓' : no)}</span>
         <span class="spot-name">${m.name}</span>
-        <span class="spot-prog">${mp.cleared ? '已攻略' : `击破 ${mp.kills}/${mp.gauge + mp.kills}`}</span>
+        <span class="spot-prog">${locked ? '需击破 ' + m.need : (mp.cleared ? '已攻略' : `击破 ${mp.kills}/${mp.gauge + mp.kills}`)}</span>
       </button>`;
-    }).join('');
+    }).join();
     return `<div class="area-map">
       <svg class="area-routes" viewBox="0 0 100 100" preserveAspectRatio="none">${routes}</svg>
       <div class="area-map-title">${AREA_ZH[areaNo]}<span class="dim">${AREA_DESC[areaNo]}</span></div>
@@ -179,9 +187,10 @@ const SortieUI = (() => {
     </div>`;
   }
 
-  /* 地图详情面板：迷你海图预览 + 血条 + 出击 */
+  /* 地图详情面板：迷你海图预览 + 血条 + 出击（BOSS海域锁定态提示）；fleetIdx 用于跟随所选舰队的索敌/出击判断 */
   function mapDetailPanel(m, fleetIdx) {
     const st = Game.state;
+    const fidx = fleetIdx || 1;
     const mp = st.mapProgress[m.id];
     const total = mp.gauge + mp.kills;
     const pct = mp.cleared ? 100 : Math.round(mp.gauge / total * 100);
@@ -189,12 +198,14 @@ const SortieUI = (() => {
     const brs = Array.isArray(m.branch) ? m.branch : (m.branch ? [m.branch] : []);
     const losNeed = brs.reduce((mx, b) => Math.max(mx, b.if.los || 0), 0);
     const ddNeed = brs.reduce((mx, b) => Math.max(mx, b.if.dd || 0), 0);
-    const los = Game.fleetLos(fleetIdx);
-    const canGo = !st.sortie && (st.fleet[fleetIdx] || []).length > 0;
-    return `<div class="map-detail">
+    const los = Game.fleetLos(fidx);
+    const locked = mapLocked(m);
+    const canGo = !locked && !st.sortie && (st.fleet[fidx] || []).length > 0;
+    return `<div class="map-detail${locked ? ' locked' : ''}">
       <div class="md-board">${mapBoard(m, null, { mini: true })}</div>
       <div class="md-title">${m.id} ${m.name} <span class="map-stars">${'★'.repeat(m.stars || 0)}</span>
-        ${mp.cleared ? '<span class="map-clear-badge">★ 已攻略</span>' : ''}</div>
+        ${mp.cleared ? '<span class="map-clear-badge">★ 已攻略</span>' : ''}
+        ${m.need ? '<span class="md-eo">BOSS海域</span>' : ''}</div>
       <div class="md-gauge">
         <div class="gauge-head"><span>海域血条</span><b>${mp.cleared ? '★ 已攻略' : `${mp.kills} / ${total} 次击破`}</b></div>
         <div class="gauge-bar"><div class="gauge-fill${mp.cleared ? ' full' : ''}" style="width:${pct}%"></div></div>
@@ -207,7 +218,9 @@ const SortieUI = (() => {
         <div><b>道中掉落</b>：${m.drops.map(id => ShipData[id].zh).join('、')}</div>
         <div><b>BOSS掉落</b>：${m.bossDrops.map(id => ShipData[id].zh).join('、')}</div>
       </div>
-      <button class="btn btn-gold md-btn" data-start ${canGo ? '' : 'disabled'}>出击</button>
+      ${locked
+        ? `<div class="md-lock">🔒 未解锁！先击破 <b>${m.need}</b> 后开放此 BOSS 海域。</div>`
+        : `<button class="btn btn-gold md-btn" data-start ${canGo ? '' : 'disabled'}>出击</button>`}
     </div>`;
   }
 
@@ -224,10 +237,11 @@ const SortieUI = (() => {
       minAmmo = Math.min(minAmmo, s.supply.ammo);
     }
     const lowSupply = minFuel < 0.5 || minAmmo < 0.5;
-    /* 默认选中：首个存在未攻略海域的区域及其首张未攻略地图 */
+    /* 默认选中：首个存在未解锁攻略海域的区域及其首张可攻略地图（跳过锁定的 BOSS 海域） */
     const nos = Object.keys(AREA_ZH);
-    let selArea = nos.find(no => areaMaps(no).some(m => !st.mapProgress[m.id].cleared)) || nos[0];
-    let selMap = (areaMaps(selArea).find(m => !st.mapProgress[m.id].cleared) || areaMaps(selArea)[0]).id;
+    const pickMap = no => (areaMaps(no).find(m => !mapLocked(m) && !st.mapProgress[m.id].cleared) || areaMaps(no)[0]);
+    let selArea = nos.find(no => areaMaps(no).some(m => !mapLocked(m) && !st.mapProgress[m.id].cleared)) || nos[0];
+    let selMap = pickMap(selArea).id;
 
     function draw() {
       const sel = MAPS.find(m => m.id === selMap);
@@ -270,8 +284,7 @@ const SortieUI = (() => {
       root.querySelectorAll('[data-area]').forEach(b => {
         b.addEventListener('click', () => {
           selArea = b.dataset.area;
-          const ms = areaMaps(selArea);
-          selMap = (ms.find(m => !st.mapProgress[m.id].cleared) || ms[0]).id;
+          selMap = pickMap(selArea).id;
           Game.save();
           draw();
         });

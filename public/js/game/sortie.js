@@ -17,6 +17,13 @@ const Sortie = (() => {
     const st = G.state;
     const map = MAPS.find(m => m.id === mapId);
     if (!map) return { ok: false, msg: '海域不存在' };
+    /* BOSS海域（EO）：需先击破同区域4号图（wiki：1-5 等需击破前图开放） */
+    if (map.need) {
+      const needMp = st.mapProgress[map.need];
+      if (!needMp || !needMp.cleared) {
+        return { ok: false, msg: `「${map.id}」为 BOSS 海域！需先击破 ${map.need} 才能出击！` };
+      }
+    }
     if (st.sortie) return { ok: false, msg: '舰队正在出击中！' };
     if (!G.isFleetUnlocked(fleetIdx)) return { ok: false, msg: '该舰队尚未解锁！' };
     const fleet = st.fleet[fleetIdx];
@@ -180,13 +187,14 @@ const Sortie = (() => {
     const result = prep.result;
     const isBoss = prep.isBoss;
 
-    /* 消耗：油弹（wiki：普通战斗点 油20%/弹20%，进入夜战 弹30%），疲劳-15 */
+    /* 消耗：油弹（wiki：普通战斗点 油20%/弹20%，进入夜战 弹30%；节点可覆写 cost，如 1-5 反潜点 油8%/弹0），疲劳-15 */
     let ammoZero = false;
+    const cost = def.cost || null;
     for (const uid of fleet) {
       const s = st.ships[uid];
       if (!s) continue;
-      s.supply.fuel = Math.max(0, s.supply.fuel - 0.2);
-      s.supply.ammo = Math.max(0, s.supply.ammo - (result.nightUsed ? 0.3 : 0.2));
+      s.supply.fuel = Math.max(0, s.supply.fuel - (cost ? cost.fuel : 0.2));
+      s.supply.ammo = Math.max(0, s.supply.ammo - (cost ? cost.ammo : (result.nightUsed ? 0.3 : 0.2)));
       s.morale = Math.max(0, s.morale - 15);
       if (s.supply.ammo <= 0) ammoZero = true;
     }
@@ -297,21 +305,27 @@ const Sortie = (() => {
     st.sortie = null;
   }
 
-  /* 补给消耗速查（用于UI显示） */
+  /* 补给消耗速查（用于UI显示）：按节点 cost 计算（默认战斗点 油20%/弹20%，1-5 反潜点 油8%/弹0） */
   function sortieConsumption(mapId, fleetIdx) {
     const G = GameRef();
     const st = G.state;
     const map = MAPS.find(m => m.id === mapId);
     if (!map) return { fuel: 0, ammo: 0 };
-    const battleNodes = Object.values(map.defs).filter(d => d.type === 'battle' || d.type === 'boss').length;
     let fuel = 0, ammo = 0;
     for (const uid of st.fleet[fleetIdx] || []) {
       const s = st.ships[uid];
       if (!s) continue;
       const d = G.shipDef(s);
-      /* wiki：普通战斗点消耗 油20%/弹20%（满补给=消耗值×4） */
-      fuel += d.consum.fuel * 0.8 * battleNodes;
-      ammo += d.consum.ammo * 0.8 * battleNodes;
+      /* wiki：每个战斗点 油20%/弹20%（满补给=消耗值×4）；节点 cost 可覆写 */
+      let f = 0, a = 0;
+      for (const def of Object.values(map.defs)) {
+        if (def.type === 'battle' || def.type === 'boss') {
+          const c = def.cost || null;
+          f += d.consum.fuel * (c ? c.fuel : 0.2) * 4;
+          a += d.consum.ammo * (c ? c.ammo : 0.2) * 4;
+        }
+      }
+      fuel += f; ammo += a;
     }
     return { fuel: Math.ceil(fuel), ammo: Math.ceil(ammo) };
   }

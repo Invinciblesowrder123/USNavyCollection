@@ -54,7 +54,24 @@ const DEEP_TEMPLATES = {
   eB6:  { name: '深海飞行场栖姬', type: 'CV', stats: [120, 0, 0, 14, 55, 5, 0, 20, 5], boss: true,
           slots: [{ planes: 36, aa: 6 }, { planes: 32, aa: 6 }, { planes: 26, aa: 7 }, { planes: 20, aa: 7 }] },
   eB7:  { name: '深海北方栖姬', type: 'BB', stats: [170, 84, 0, 16, 78, 22, 0, 16, 25], boss: true },
-  eB8:  { name: '深海潜水栖姬', type: 'SS', stats: [70, 5, 60, 0, 8, 40, 0, 5, 20], boss: true }
+  eB8:  { name: '深海潜水栖姬', type: 'SS', stats: [70, 5, 60, 0, 8, 40, 0, 5, 20], boss: true },
+  /* 三期高阶模板（wiki 二期/三期：潜水ヨ級、軽巡ツ級、戦艦レ級、空母ヲ級flagship、軽母ヌ級flagship、駆逐ニ級後期型、輸送ワ級flagship） */
+  ess3: { name: '深海军潜水舰Yo级', type: 'SS', stats: [20, 8, 34, 0, 7, 30, 16, 5, 6] },
+  ess3e:{ name: '深海军潜水舰Yo级(精锐)', type: 'SS', stats: [26, 10, 44, 0, 9, 36, 19, 5, 8] },
+  ess3f:{ name: '深海军潜水舰Yo级(旗舰)', type: 'SS', stats: [34, 12, 56, 0, 11, 42, 22, 5, 10] },
+  ecl3: { name: '深海军轻巡洋舰Tsu级', type: 'CL', stats: [48, 38, 22, 16, 18, 30, 32, 8, 10] },
+  ebb3: { name: '深海军战列舰Re级', type: 'BB', stats: [95, 76, 0, 13, 52, 16, 14, 6, 10] },
+  ebb3e:{ name: '深海军战列舰Re级(精锐)', type: 'BB', stats: [110, 92, 0, 15, 62, 18, 16, 6, 12] },
+  edd4: { name: '深海军驱逐舰IV级', type: 'DD', stats: [36, 24, 34, 10, 13, 36, 36, 6, 10] },
+  edd4e:{ name: '深海军驱逐舰IV级(精锐)', type: 'DD', stats: [42, 32, 40, 12, 16, 42, 42, 6, 12] },
+  ecv1f:{ name: '深海军空母Wo级(旗舰)', type: 'CV', stats: [65, 0, 0, 13, 30, 22, 0, 24, 12],
+          slots: [{ planes: 36, aa: 5 }, { planes: 34, aa: 5 }, { planes: 28, aa: 6 }] },
+  ecvl1f:{ name: '深海军轻空母Nu级(旗舰)', type: 'CVL', stats: [60, 0, 0, 13, 28, 22, 0, 22, 12],
+          slots: [{ planes: 30, aa: 5 }, { planes: 28, aa: 5 }, { planes: 24, aa: 6 }] },
+  eap1f:{ name: '深海军输送舰Wa级(旗舰)', type: 'AP', stats: [40, 0, 0, 7, 10, 14, 0, 5, 7] },
+  /* 三期栖姬：折钵山栖姬（硫磺岛，中部海域BOSS海域）、大和栖姬（莱特湾决战，南方海域BOSS海域） */
+  eB9:  { name: '深海折钵山栖姬', type: 'BB', stats: [230, 88, 0, 18, 84, 10, 0, 18, 10], boss: true },
+  eB10: { name: '深海大和栖姬', type: 'BB', stats: [280, 96, 0, 18, 92, 14, 0, 18, 20], boss: true }
 };
 
 /* ---------- 敌方舰队集合（按节点引用） ---------- */
@@ -113,7 +130,65 @@ const ENEMY_FLEETS = {
   /* ---- 3-4 北方海域全域（wiki 3-4 北方海域全域：北方栖姬 BOSS） ---- */
   F44: { formation: '单纵阵', ships: ['eca2e', 'eca2e', 'ecl2', 'edd3', 'edd3', 'edd2'] },
   F45: { formation: '轮形阵', ships: ['ecvl1e', 'ebb2e', 'eca2e', 'edd3e', 'edd3e'] },
-  F46: { formation: '轮形阵', ships: ['eB7', 'ebb2e', 'ebb2e', 'ecvl1e', 'edd3e', 'edd3e'] }
+  F46: { formation: '轮形阵', ships: ['eB7', 'ebb2e', 'ebb2e', 'ecvl1e', 'edd3e', 'edd3e'] },
+  /* ---- 1-5 近海对潜警戒（wiki 1-5 镇守府近海：EO 对潜哨戒，BOSS=潜水Yo级flagship；反潜点不耗弹药） ---- */
+  F47: { formation: '梯形阵', ships: ['ess3', 'ess3'] },
+  F48: { formation: '梯形阵', ships: ['ess3e', 'ess2', 'ess2'] },
+  F49: { formation: '梯形阵', ships: ['ess2e', 'ess2e', 'ess2'] },
+  F50: { formation: '梯形阵', ships: ['ess3f', 'ess2e', 'ess2e', 'edd3e'] },
+  /* ---- 2-5 冲之岛近海（wiki 2-5：EO 制空决战，BOSS=空母Wo级flagship×2） ---- */
+  F51: { formation: '轮形阵', ships: ['ecv1e', 'ecvl1e', 'edd3e', 'edd3e'] },
+  F52: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'edd3e', 'edd3e'] },
+  F53: { formation: '轮形阵', ships: ['ecv1f', 'ecv1f', 'ebb2e', 'ecl2e', 'edd3e', 'edd3e'] },
+  /* ---- 3-5 北方阿留申海域（wiki 3-5：EO，北方栖姬为道中，BOSS=轻巡Tsu级+输送舰队） ---- */
+  F54: { formation: '单纵阵', ships: ['ecl2e', 'eclt1e', 'edd3e', 'edd3e', 'ecl1e'] },
+  F55: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'ebb1e', 'edd3e', 'edd3e'] },
+  F56: { formation: '轮形阵', ships: ['eB7', 'eca2e', 'ecl2e', 'edd3e', 'edd3e'] },
+  F57: { formation: '单纵阵', ships: ['ecl2e', 'eclt1e', 'eclt1e', 'edd3e', 'edd3e'] },
+  F58: { formation: '复纵阵', ships: ['eca2e', 'eca1e', 'ecl2e', 'edd3e', 'edd3e'] },
+  F59: { formation: '复纵阵', ships: ['ecl3', 'eap1f', 'eap1f', 'ebb2e', 'edd3e', 'edd3e'] },
+  /* ---- 4-1 马绍尔群岛近海（wiki 6-2：BOSS=轻空母Nu级flagship） ---- */
+  F60: { formation: '梯形阵', ships: ['ess2e', 'ess2', 'edd3e'] },
+  F61: { formation: '单纵阵', ships: ['eca2e', 'ecl2e', 'edd3e', 'edd3e'] },
+  F62: { formation: '单纵阵', ships: ['eclt1e', 'eclt1e', 'edd3e', 'edd3e'] },
+  F63: { formation: '轮形阵', ships: ['ecvl1f', 'eca2e', 'eca2e', 'edd3e', 'edd3e'] },
+  /* ---- 4-2 夸贾林环礁海域（wiki 6-3：空袭+警戒，BOSS=轻母Nu级flagship+战列舰Ru级flagship） ---- */
+  F64: { formation: '轮形阵', ships: ['ecvl1e', 'eca2e', 'edd3e', 'edd3e'] },
+  F65: { formation: '单纵阵', ships: ['eca2e', 'eca1e', 'eclt1e', 'edd3e', 'edd3e'] },
+  F66: { formation: '轮形阵', ships: ['ecvl1f', 'ebb2e', 'eca2e', 'edd3e', 'edd3e'] },
+  /* ---- 4-3 塞班岛攻略（wiki 6-4：空袭+夜战，BOSS=机动部队） ---- */
+  F67: { formation: '轮形阵', ships: ['ecv1e', 'ecvl1e', 'edd3e', 'edd3e'] },
+  F68: { formation: '单纵阵', ships: ['eclt1e', 'eclt1e', 'edd3e', 'edd3e', 'ecl2e'] },
+  F69: { formation: '单纵阵', ships: ['eca2e', 'eca2e', 'edd3e', 'edd3e', 'ecl2e'] },
+  F70: { formation: '轮形阵', ships: ['ecv1f', 'ebb2e', 'eca2e', 'edd3e', 'edd3e'] },
+  /* ---- 4-4 菲律宾海决战（马里亚纳火鸡射击，全空袭决战） ---- */
+  F71: { formation: '轮形阵', ships: ['ecv1e', 'ecvl1f', 'edd3e', 'edd3e'] },
+  F72: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'ecvl1f', 'edd3e', 'edd3e'] },
+  F73: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'ecvl1f', 'ebb2e', 'edd3e', 'edd3e'] },
+  /* ---- 4-5 硫磺岛近海（BOSS海域，need 4-4：折钵山栖姬） ---- */
+  F74: { formation: '梯形阵', ships: ['ess3', 'ess2e', 'ess2e', 'edd3e'] },
+  F75: { formation: '轮形阵', ships: ['ecv1f', 'ecvl1f', 'eca2e', 'edd3e', 'edd3e'] },
+  F76: { formation: '单纵阵', ships: ['eclt1e', 'eclt1e', 'edd3e', 'edd3e', 'eca2e'] },
+  F77: { formation: '轮形阵', ships: ['eB9', 'ebb3e', 'ecvl1f', 'eca2e', 'edd3e', 'edd3e'] },
+  /* ---- 5-1 莱特湾前哨（wiki 5-1：BOSS=空母Wo级flagship） ---- */
+  F78: { formation: '单纵阵', ships: ['eca2e', 'ecl2e', 'edd3e', 'edd3e'] },
+  F79: { formation: '单纵阵', ships: ['ecv1f', 'ebb2e', 'eca2e', 'edd3e', 'edd3e'] },
+  /* ---- 5-2 苏里高海峡（夜战海峡，老战列舰夜战线） ---- */
+  F80: { formation: '单纵阵', ships: ['eclt1e', 'eclt1e', 'edd3e', 'edd3e'] },
+  F81: { formation: '单纵阵', ships: ['ebb1e', 'ebb1e', 'eclt1e', 'edd3e', 'edd3e'] },
+  F82: { formation: '单纵阵', ships: ['ebb1e', 'ebb1e', 'eclt1e', 'eclt1e', 'edd3e', 'edd3e'] },
+  /* ---- 5-3 萨马岛近海（Taffy 3 vs 中央舰队，BOSS=战列舰Re级flagship） ---- */
+  F83: { formation: '单纵阵', ships: ['ebb2e', 'eca2e', 'ecl2e', 'edd3e', 'edd3e'] },
+  F84: { formation: '单纵阵', ships: ['ebb3e', 'ebb2e', 'eca2e', 'edd3e', 'edd3e'] },
+  F85: { formation: '单纵阵', ships: ['ebb3e', 'ebb2e', 'eca2e', 'eca2e', 'edd3e', 'edd3e'] },
+  /* ---- 5-4 恩加尼奥角（小泽机动部队，全空袭） ---- */
+  F86: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'edd3e', 'edd3e'] },
+  F87: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'ecvl1f', 'edd3e', 'edd3e'] },
+  F88: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'ecvl1f', 'ebb2e', 'edd3e', 'edd3e'] },
+  /* ---- 5-5 莱特湾决战（BOSS海域，need 5-4：大和栖姬） ---- */
+  F89: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'edd3e', 'edd3e'] },
+  F90: { formation: '单纵阵', ships: ['eclt1e', 'eclt1e', 'edd3e', 'edd3e', 'ecl2e'] },
+  F91: { formation: '轮形阵', ships: ['eB10', 'ebb3e', 'ebb3e', 'ecv1f', 'eca2e', 'edd3e'] }
 };
 
 /* ---------- 海域定义 ----------
@@ -363,6 +438,251 @@ const MAPS = [
     branch: { at: 'S', if: { los: 80 }, to: ['A'] },   // 索敌≥80 走燃料补给线；否则直接迎击
     drops: ['indiana', 'westvirginia'],
     bossDrops: ['missouri', 'enterprise', 'essex', 'intrepid']
+  },
+  /* ==================== BOSS海域（EO，need 同区域4号图） ==================== */
+  {
+    id: '1-5', name: '近海对潜警戒', desc: '深海潜水舰队潜伏近海！编成对潜警戒部队，扫荡镇守府近海的潜水威胁！', stars: 7,
+    start: 'S', boss: 'J', gauge: 6, need: '1-4',
+    admExp: { node: 130, boss: 2200 },   // 提督经验（wiki 1-5: 道中+130 / BOSS+2200）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 260, y: 260 }, D: { x: 520, y: 140 }, E: { x: 520, y: 380 }, J: { x: 800, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'D'], ['D', 'E'], ['E', 'J']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F47', cost: { fuel: 0.08, ammo: 0 } },   // 反潜点不耗弹药（wiki 1-5）
+      D: { type: 'battle', enemy: 'F48', cost: { fuel: 0.08, ammo: 0 } },
+      E: { type: 'battle', enemy: 'F49', cost: { fuel: 0.08, ammo: 0 } },
+      J: { type: 'boss', enemy: 'F50' }
+    },
+    drops: ['sumner', 'sbroberts'],
+    bossDrops: ['atlanta', 'juneau', 'wichita']
+  },
+  {
+    id: '2-5', name: '冲之岛近海', desc: '深海机动部队的制空决战！冲之岛近海的天空由舰队掌控！', stars: 9,
+    start: 'S', boss: 'D', gauge: 6, need: '2-4',
+    admExp: { node: 140, boss: 2400 },   // 提督经验（wiki 2-5: 道中+140 / BOSS+2400）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F51' },
+      B: { type: 'resource', reward: ['ammo'] },
+      C: { type: 'battle', enemy: 'F52' },
+      D: { type: 'boss', enemy: 'F53' }
+    },
+    branch: { at: 'A', if: { los: 40 }, to: ['B'] },   // 索敌≥40 走弹药补给线；否则连战空袭部队
+    drops: ['obannon', 'kidd'],
+    bossDrops: ['lexington', 'ranger', 'washington']
+  },
+  {
+    id: '3-5', name: '北方阿留申海域', desc: '北方栖姬坐镇的AL泊地挡在前方！突入阿留申，击破敌增援主力！', stars: 11,
+    start: 'S', boss: 'K', gauge: 7, need: '3-4',
+    admExp: { node: 150, boss: 2600 },   // 提督经验（wiki 3-5: 道中+150 / BOSS+2600）
+    nodes: {
+      S: { x: 0, y: 260 }, B: { x: 250, y: 90 }, D: { x: 500, y: 90 }, H: { x: 750, y: 90 },
+      J: { x: 750, y: 330 }, K: { x: 980, y: 210 }, F: { x: 250, y: 430 }, G: { x: 500, y: 430 }
+    },
+    edges: [['S', 'B'], ['S', 'F'], ['B', 'D'], ['D', 'H'], ['H', 'J'], ['J', 'K'], ['F', 'G'], ['G', 'K']],
+    defs: {
+      S: { type: 'start' },
+      B: { type: 'battle', enemy: 'F54' },
+      D: { type: 'battle', enemy: 'F55' },   // 空母机动部队（制空高）
+      H: { type: 'battle', enemy: 'F56' },   // 北方AL泊地：北方栖姬道中（wiki 3-5 劝退点）
+      J: { type: 'resource', reward: ['ammo'] },
+      F: { type: 'battle', enemy: 'F57' },
+      G: { type: 'battle', enemy: 'F58' },
+      K: { type: 'boss', enemy: 'F59' }      // 敌增援主力：轻巡Tsu级+输送舰队
+    },
+    branch: { at: 'S', if: { dd: 5 }, to: ['F'] },   // 驱逐舰≥5 走下路（F-G-K）；否则走上路（B-D-H 遇北方栖姬）
+    drops: ['tang', 'barb'],
+    bossDrops: ['saratoga', 'intrepid', 'westvirginia']
+  },
+  /* ==================== 4.中部海域（马里亚纳/中太平洋，wiki 6-X） ==================== */
+  {
+    id: '4-1', name: '马绍尔群岛近海', desc: '挺进中太平洋！深海在环礁之间布下了哨戒线。', stars: 11,
+    start: 'S', boss: 'D', gauge: 5,
+    admExp: { node: 130, boss: 2000 },   // 提督经验（wiki 6-1: 道中+130 / BOSS+2000）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 280, y: 80 }, B: { x: 280, y: 440 }, C: { x: 560, y: 260 }, D: { x: 820, y: 260 }
+    },
+    edges: [['S', 'A'], ['S', 'B'], ['A', 'C'], ['B', 'C'], ['C', 'D']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F60' },   // 对潜警戒
+      B: { type: 'battle', enemy: 'F61' },
+      C: { type: 'battle', enemy: 'F62' },   // 水雷战队
+      D: { type: 'boss', enemy: 'F63' }
+    },
+    branch: { at: 'S', if: { los: 35 }, to: ['A'] },   // 索敌≥35 走反潜线；否则走哨戒线
+    drops: ['sumner', 'sbroberts'],
+    bossDrops: ['lexington', 'northcarolina', 'hornet']
+  },
+  {
+    id: '4-2', name: '夸贾林环礁海域', desc: '世界最大环礁的要塞！夺取铝土补给线并击破守军。', stars: 11,
+    start: 'S', boss: 'D', gauge: 5,
+    admExp: { node: 140, boss: 2100 },   // 提督经验（wiki 6-3: 道中+140 / BOSS+2100）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F64' },   // 空袭
+      B: { type: 'resource', reward: ['baux'] },
+      C: { type: 'battle', enemy: 'F65' },
+      D: { type: 'boss', enemy: 'F66' }
+    },
+    branch: { at: 'A', if: { los: 45 }, to: ['B'] },   // 索敌≥45 走铝土补给线；否则走警戒线
+    drops: ['archerfish', 'gato'],
+    bossDrops: ['yorktown', 'alabama', 'washington']
+  },
+  {
+    id: '4-3', name: '塞班岛攻略', desc: '登陆塞班岛！突破空袭与夜战的双重防线。', stars: 12,
+    start: 'S', boss: 'D', gauge: 5,
+    admExp: { node: 150, boss: 2400 },   // 提督经验（wiki 6-4: 道中+150 / BOSS+2400）
+    nodes: {
+      S: { x: 0, y: 280 }, A: { x: 280, y: 280 }, B: { x: 560, y: 120 }, C: { x: 560, y: 440 }, D: { x: 820, y: 280 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F67' },   // 空袭
+      B: { type: 'battle', enemy: 'F68' },   // 夜战舰队
+      C: { type: 'battle', enemy: 'F69' },   // 攻略部队
+      D: { type: 'boss', enemy: 'F70' }
+    },
+    branch: { at: 'A', if: { los: 55 }, to: ['B'] },   // 索敌≥55 走夜战线；否则连战攻略部队
+    drops: ['barb', 'tang'],
+    bossDrops: ['wasp', 'massachusetts', 'indiana']
+  },
+  {
+    id: '4-4', name: '菲律宾海决战', desc: '马里亚纳火鸡射击！深海机动部队倾巢而出，制空权决战！', stars: 12,
+    start: 'S', boss: 'C', gauge: 5,
+    admExp: { node: 170, boss: 2700 },   // 提督经验（wiki 6-5 前置：道中+170 / BOSS+2700）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 300, y: 260 }, B: { x: 600, y: 260 }, C: { x: 880, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['B', 'C']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F71' },   // 空袭前哨
+      B: { type: 'battle', enemy: 'F72' },   // 空袭主力
+      C: { type: 'boss', enemy: 'F73' }      // 机动部队本队
+    },
+    drops: ['heermann', 'laffey'],
+    bossDrops: ['essex', 'southdakota', 'saratoga']
+  },
+  {
+    id: '4-5', name: '硫磺岛近海', desc: 'BOSS海域！折钵山栖姬镇守的硫磺岛，寸土必争的恶战！', stars: 13,
+    start: 'S', boss: 'D', gauge: 7, need: '4-4',
+    admExp: { node: 180, boss: 3300 },   // 提督经验（wiki 6-5: 道中+180 / BOSS+3300）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F74' },   // 对潜警戒
+      B: { type: 'battle', enemy: 'F75' },   // 空袭
+      C: { type: 'battle', enemy: 'F76' },   // 夜战
+      D: { type: 'boss', enemy: 'F77' }
+    },
+    branch: { at: 'A', if: { los: 60 }, to: ['B'] },   // 索敌≥60 走空袭线；否则走夜战线
+    drops: ['indiana', 'westvirginia'],
+    bossDrops: ['enterprise', 'iowa', 'essex']
+  },
+  /* ==================== 5.南方海域（菲律宾/莱特湾，wiki 5-X） ==================== */
+  {
+    id: '5-1', name: '莱特湾前哨', desc: '菲律宾的大门已经敞开！扫清莱特湾的前哨防线。', stars: 13,
+    start: 'S', boss: 'C', gauge: 5,
+    admExp: { node: 120, boss: 1800 },   // 提督经验（wiki 5-1: 道中+120 / BOSS+1800）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 280, y: 100 }, B: { x: 280, y: 420 }, C: { x: 560, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['B', 'C']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F78' },
+      B: { type: 'resource', reward: ['fuel'] },
+      C: { type: 'boss', enemy: 'F79' }
+    },
+    drops: ['kidd', 'sumner'],
+    bossDrops: ['intrepid', 'northcarolina', 'colorado']
+  },
+  {
+    id: '5-2', name: '苏里高海峡', desc: '夜战的海峡！老战列舰组成的夜战阵线迎击深海舰队！', stars: 13,
+    start: 'S', boss: 'C', gauge: 5,
+    admExp: { node: 130, boss: 1900 },   // 提督经验（wiki 5-2: 道中+130 / BOSS+1900）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 300, y: 260 }, B: { x: 600, y: 260 }, C: { x: 880, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['B', 'C']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F80' },   // 水雷前卫（夜战）
+      B: { type: 'battle', enemy: 'F81' },   // 战列夜战线
+      C: { type: 'boss', enemy: 'F82' }
+    },
+    drops: ['tang', 'archerfish'],
+    bossDrops: ['wasp', 'washington', 'hornet']
+  },
+  {
+    id: '5-3', name: '萨马岛近海', desc: '深海中央舰队突破而来！护航舰队全体迎战！', stars: 14,
+    start: 'S', boss: 'C', gauge: 6,
+    admExp: { node: 140, boss: 2200 },   // 提督经验（wiki 5-3: 道中+140 / BOSS+2200）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 300, y: 260 }, B: { x: 600, y: 260 }, C: { x: 880, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['B', 'C']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F83' },   // 前卫
+      B: { type: 'battle', enemy: 'F84' },   // 重打击部队
+      C: { type: 'boss', enemy: 'F85' }      // 中央舰队（战列舰Re级flagship）
+    },
+    drops: ['barb', 'gato'],
+    bossDrops: ['essex', 'saratoga', 'southdakota']
+  },
+  {
+    id: '5-4', name: '恩加尼奥角', desc: '深海机动部队的诱饵舰队！全歼恩加尼奥角的空母群！', stars: 14,
+    start: 'S', boss: 'C', gauge: 6,
+    admExp: { node: 150, boss: 2400 },   // 提督经验（wiki 5-4: 道中+150 / BOSS+2400）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 300, y: 260 }, D: { x: 600, y: 90 }, B: { x: 600, y: 430 }, C: { x: 880, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'D'], ['D', 'B'], ['B', 'C']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'F86' },   // 空袭前哨
+      D: { type: 'resource', reward: ['fuel'] },
+      B: { type: 'battle', enemy: 'F87' },   // 空袭主力
+      C: { type: 'boss', enemy: 'F88' }      // 机动部队本队
+    },
+    branch: { at: 'A', if: { los: 65 }, to: ['B'] },   // 索敌≥65 直取空袭主力；否则绕燃料补给线
+    drops: ['obannon', 'porter'],
+    bossDrops: ['missouri', 'yorktown', 'alabama']
+  },
+  {
+    id: '5-5', name: '莱特湾决战', desc: 'BOSS海域！深海大和栖姬亲率的联合舰队，最后的决战！', stars: 15,
+    start: 'S', boss: 'D', gauge: 8, need: '5-4',
+    admExp: { node: 160, boss: 2600 },   // 提督经验（wiki 5-5: 道中+160 / BOSS+2600）
+    nodes: {
+      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
+    },
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'resource', reward: ['fuel'] },
+      B: { type: 'battle', enemy: 'F89' },   // 空袭
+      C: { type: 'battle', enemy: 'F90' },   // 夜战前卫
+      D: { type: 'boss', enemy: 'F91' }      // 联合舰队本队
+    },
+    branch: { at: 'A', if: { los: 70 }, to: ['B'] },   // 索敌≥70 走空袭线；否则走夜战线
+    drops: ['indiana', 'westvirginia'],
+    bossDrops: ['iowa', 'missouri', 'enterprise', 'saratoga']
   }
 ];
 

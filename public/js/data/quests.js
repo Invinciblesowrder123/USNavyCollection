@@ -46,6 +46,10 @@ const QUESTS = [
     cond: { kind: 'clear_map', param: '2-3', count: 1 }, reward: { fuel: 600, steel: 400, equip: ['radar_mk22'] } },
   { id: 'w9', type: 'weekly', name: '北方海域警戒', desc: '通关 3-2 基斯卡岛近海。',
     cond: { kind: 'clear_map', param: '3-2', count: 1 }, reward: { ammo: 500, baux: 300, screws: 3 } },
+  { id: 'w10', type: 'weekly', name: '中太平洋哨戒', desc: '通关 4-1 马绍尔群岛近海。',
+    cond: { kind: 'clear_map', param: '4-1', count: 1 }, reward: { fuel: 700, steel: 500, equip: ['radar_mk37'] } },
+  { id: 'w11', type: 'weekly', name: '莱特湾警戒', desc: '通关 5-2 苏里高海峡。',
+    cond: { kind: 'clear_map', param: '5-2', count: 1 }, reward: { ammo: 600, baux: 400, screws: 4 } },
 
   /* ---------------- 月常 ---------------- */
   { id: 'm1', type: 'monthly', name: '远征30次', desc: '完成30次远征任务。',
@@ -56,6 +60,10 @@ const QUESTS = [
     cond: { kind: 'improve', count: 10 }, reward: { screws: 5, baux: 200 } },
   { id: 'm4', type: 'monthly', name: '北方决战', desc: '通关 3-4 北方海域全域。',
     cond: { kind: 'clear_map', param: '3-4', count: 1 }, reward: { devMats: 10, steel: 800, baux: 500, equip: ['torp_mk15r'] } },
+  { id: 'm5', type: 'monthly', name: '中部海域制压', desc: '通关 4-5 硫磺岛近海。',
+    cond: { kind: 'clear_map', param: '4-5', count: 1 }, reward: { devMats: 15, fuel: 1000, steel: 1000, screws: 8 } },
+  { id: 'm6', type: 'monthly', name: '南方海域决战', desc: '通关 5-5 莱特湾决战。',
+    cond: { kind: 'clear_map', param: '5-5', count: 1 }, reward: { devMats: 20, ammo: 1200, baux: 800, screws: 12 } },
 
   /* ---------------- 一次性（新手引导链） ---------------- */
   { id: 'o1', type: 'once', name: '驱逐队的组建', desc: '在编成界面编入1艘驱逐舰。',
@@ -113,7 +121,23 @@ const QUESTS = [
   { id: 'o26', type: 'once', name: '第三舰队，拔锚！', desc: '完成1次远征任务，扩充舰队编制。',
     cond: { kind: 'expedition', count: 1 }, reward: { unlockFleet: 3, fuel: 300, ammo: 300 } },
   { id: 'o27', type: 'once', name: '第四舰队，出航！', desc: '击破 2-1 图拉吉急袭的海域血条，获得新编队的资格。',
-    cond: { kind: 'clear_map', param: '2-1', count: 1 }, reward: { unlockFleet: 4, steel: 400, baux: 400 } }
+    cond: { kind: 'clear_map', param: '2-1', count: 1 }, reward: { unlockFleet: 4, steel: 400, baux: 400 } },
+
+  /* ---------------- 一次性（BOSS海域 / 后期主线链） ---------------- */
+  { id: 'o28', type: 'once', name: '近海清剿', desc: '击破 1-5 近海对潜警戒的海域血条。',
+    cond: { kind: 'clear_map', param: '1-5', count: 1 }, reward: { screws: 20, baux: 500 } },
+  { id: 'o29', type: 'once', name: '冲之岛制空权', desc: '击破 2-5 冲之岛近海的海域血条。',
+    cond: { kind: 'clear_map', param: '2-5', count: 1 }, reward: { equip: ['f4u'], baux: 800 } },
+  { id: 'o30', type: 'once', name: '阿留申肃清', desc: '击破 3-5 北方阿留申海域的海域血条。',
+    cond: { kind: 'clear_map', param: '3-5', count: 1 }, reward: { ship: ['indiana'], screws: 25 } },
+  { id: 'o31', type: 'once', name: '中太平洋出击', desc: '击破 4-1 马绍尔群岛近海的海域血条。',
+    cond: { kind: 'clear_map', param: '4-1', count: 1 }, reward: { equip: ['radar_fc37'], fuel: 800 } },
+  { id: 'o32', type: 'once', name: '折钵山栖姬讨伐', desc: '在 4-5 取得对深海折钵山栖姬的S胜利。',
+    cond: { kind: 'boss_s_win', param: '4-5', count: 1 }, reward: { ship: ['washington'], screws: 30 } },
+  { id: 'o33', type: 'once', name: '菲律宾前哨', desc: '击破 5-1 莱特湾前哨的海域血条。',
+    cond: { kind: 'clear_map', param: '5-1', count: 1 }, reward: { equip: ['sb2c'], baux: 1000 } },
+  { id: 'o34', type: 'once', name: '大和栖姬讨伐', desc: '击破 5-5 莱特湾决战的海域血条，终结深海的野心！',
+    cond: { kind: 'clear_map', param: '5-5', count: 1 }, reward: { ship: ['iowa'], screws: 40, fuel: 2000 } }
 ];
 
 /* 领取奖励时合并（资源部分） */

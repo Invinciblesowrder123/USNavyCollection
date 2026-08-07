@@ -110,8 +110,8 @@ assert('1-2 BOSS舰队≤5艘', f06.length <= 5, 'n=' + f06.length);
 assert('1-2 BOSS无重巡以上舰种', f06.every(k => ['DD', 'CL', 'CLT'].includes(DEEP_TEMPLATES[k].type)), f06.map(k => DEEP_TEMPLATES[k].type).join(','));
 assert('1-2 BOSS旗舰为重雷装巡洋舰CHI级', DEEP_TEMPLATES[f06[0]].type === 'CLT' && DEEP_TEMPLATES[f06[0]].boss === true, JSON.stringify(DEEP_TEMPLATES[f06[0]]));
 
-section('新海域数据校验（1-4 / 2-X / 3-X，参照wiki）');
-assert('海域总数12（1-1~3-4）', MAPS.length === 12, 'n=' + MAPS.length);
+section('新海域数据校验（1-4 / 2-X / 3-X / 4-X / 5-X，参照wiki）');
+assert('海域总数25（5大区域 × 5图，含BOSS海域）', MAPS.length === 25, 'n=' + MAPS.length);
 /* 通用结构校验：节点可达、BOSS可达、掉落id存在、敌军key存在、分支目标为合法边 */
 function reachable(map, from) {
   const seen = new Set([from]);
@@ -138,6 +138,8 @@ for (const m of MAPS) {
       assert(`${m.id} 敌军舰队「${def.enemy}」存在`, !!ENEMY_FLEETS[def.enemy], def.enemy);
       assert(`${m.id} 敌军模板全部存在`, ENEMY_FLEETS[def.enemy].ships.every(k => !!DEEP_TEMPLATES[k]), ENEMY_FLEETS[def.enemy].ships.join(','));
     }
+    /* 节点消耗覆写（如 1-5 反潜点 油8%/弹0）：数值合法 */
+    if (def.cost) assert(`${m.id} 节点cost合法`, def.cost.fuel >= 0 && def.cost.ammo >= 0 && (def.cost.fuel !== 0.2 || def.cost.ammo !== 0.2), JSON.stringify(def.cost));
   }
   const brs = Array.isArray(m.branch) ? m.branch : (m.branch ? [m.branch] : []);
   for (const b of brs) {
@@ -145,32 +147,80 @@ for (const m of MAPS) {
     assert(`${m.id} 分支点${b.at}目标为合法边`, (b.to || []).every(t => outEdges.includes(t)), JSON.stringify(b));
     assert(`${m.id} 分支点${b.at}有可用的兜底路线`, outEdges.some(t => !(b.to || []).includes(t)), JSON.stringify(b));
   }
+  /* BOSS海域（EO）：必须带 need 解锁条件，且 need 为同区域4号图 */
+  if (m.id.endsWith('-5')) {
+    const area = m.id[0];
+    assert(`${m.id} BOSS海域带解锁条件`, m.need === `${area}-4`, 'need=' + m.need);
+  }
 }
-/* 难度梯度：星级单调不减；新图BOSS舰队≥4艘（后期图不加水）；最高难度的3-4必须远超前图 */
-const seq = ['1-1', '1-2', '1-3', '1-4', '2-1', '2-2', '2-3', '2-4', '3-1', '3-2', '3-3', '3-4'];
+/* 难度梯度：区域内星级单调不减；BOSS海域（-5）星级与BOSS舰队规模高于区域内普通图；终局BOSS强度翻倍 */
 const bossHp = m => ENEMY_FLEETS[m.defs[m.boss].enemy].ships.reduce((s, k) => s + DEEP_TEMPLATES[k].stats[0], 0);
-let prevStars = 0;
-for (const id of seq) {
-  const m = MAPS.find(x => x.id === id);
-  assert(`难度梯度 ${id} 星级≥前图`, m.stars >= prevStars, `${prevStars}→${m.stars}`);
-  prevStars = m.stars;
+const byArea = {};
+for (const m of MAPS) {
+  const no = m.id.split('-')[0];
+  (byArea[no] = byArea[no] || []).push(m);
 }
-for (const id of ['1-4', '2-1', '2-2', '2-3', '2-4', '3-1', '3-2', '3-3', '3-4']) {
-  const m = MAPS.find(x => x.id === id);
+assert('共5个大区域', Object.keys(byArea).length === 5, Object.keys(byArea).sort().join(','));
+for (const no of Object.keys(byArea).sort()) {
+  const ms = byArea[no];
+  let prevStars = 0;
+  for (const m of ms) {
+    assert(`难度梯度 ${m.id} 星级≥区域前图`, m.stars >= prevStars, `${prevStars}→${m.stars}`);
+    prevStars = m.stars;
+  }
+  /* 每区域恰有5图（4普通 + 1 BOSS海域），BOSS海域星级严格更高 */
+  assert(`区域${no} 共5图`, ms.length === 5, 'n=' + ms.length);
+  const normal = ms.slice(0, -1), boss = ms[ms.length - 1];
+  assert(`难度梯度 ${boss.id} BOSS海域星级>区域内普通图`, boss.stars > Math.max(...normal.map(m => m.stars)), `${Math.max(...normal.map(m => m.stars))}→${boss.stars}`);
+}
+for (const m of MAPS) {
   const bossFleet = ENEMY_FLEETS[m.defs[m.boss].enemy].ships;
-  assert(`难度梯度 ${id} BOSS舰队≥4艘`, bossFleet.length >= 4, 'n=' + bossFleet.length);
+  /* 教程图（星级<6）规模从简；正式图 BOSS 舰队≥4艘 */
+  if (m.stars >= 6) assert(`难度梯度 ${m.id} BOSS舰队≥4艘`, bossFleet.length >= 4, 'n=' + bossFleet.length);
 }
-const hp14 = bossHp(MAPS.find(m => m.id === '1-4')), hp34 = bossHp(MAPS.find(m => m.id === '3-4'));
+const hp14 = bossHp(MAPS.find(m => m.id === '1-4')), hp34 = bossHp(MAPS.find(m => m.id === '3-4')), hp55 = bossHp(MAPS.find(m => m.id === '5-5'));
 assert('3-4 BOSS舰队总HP ≥ 1-4 ×1.5（后期图强度翻倍）', hp34 >= hp14 * 1.5, `${hp14}→${hp34}`);
-/* 各新栖姬 BOSS 类型正确 */
+assert('5-5 BOSS舰队总HP ≥ 3-4 ×1.4（终局决战）', hp55 >= hp34 * 1.4, `${hp34}→${hp55}`);
+/* BOSS海域解锁逻辑：Sortie.start 拒绝未解锁图，解锁后可出击 */
+const map15 = MAPS.find(m => m.id === '1-5');
+Game.state.mapProgress['1-4'].cleared = false;
+const lockRes = Sortie.start('1-5', 1);
+assert('1-5 未解锁时拒绝出击', lockRes.ok === false && lockRes.msg.includes('BOSS 海域'), lockRes.msg);
+Game.state.mapProgress['1-4'].cleared = true;
+const unLockRes = Sortie.start('1-5', 1);
+assert('1-5 击破1-4后解锁出击', unLockRes.ok === true, JSON.stringify(unLockRes).slice(0, 80));
+if (unLockRes.ok) Sortie.returnHome();
+/* 1-5 反潜点特殊消耗（wiki：A/D/E 不耗弹药，仅油8%） */
+const c15 = MAPS.find(m => m.id === '1-5');
+assert('1-5 A点为反潜节点且带 cost', c15.defs.A.type === 'battle' && c15.defs.A.cost && c15.defs.A.cost.ammo === 0 && c15.defs.A.cost.fuel === 0.08, JSON.stringify(c15.defs.A));
+const costPrevFleet = Game.state.fleet[1].slice();
+Game.state.fleet[1] = strongFleet;
+const costStart = Sortie.start('1-5', 1);
+assert('1-5 解锁后可出击（cost测试前置）', costStart.ok === true, JSON.stringify(costStart));
+const costS = Sortie.advance('单纵阵', true);   // S 出发点：无消耗
+Sortie.moveToNext();
+const costA = Sortie.advance('单纵阵', true);   // A 反潜点：油8%/弹0
+const ammoAfter = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.ammo));
+const fuelAfter = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.fuel));
+Sortie.returnHome();
+Game.state.fleet[1] = costPrevFleet;
+assert('1-5 反潜点战斗不耗弹药（弹仍为100%）', costS.ok && costA.ok && ammoAfter === 1, `ammo=${ammoAfter}`);
+assert('1-5 反潜点战斗仅耗8%燃料', costS.ok && costA.ok && Math.abs(fuelAfter - 0.92) < 1e-9, `fuel=${fuelAfter}`);
+/* 各栖姬 BOSS 类型正确 */
 const m22 = MAPS.find(m => m.id === '2-2');
 assert('2-2 BOSS为深海潜水栖姬（SS）', DEEP_TEMPLATES[ENEMY_FLEETS[m22.defs[m22.boss].enemy].ships[0]].type === 'SS' && DEEP_TEMPLATES[ENEMY_FLEETS[m22.defs[m22.boss].enemy].ships[0]].boss === true);
 const m24 = MAPS.find(m => m.id === '2-4');
 assert('2-4 BOSS为深海飞行场栖姬（CV）', DEEP_TEMPLATES[ENEMY_FLEETS[m24.defs[m24.boss].enemy].ships[0]].name === '深海飞行场栖姬');
 const m34 = MAPS.find(m => m.id === '3-4');
 assert('3-4 BOSS为深海北方栖姬（BB）', DEEP_TEMPLATES[ENEMY_FLEETS[m34.defs[m34.boss].enemy].ships[0]].name === '深海北方栖姬');
-/* 新海域冒烟测试：满编强舰队对 2-3/3-1/3-4 BOSS、2-2 潜水栖姬、2-3 输送舰队，无崩溃且胜率合理 */
-const smoke = [['2-3 BOSS F26', 'F26', 0.30], ['3-1 BOSS F35', 'F35', 0.30], ['3-4 BOSS F46', 'F46', 0.25], ['2-2 潜水栖姬 F21', 'F21', 0.20], ['2-3 输送舰队 F24', 'F24', 0.75]];
+const m45 = MAPS.find(m => m.id === '4-5');
+assert('4-5 BOSS为深海折钵山栖姬（BB）', DEEP_TEMPLATES[ENEMY_FLEETS[m45.defs[m45.boss].enemy].ships[0]].name === '深海折钵山栖姬');
+const m55 = MAPS.find(m => m.id === '5-5');
+assert('5-5 BOSS为深海大和栖姬（BB）', DEEP_TEMPLATES[ENEMY_FLEETS[m55.defs[m55.boss].enemy].ships[0]].name === '深海大和栖姬');
+const m35 = MAPS.find(m => m.id === '3-5');
+assert('3-5 道中存在北方栖姬（wiki 3-5 H点）', ENEMY_FLEETS[m35.defs.H.enemy].ships.includes('eB7'));
+/* 新海域冒烟测试：满编强舰队对新旧BOSS，无崩溃且胜率合理 */
+const smoke = [['2-3 BOSS F26', 'F26', 0.30], ['3-1 BOSS F35', 'F35', 0.30], ['3-4 BOSS F46', 'F46', 0.25], ['2-2 潜水栖姬 F21', 'F21', 0.20], ['2-3 输送舰队 F24', 'F24', 0.75], ['1-5 潜水旗舰 F50', 'F50', 0.50], ['2-5 空母旗舰 F53', 'F53', 0.50], ['3-5 轻巡Tsu F59', 'F59', 0.50], ['4-5 折钵山 F77', 'F77', 0.50], ['5-5 大和栖姬 F91', 'F91', 0.40]];
 for (const [label, fk, thr] of smoke) {
   let w = 0, s = 0;
   for (let i = 0; i < 30; i++) {
