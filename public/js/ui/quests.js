@@ -29,7 +29,7 @@ const QuestsUI = (() => {
           if (r.screws) rw.push(`改修资材+${r.screws}`);
           if (r.devMats) rw.push(`开发资材+${r.devMats}`);
           if (r.equip) rw.push(r.equip.map(id => EquipmentData[id].zh).join('、'));
-          if (r.ship) rw.push(r.ship.map(id => ShipData[id].zh).join('、'));
+          if (r.ship) rw.push(r.ship.map(id => UI.shipNameHtml(ShipData[id])).join('、'));
           if (r.unlockFleet) rw.push(`解锁第${['', '一', '二', '三', '四'][r.unlockFleet]}舰队`);
           const done = qq.progress >= q.cond.count;
           return `<div class="quest-card ${qq.claimed ? 'claimed' : ''}">
@@ -51,7 +51,7 @@ const QuestsUI = (() => {
         if (!r.ok) { UI.toast(r.msg); return; }
         const parts = [];
         if (r.q.reward.unlockFleet) parts.push(`第${['', '一', '二', '三', '四'][r.q.reward.unlockFleet]}舰队已解锁！`);
-        if (r.ships.length) parts.push(`舰娘：${r.ships.map(s => UI.esc(Game.shipDef(s).zh)).join('、')}`);
+        if (r.ships.length) parts.push(`舰娘：${r.ships.map(s => UI.shipNameHtml(Game.shipDef(s))).join('、')}`);
         if (r.eqs.length) parts.push(`装备：${r.eqs.map(e => UI.esc(EquipmentData[e.id].zh)).join('、')}`);
         UI.toast(`任务完成！${parts.join(' ')}`);
         Game.save();

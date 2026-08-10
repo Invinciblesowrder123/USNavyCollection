@@ -562,7 +562,9 @@ assert('演习提督经验∈[20,160]且为20倍数', pracAdm.exp >= 20 && pracA
 /* 远征经验：基础(30)×旗舰1.5×(随机2倍)×(大成功2倍) */
 const exFleet = [];
 for (const id of ['fletcher', 'kidd']) {
-  const s = Game.createShip(id, 1);
+  /* 初始等级给到 3（升4级需300经验，远征最多180），避免升级扣减破坏 15 倍数断言 */
+  const s = Game.createShip(id, 3);
+  s.exp = 0;
   Game.equipDefaults(s.uid);
   exFleet.push(s.uid);
 }

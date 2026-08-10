@@ -68,9 +68,9 @@ const Homeport = (() => {
 
       return `
         <span class="modal-close" data-close>×</span>
-        <h3>${UI.esc(def.zh)} <span class="dim">${UI.esc(def.en)}</span> <span class="dim">${SHIP_TYPE_ZH[def.type]}</span></h3>
+        <h3>${UI.shipNameHtml(def)} ${UI.rarityStars(def.rarity)} <span class="dim">${UI.esc(def.en)}</span> <span class="dim">${SHIP_TYPE_ZH[def.type]}</span></h3>
         <div class="flex">
-          <div style="width:170px">${UI.portraitImg(s.id, 'portrait')}
+          <div style="width:170px">${UI.portraitImg(s.id, 'portrait', '', s.kai)}
             <div class="text-center dim">Lv.${s.lv} ${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} · 补给${supply}%</div>
           </div>
           <div class="grow">
@@ -271,7 +271,7 @@ const Homeport = (() => {
             const d = Game.shipDef(x);
             const on = selected.includes(x.uid);
             return `<div class="mat-card ${on ? 'selected' : ''}" data-mat="${x.uid}">
-              <div><b>${UI.esc(d.zh)}</b> ${x.kai === 1 ? '改' : x.kai >= 2 ? '改二' : ''} <span class="dim">Lv.${x.lv}</span></div>
+              <div><b>${UI.shipNameHtml(d)}</b> ${x.kai === 1 ? '改' : x.kai >= 2 ? '改二' : ''} <span class="dim">Lv.${x.lv}</span></div>
               <div class="mat-val">${UI.esc(matValText(x.uid))}</div>
             </div>`;
           }).join('') || `<span class="dim">${matType !== 'ALL' ? '没有符合条件的素材舰' : '没有可用的素材舰'}</span>`}
@@ -343,11 +343,11 @@ const Homeport = (() => {
       ${secDef ? `
       <div class="panel panel-deco secretary-panel">
         <div class="sec-frame">
-          ${UI.portraitImg(sec.id, 'portrait')}
+          ${UI.portraitImg(sec.id, 'portrait', '', sec.kai)}
           <div class="sec-type-badge">${SHIP_TYPE_ZH[secDef.type]}</div>
         </div>
         <div class="secretary-info">
-          <div class="sec-plaque">${UI.esc(secDef.zh)}<span>${UI.esc(secDef.en)}</span></div>
+          <div class="sec-plaque">${UI.shipNameHtml(secDef)}<span>${UI.esc(secDef.en)}</span></div>
           <div class="sec-sub">秘书舰 · Lv.${sec.lv}${sec.kai === 1 ? '（改）' : sec.kai >= 2 ? '（改二）' : ''}<span class="sec-badges">${UI.stateBadges(secUid)}</span></div>
           <div class="secretary-line">“${Util.esc(secDef.line || '今天的海，也很平静呢。')}”</div>
           <div class="btn-row secretary-actions">

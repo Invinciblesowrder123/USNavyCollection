@@ -215,8 +215,8 @@ const SortieUI = (() => {
         ${items.length ? `<div><b>出现物品</b>：${items.join('、')}</div>` : ''}
         ${losNeed ? `<div><b>分支索敌</b>：≥${losNeed}<span class="${los >= losNeed ? '' : 'red'}">（当前 ${los}${los >= losNeed ? '，满足' : '，不足' }）</span></div>` : ''}
         ${ddNeed ? `<div><b>分支驱逐</b>：≥${ddNeed} 艘</div>` : ''}
-        <div><b>道中掉落</b>：${m.drops.map(id => ShipData[id].zh).join('、')}</div>
-        <div><b>BOSS掉落</b>：${m.bossDrops.map(id => ShipData[id].zh).join('、')}</div>
+        <div><b>道中掉落</b>：${m.drops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
+        <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
       </div>
       ${locked
         ? `<div class="md-lock">🔒 未解锁！先击破 <b>${m.need}</b> 后开放此 BOSS 海域。</div>`
@@ -465,8 +465,18 @@ const SortieUI = (() => {
     const delay = Math.round(220 * pace);
     const flight = Math.max(175, Math.round(delay * 0.58));
     const flightTorp = Math.round(flight * 1.3);
-    /* 开幕空袭整体演出（防空过后集中呈现轰炸机群） */
+    /* 开幕空袭三步走整体演出（第一步起飞悬停 → 第二步防空炮火 → 第三步俯冲轰炸） */
     const flightAir = 460;
+    /* 空中机群注册表：第一步起飞后机群悬停于两行之间；第二步防空炮火朝机群射击；
+     * 第三步机群自空中俯冲轰炸。各侧机群元素 {el, x, y} 供后续步骤取用 */
+    const airGroup = { A: [], B: [] };
+    /* 该侧是否经历过第一步起飞（开幕空袭 → 第三步纯俯冲轰炸；否则为昼战空母航空攻击 → 航母起飞） */
+    const launchPlayed = { A: false, B: false };
+    const clearAirGroup = () => {
+      for (const letter of ['A', 'B']) {
+        while (airGroup[letter].length) airGroup[letter].pop().el.remove();
+      }
+    };
 
     const shipEl = (side, idx) => (side && idx >= 0)
       ? root.querySelector(`#${side === 'A' ? 'rowA' : 'rowB'} [data-ship="${idx}"]`) : null;
@@ -575,40 +585,90 @@ const SortieUI = (() => {
       }, flightTorp);
     }
 
-    /* ---- 开幕空袭（批量）：全部攻击机同时起飞、各自投弹，命中/落水一次性结算 ---- */
+    /* ---- 索敌演出：雷达扫描 + 结果横幅（成功/失败/索敌机未归还） ---- */
+    function reconAnim(ev) {
+      const b = bfBox();
+      const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+      const ring = mkEl('recon-ring');
+      put(ring, cx, cy);
+      document.body.appendChild(ring);
+      setTimeout(() => ring.remove(), 950);
+      const banner = mkEl('recon-banner ' + (ev.ok ? 'ok' : 'fail'));
+      banner.textContent = ev.ok ? '索敌成功！命中・回避力UP！' : '索敌失败！対空・回避力DOWN！';
+      if (ev.lost) banner.textContent += '（索敌机未归还）';
+      put(banner, cx, cy - 34);
+      document.body.appendChild(banner);
+      setTimeout(() => banner.remove(), 1150);
+    }
+
+    /* ---- 开幕空袭·第三步·轰炸（批量）：机群自高空俯冲轰炸舰队（纯俯冲，无起飞动作），
+     * 命中/落水一次性结算。昼战空母航空攻击（未经历第一步起飞）时保留航母起飞爬升 ---- */
     function airStrikeBulkAnim(ev) {
       const list = ev.strikes || [];
       if (!list.length) return;
-      const d1 = Math.round(flightAir * 0.45);   // 爬升段
-      const d2 = Math.round(flightAir * 0.55);   // 俯冲段
+      const diveFromSky = !!launchPlayed[ev.atkS];   // 有第一步起飞 → 纯俯冲
+      const d1 = Math.round(flightAir * (diveFromSky ? 0.32 : 0.45));  // 前段
+      const d2 = Math.round(flightAir * (diveFromSky ? 0.68 : 0.55));  // 俯冲段
       const impactAt = d1 + d2 + 320;
-      /* 攻击方航母起飞闪光（每艘一次） */
-      const launchers = {};
-      for (const st of list) {
-        const key = (st.atkS || '') + ':' + st.atkI;
-        if (launchers[key]) continue;
-        launchers[key] = 1;
-        const atkEl = shipEl(st.atkS, st.atkI);
-        if (atkEl) {
-          atkEl.classList.add('firing');
-          setTimeout(() => atkEl.classList.remove('firing'), impactAt + 150);
+      const b = bfBox();
+      const rowA = root.querySelector('#rowA');
+      const rowB = root.querySelector('#rowB');
+      const midY = (rowA.getBoundingClientRect().bottom + rowB.getBoundingClientRect().top) / 2;
+      /* 昼战空母航空攻击（无前置起飞）：航母起飞闪光 */
+      if (!diveFromSky) {
+        const launchers = {};
+        for (const st of list) {
+          const key = (st.atkS || '') + ':' + st.atkI;
+          if (launchers[key]) continue;
+          launchers[key] = 1;
+          const atkEl = shipEl(st.atkS, st.atkI);
+          if (atkEl) {
+            atkEl.classList.add('firing');
+            setTimeout(() => atkEl.classList.remove('firing'), impactAt + 150);
+          }
         }
       }
-      /* 全部打击并行：每格派出 2 架，升空后俯冲投弹 */
+      /* 全部打击并行：开幕空袭自空中机群俯冲轰炸；机群耗尽时从高空补位（不再从航母起飞） */
       for (const st of list) {
         const atkEl = shipEl(st.atkS, st.atkI);
         const tgtEl = shipEl(st.tgtS, st.tgtI);
-        const from = atkEl ? centerOf(atkEl) : fallbackPoint(null);
         const to = tgtEl ? centerOf(tgtEl) : fallbackPoint(atkEl);
-        const mid = { x: (from.x + to.x) / 2 + (Math.random() - 0.5) * 60, y: from.y - 200 };
+        const group = airGroup[st.atkS] || [];
+        const fromHover = () => {
+          const it = group.shift();
+          if (it) {
+            it.el.style.transition = 'none';
+            it.el.style.transform = 'none';
+            put(it.el, it.x, it.y);
+            return { el: it.el, x: it.x, y: it.y };
+          }
+          return null;
+        };
+        const skyStart = () => {
+          /* 高空补位：目标侧上方（从空中俯冲，而非航母） */
+          const x = to.x + (Math.random() - 0.5) * b.width * 0.5;
+          const y = midY - 60 - Math.random() * 70;
+          const pl = mkEl('proj-plane', '✈');
+          put(pl, x, y);
+          return { el: pl, x, y };
+        };
         for (let k = 0; k < 2; k++) {
-          const pl = mkEl('proj-plane', k === 0 ? '✈' : '⌃');
-          const bx = from.x - 16 + k * 20, by = from.y + 6 - k * 6;
-          put(pl, bx, by);
+          let from;
+          if (diveFromSky) from = fromHover() || skyStart();
+          else from = { el: null, x: atkEl ? centerOf(atkEl).x : to.x, y: atkEl ? centerOf(atkEl).y : to.y };
+          const pl = from.el || mkEl('proj-plane', k === 0 ? '✈' : '⌃');
+          if (!from.el) put(pl, from.x, from.y);
           document.body.appendChild(pl);
           const t0 = k * 130 + Math.random() * 80;
-          setTimeout(() => fly(pl, mid.x, mid.y, d1, 'cubic-bezier(.3,.7,.5,1)'), t0);
-          setTimeout(() => fly(pl, to.x, to.y, d2, 'cubic-bezier(.6,.05,.9,.55)'), t0 + d1);
+          if (diveFromSky) {
+            /* 纯俯冲：从悬停点直落目标（无爬升段） */
+            requestAnimationFrame(() => fly(pl, to.x, to.y, d1 + d2, 'cubic-bezier(.55,.05,.85,.5)'));
+          } else {
+            const mid = { x: (from.x + to.x) / 2 + (Math.random() - 0.5) * 60, y: from.y - 200 };
+            setTimeout(() => fly(pl, mid.x, mid.y, d1, 'cubic-bezier(.3,.7,.5,1)'), t0);
+            setTimeout(() => fly(pl, to.x, to.y, d2, 'cubic-bezier(.6,.05,.9,.55)'), t0 + d1);
+          }
+          const tEnd = t0 + d1 + d2 + 70;
           setTimeout(() => {
             for (let b = 0; b < 2; b++) {
               setTimeout(() => {
@@ -623,7 +683,7 @@ const SortieUI = (() => {
               }, b * 130);
             }
             pl.remove();
-          }, t0 + d1 + d2 + 70);
+          }, tEnd);
         }
       }
       /* 全部命中/未命中特效在投弹后统一触发 */
@@ -705,11 +765,22 @@ const SortieUI = (() => {
       }
     }
 
-    /* ---- 放飞机：双方机群从各自航母同时起飞 ---- */
+    /* ---- 开幕空袭·第一步·起飞：双方舰载机/水上飞机从各自航母起飞，
+     * 升空后悬停于舰队上空的机群集结区（写入 airGroup 供第二步防空/第三步轰炸取用） ---- */
     function launchAnim(ev) {
-      const t = 460;
+      const t = 300;
+      const b = bfBox();
+      const rowA = root.querySelector('#rowA');
+      const rowB = root.querySelector('#rowB');
+      const ra = rowA.getBoundingClientRect();
+      const rb = rowB.getBoundingClientRect();
+      const midY = (ra.bottom + rb.top) / 2;
+      const spanX = b.width * 0.72;
       for (const letter of ['A', 'B']) {
-        for (const idx of (ev.ships && ev.ships[letter]) || []) {
+        const idxs = (ev.ships && ev.ships[letter]) || [];
+        if (!idxs.length) continue;
+        launchPlayed[letter] = true;
+        for (const idx of idxs) {
           const el = shipEl(letter, idx);
           if (!el) continue;
           el.classList.add('firing');
@@ -720,15 +791,17 @@ const SortieUI = (() => {
             const bx = from.x - 16 + k * 16, by = from.y + 6 - k * 5;
             put(pl, bx, by);
             document.body.appendChild(pl);
-            const tx = bx + (Math.random() - 0.5) * 70, ty = by - 140 - Math.random() * 40;
+            /* 起飞至舰队上方的高空集结区（俯冲轰炸起点始终在目标之上） */
+            const tx = b.left + b.width * 0.14 + Math.random() * spanX;
+            const ty = midY - 60 - Math.random() * 70;
             requestAnimationFrame(() => fly(pl, tx, ty, t, 'cubic-bezier(.3,.6,.5,1)'));
-            setTimeout(() => pl.remove(), t + 50);
+            airGroup[letter].push({ el: pl, x: tx, y: ty });
           }
         }
       }
     }
 
-    /* ---- S1 空战：敌我机群对冲，中空被击落 ---- */
+    /* ---- S1 空战：敌我机群对冲，中空被击落（快速衔接：紧凑起止） ---- */
     function airFightAnim(ev) {
       const b = bfBox();
       const rowA = root.querySelector('#rowA');
@@ -739,9 +812,9 @@ const SortieUI = (() => {
       const midY = (ra.bottom + rb.top) / 2;
       const spanX = b.width * 0.5;
       const loseSide = ev.atkS === 'B' ? 'B' : 'A';     // 损失较重的一侧派出更多机群
-      const nA = loseSide === 'A' ? Math.min(2 + Math.floor((ev.dmg || 4) / 5), 4) : 2;
-      const nB = loseSide === 'B' ? Math.min(2 + Math.floor((ev.dmg || 4) / 5), 4) : 2;
-      const t = Math.max(140, Math.round(flight * 0.4));
+      const nA = loseSide === 'A' ? Math.min(1 + Math.floor((ev.dmg || 4) / 5), 3) : 1;
+      const nB = loseSide === 'B' ? Math.min(1 + Math.floor((ev.dmg || 4) / 5), 3) : 1;
+      const t = Math.max(110, Math.round(flight * 0.3));
       const puffAt = (x, y) => {
         const puff = mkEl('flak-puff');
         put(puff, x, y);
@@ -758,7 +831,7 @@ const SortieUI = (() => {
           const tx = b.left + b.width * 0.3 + Math.random() * spanX, ty = midY - 16 - Math.random() * 24;
           requestAnimationFrame(() => fly(pl, tx, ty, t, 'cubic-bezier(.5,.3,.6,1)'));
           setTimeout(() => { pl.remove(); puffAt(tx, ty); }, t);
-        }, k * 35);
+        }, k * 22);
       }
       /* 敌方机群向上迎击 */
       for (let k = 0; k < nB; k++) {
@@ -770,30 +843,36 @@ const SortieUI = (() => {
           const tx = b.left + b.width * 0.3 + Math.random() * spanX, ty = midY + 16 + Math.random() * 24;
           requestAnimationFrame(() => fly(pl, tx, ty, t, 'cubic-bezier(.5,.3,.6,1)'));
           setTimeout(() => { pl.remove(); puffAt(tx, ty); }, t);
-        }, k * 35);
+        }, k * 22);
       }
     }
 
-    /* ---- S2 对空炮火（批量）：多舰防空炮并行仰射机群 + 黑烟 ---- */
+    /* ---- 开幕空袭·第二步·防空炮火（批量）：多舰防空炮向第一步悬停的敌机机群仰射，
+     * 命中目标附近的机群位置产生黑烟，被击落飞机按实际击落比例从机群中坠出 ---- */
     function flakBulkAnim(ev) {
       const list = ev.shots || [];
       if (!list.length) return;
-      const t = Math.max(110, Math.round(flight * 0.32));
-      const skyOf = tgtEl => {
-        const tb = tgtEl.getBoundingClientRect();
+      const t = Math.max(140, Math.round(flight * 0.28));        // 曳光飞行时长
+      const tgtSide = (list[0] && list[0].tgtS) || 'B';          // 被射击机群所属侧
+      const tgtGroup = airGroup[tgtSide] || [];
+      const skyOf = () => {
+        if (tgtGroup.length) {
+          const it = tgtGroup[Math.floor(Math.random() * tgtGroup.length)];
+          return { x: it.x + (Math.random() - 0.5) * 50, y: it.y + (Math.random() - 0.5) * 36 };
+        }
+        const tb = bfBox();
         const rb = root.querySelector('#rowB').getBoundingClientRect();
         const ra = root.querySelector('#rowA').getBoundingClientRect();
         const midY = (ra.bottom + rb.top) / 2;
-        const sideDown = tgtEl.closest('#rowB') ? -1 : 1;   // 敌机从中线附近俯冲而来
+        const sideDown = tgtSide === 'B' ? -1 : 1;
         return { x: tb.left + tb.width / 2 + (Math.random() - 0.5) * 70, y: midY + sideDown * (18 + Math.random() * 40) };
       };
       const n = Math.min(list.length, 5);
       for (let k = 0; k < n; k++) {
         const st = list[k];
         const fromEl = shipEl(st.atkS, st.atkI);
-        const tgtEl = shipEl(st.tgtS, st.tgtI);
         const from = fromEl ? centerOf(fromEl) : fallbackPoint(null);
-        const sky = tgtEl ? skyOf(tgtEl) : fallbackPoint(fromEl);
+        const sky = skyOf();
         for (let m = 0; m < 2; m++) {
           setTimeout(() => {
             const f2 = { x: from.x + (Math.random() - 0.5) * 30, y: from.y + (Math.random() - 0.5) * 24 };
@@ -814,10 +893,37 @@ const SortieUI = (() => {
               const puff = mkEl('flak-puff');
               put(puff, t2.x, t2.y);
               document.body.appendChild(puff);
-              setTimeout(() => puff.remove(), 550);
+              setTimeout(() => puff.remove(), 300);
             }, t);
-          }, k * 35 + m * 60);
+          }, k * 40 + m * 70);
         }
+      }
+      /* 被击落飞机：按实际击落比例从机群中取出并坠落（黑烟 + 下落），保留未被击落的机群；
+       * 除非实际全灭，否则至少保留 1 架在空中（供第三步俯冲轰炸） */
+      const down = list.reduce((s, x) => s + (x.dmg || 0), 0);
+      const totalPlanes = ev.totalPlanes || down;
+      const ratio = Math.min(1, down / Math.max(1, totalPlanes));
+      let dropN = Math.round(tgtGroup.length * ratio);
+      if (ratio < 1 && dropN >= tgtGroup.length) dropN = Math.max(0, tgtGroup.length - 1);
+      dropN = Math.max(0, Math.min(tgtGroup.length, dropN));
+      for (let k = 0; k < dropN; k++) {
+        setTimeout(() => {
+          const it = tgtGroup.shift();
+          if (!it) return;
+          const puff = mkEl('flak-puff');
+          put(puff, it.x, it.y);
+          document.body.appendChild(puff);
+          setTimeout(() => puff.remove(), 300);
+          /* 复位至悬停点再坠落（避免从起飞原点跳变） */
+          it.el.style.transition = 'none';
+          it.el.style.transform = 'none';
+          put(it.el, it.x, it.y);
+          requestAnimationFrame(() => {
+            it.el.style.transition = `transform 150ms cubic-bezier(.6,.05,.9,.55)`;
+            it.el.style.transform = `translate(${(Math.random() - 0.5) * 40}px, 70px) rotate(18deg)`;
+          });
+          setTimeout(() => it.el.remove(), 160);
+        }, 100 + k * 40);
       }
     }
 
@@ -871,6 +977,7 @@ const SortieUI = (() => {
         case 'asw': aswAnim(ev, atkEl, tgtEl); break;
         case 'airfight': airFightAnim(ev); break;
         case 'launch': launchAnim(ev); break;
+        case 'recon': reconAnim(ev); break;
         case 'flak': (ev.shots ? flakBulkAnim(ev) : flakAnim(ev, atkEl, tgtEl)); break;
       }
     }
@@ -879,9 +986,10 @@ const SortieUI = (() => {
         case 'torp': case 'open_torp': return flightTorp + 250;
         case 'air': return ev.strikes ? flightAir + 350 : flightAir + 260;
         case 'asw': return 540;
-        case 'airfight': return Math.max(140, Math.round(flight * 0.4)) + 130 + Math.min(ev.dmg || 4, 10) * 25;
-        case 'launch': return 520;
-        case 'flak': return ev.shots ? (Math.max(110, Math.round(flight * 0.32)) + 230) : (Math.max(120, Math.round(flight * 0.35)) + 150 + Math.min(Math.max(ev.dmg || 3, 3), 4) * 30);
+        case 'airfight': return Math.max(110, Math.round(flight * 0.3)) + 90 + Math.min(ev.dmg || 4, 10) * 18;
+        case 'launch': return 340;
+        case 'recon': return 1150;
+        case 'flak': return ev.shots ? (Math.max(140, Math.round(flight * 0.28)) + 200) : (Math.max(110, Math.round(flight * 0.3)) + 120 + Math.min(Math.max(ev.dmg || 3, 3), 4) * 25);
         default: return flight + 230;
       }
     };
@@ -894,7 +1002,8 @@ const SortieUI = (() => {
       if (skipped || pos >= entries.length) return;
       skipped = true;
       clearTimeout(timerId);
-      root.querySelectorAll('.proj-shell,.proj-torp,.proj-plane,.bomb,.dc,.explosion,.dmg-num,.splash,.tracer,.flak-puff,.miss-txt')
+      clearAirGroup();
+      root.querySelectorAll('.proj-shell,.proj-torp,.proj-plane,.bomb,.dc,.explosion,.dmg-num,.splash,.tracer,.flak-puff,.miss-txt,.recon-ring,.recon-banner')
         .forEach(el => el.remove());
       root.querySelectorAll('.battle-ship.firing,.battle-ship.hit').forEach(el => el.classList.remove('firing', 'hit'));
       while (pos < entries.length) {
@@ -922,6 +1031,8 @@ const SortieUI = (() => {
         const isPhase = e.includes('——') || e.includes('进入夜战') || e.includes('航空战') || e.includes('交战形态') || e.includes('索敌');
         const isAir = e.includes('空袭') || e.includes('空战') || e.includes('对空');
         if (e.includes('进入夜战')) bf.classList.add('night');
+        /* 离开航空战阶段（进入炮击战等）时回收残留机群 */
+        if ((e.includes('炮击战') || e.includes('雷击战') || e.includes('先制对潜') || e.includes('夜战') || e.includes('战斗结束')) && !e.includes('航空')) clearAirGroup();
         const line = document.createElement('div');
         line.className = 'line' + (e.includes('击沉') ? ' sink'
           : (e.includes('发动') || e.includes('空袭') || e.includes('Cut-in')) ? ' ci'

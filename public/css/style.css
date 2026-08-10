@@ -211,6 +211,13 @@ body.unauth #topbar, body.unauth #navbar { display: none; }
 .ship-card .portrait-ph .type-mark { font-size: 11px; }
 .ship-card .portrait-ph .type-sub { font-size: 9px; }
 .ship-card .portrait-ph { font-size: 11px; }
+
+/* ---------- 立绘 img（AI 立绘 / SVG 回退） ---------- */
+.portrait {
+  width: 100%; aspect-ratio: 2 / 3; object-fit: cover; display: block;
+  background: var(--panel2); border-bottom: 1px solid var(--line);
+}
+.ship-card .portrait { border-bottom: 1px solid var(--line); }
 .ship-card .card-info {
   padding: 4px 6px; font-size: 11px; background: rgba(10,20,36,0.9);
   display: flex; justify-content: space-between; align-items: center;
@@ -233,6 +240,24 @@ body.unauth #topbar, body.unauth #navbar { display: none; }
 .state-badge.expedition { color: var(--orange); border: 1px solid var(--orange); }
 .state-badge.broken { color: var(--red); border: 1px solid var(--red); }
 .state-badge.morale { color: #7fe07f; }
+
+/* ---------- 稀有度差异化（参照舰C wiki：名字配色 + 卡片金★ + 立绘边框） ---------- */
+.rn-1 { color: #cfd6e6; }
+.rn-2 { color: #8ee08e; }
+.rn-3 { color: #6db3ff; }
+.rn-4 { color: #c77dff; }
+.rn-5 { color: var(--gold); text-shadow: 0 0 6px rgba(255,215,0,0.45); }
+.portrait-ph { position: relative; }
+.portrait-ph .rarity-stars {
+  position: absolute; top: 3px; right: 4px; z-index: 3;
+  color: var(--gold); font-size: 11px; letter-spacing: 1px; line-height: 1;
+  text-shadow: 0 0 4px rgba(0,0,0,0.9);
+}
+.ship-card .portrait-ph .rarity-stars { font-size: 8px; top: 2px; right: 3px; }
+.portrait-r2 { box-shadow: inset 0 0 0 1px rgba(142,224,142,0.5); }
+.portrait-r3 { box-shadow: inset 0 0 0 1px rgba(109,179,255,0.55); }
+.portrait-r4 { box-shadow: inset 0 0 0 1px rgba(199,125,255,0.6); }
+.portrait-r5 { box-shadow: inset 0 0 0 1.5px #ffd700, 0 0 8px rgba(255,215,0,0.25); }
 
 /* ---------- 按钮 ---------- */
 .btn {
@@ -308,6 +333,10 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
   background: radial-gradient(circle, rgba(90, 168, 232, .22), transparent 70%);
 }
 .sec-frame .portrait-ph {
+  border-radius: 8px; border: 1px solid rgba(255, 215, 0, .35);
+  animation: secFloat 5.5s ease-in-out infinite;
+}
+.sec-frame .portrait {
   border-radius: 8px; border: 1px solid rgba(255, 215, 0, .35);
   animation: secFloat 5.5s ease-in-out infinite;
 }
@@ -404,6 +433,7 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 
 /* ---------- 入渠中的舰娘（紧凑卡片，槽位锁定） ---------- */
 .dock-card .portrait-ph { height: 100px; aspect-ratio: auto; font-size: 11px; cursor: default; }
+.dock-card .portrait { height: 100px; aspect-ratio: auto; }
 
 /* ---------- 母港拖拽区（拖回此处脱出舰队） ---------- */
 .roster-area {
@@ -618,6 +648,40 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
   animation: puff .55s ease-out forwards; pointer-events: none;
 }
 @keyframes puff { 0% { transform: scale(.4); opacity: .95; } 100% { transform: scale(2); opacity: 0; } }
+
+/* ---------- 索敌判定演出（雷达扫描 + 结果横幅） ---------- */
+.recon-ring {
+  position: fixed; z-index: 618; width: 170px; height: 170px; margin: -85px;
+  border-radius: 50%; pointer-events: none; will-change: transform;
+  border: 2px solid rgba(120, 200, 255, .8);
+  background:
+    radial-gradient(circle, rgba(120,200,255,.12) 0%, transparent 62%),
+    conic-gradient(from 0deg, rgba(120,200,255,.5) 0deg, transparent 55deg, transparent 360deg);
+  animation: reconScan .8s linear infinite;
+  box-shadow: 0 0 18px rgba(120, 200, 255, .35);
+}
+.recon-ring::after {
+  content: ''; position: absolute; inset: 22px; border-radius: 50%;
+  border: 1px dashed rgba(120, 200, 255, .5);
+  animation: reconPing .8s ease-out infinite;
+}
+@keyframes reconScan { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes reconPing { 0% { transform: scale(.5); opacity: .9; } 100% { transform: scale(1.6); opacity: 0; } }
+.recon-banner {
+  position: fixed; z-index: 619; padding: 8px 20px; border-radius: 8px;
+  font-size: 15px; font-weight: 700; letter-spacing: 1px; white-space: nowrap;
+  pointer-events: none; text-shadow: 0 0 8px rgba(0,0,0,.9), 0 1px 3px #000;
+  animation: bannerIn .3s ease-out;
+}
+.recon-banner.ok {
+  color: #8fe8b0; background: rgba(14, 52, 32, .92);
+  border: 1px solid rgba(120, 230, 160, .65); box-shadow: 0 0 16px rgba(80, 200, 130, .3);
+}
+.recon-banner.fail {
+  color: #ffa090; background: rgba(58, 20, 16, .92);
+  border: 1px solid rgba(255, 130, 100, .65); box-shadow: 0 0 16px rgba(255, 100, 80, .3);
+}
+@keyframes bannerIn { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 /* ---------- 海域地图（Kancolle风格海图） ---------- */
 .map-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }

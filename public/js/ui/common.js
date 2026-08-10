@@ -88,18 +88,61 @@ const UI = (() => {
 
   function esc(s) { return Util.esc(s); }
 
-  /* 立绘占位（暂时用舰种占位符替代，后续可替换为真实立绘资源） */
-  function portraitImg(shipId, cls = 'portrait', extra = '') {
+  /* ---------- 立绘资源：AI 图(art/ai) → SVG(art/portraits) → 舰种占位符 ---------- */
+  const ArtManifest = { loaded: false, map: {} };
+  fetch('art/ai/index.json').then(r => r.ok ? r.json() : null).then(m => {
+    if (m) { ArtManifest.map = m; ArtManifest.loaded = true; }
+  }).catch(() => {});
+
+  window.USNC = window.USNC || {};
+  USNC.portraitFallback = function (img) {
+    img.onerror = null;
+    if (img.dataset.svg) {
+      img.dataset.svg = '';
+      img.src = img.dataset.svgPath;
+      return;
+    }
+    const d = document.createElement('div');
+    d.className = img.className + ' portrait-ph';
+    d.innerHTML = img.dataset.ph || '';
+    img.replaceWith(d);
+  };
+
+  /* 立绘：优先 AI 立绘（含改/改二差分），无则 SVG，再回退舰种占位符 */
+  function portraitImg(shipId, cls = 'portrait', extra = '', kai = 0) {
     const def = ShipData[shipId];
     if (!def) return `<div class="portrait-ph ${cls}" ${extra}>${Util.esc(shipId)}</div>`;
     const typeName = SHIP_TYPE_ZH[def.type] || def.type;
-    return `<div class="portrait-ph ${cls}" ${extra}><span class="type-mark">${Util.esc(typeName)}</span><span class="type-sub">${Util.esc(def.en)}</span></div>`;
+    const r = Util.clamp(def.rarity || 1, 1, 5);
+    const phHtml = `<span class="rarity-stars">${'★'.repeat(r)}</span>
+      <span class="type-mark">${Util.esc(typeName)}</span><span class="type-sub">${Util.esc(def.en)}</span>`;
+    const svgPath = `art/portraits/${shipId}.svg`;
+    const key = shipId + (kai === 1 ? '_kai' : kai >= 2 ? '_kai2' : '');
+    const aiFile = ArtManifest.map[key];
+    const src = ArtManifest.loaded && aiFile ? `art/ai/${aiFile}` : svgPath;
+    const svgAttr = src === svgPath ? '' : ` data-svg="1" data-svg-path="${svgPath}"`;
+    const q = JSON.stringify(phHtml).replace(/"/g, '&quot;');
+    return `<img class="portrait ${cls} portrait-r${r}" ${extra} loading="lazy" alt="${Util.esc(def.en)}"
+      src="${src}" data-ph="${q}"${svgAttr} onerror="USNC.portraitFallback(this)">`;
   }
 
-  /* 舰船名（含改造后缀） */
+  /* 舰名（含改造后缀） */
   function shipTitle(inst) {
     const def = Game.shipDef(inst);
     return def.zh + (inst.kai === 1 ? '改' : inst.kai >= 2 ? '改二' : '');
+  }
+
+  /* 稀有度配色（参照舰C wiki：1普通→5最稀有） */
+  const RARITY_COLOR = { 1: '#cfd6e6', 2: '#8ee08e', 3: '#6db3ff', 4: '#c77dff', 5: '#ffd700' };
+  function rarityCls(r) { return 'rn-' + Util.clamp(r || 1, 1, 5); }
+  /* 舰名（按稀有度着色，用于卡片/列表/详情标题） */
+  function shipNameHtml(def) {
+    return `<span class="${rarityCls(def.rarity)}">${Util.esc(def.zh || '')}</span>`;
+  }
+  /* 稀有度星标（舰C卡片惯例：金色★） */
+  function rarityStars(r) {
+    r = Util.clamp(r || 1, 1, 5);
+    return `<span class="rarity-stars r${r}">${'★'.repeat(r)}</span>`;
   }
 
   /* 装备改修星级显示（★1~★9 / ★MAX） */
@@ -144,10 +187,10 @@ const UI = (() => {
     return `<div class="ship-card" data-uid="${uid}">
       ${flag}
       ${stateBadges(uid)}
-      ${portraitImg(s.id, 'portrait')}
+      ${portraitImg(s.id, 'portrait', '', s.kai)}
       <div class="hpbar"><div class="${cls}" style="width:${Math.round(ratio * 100)}%"></div></div>
       <div class="card-info">
-        <span>${esc(shipTitle(s))} <span class="dim">${def.en}</span></span>
+        <span>${shipNameHtml(def)}${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} <span class="dim">${def.en}</span></span>
         <span class="lv">Lv.${s.lv}</span>
       </div>
     </div>`;
@@ -184,7 +227,7 @@ const UI = (() => {
     return `<span class="countdown">${Util.fmtTime(ms)}</span>`;
   }
 
-  return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipTitle, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml };
+  return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipTitle, shipNameHtml, rarityStars, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml };
 })();
 
 window.UI = UI;

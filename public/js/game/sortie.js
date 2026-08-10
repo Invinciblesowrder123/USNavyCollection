@@ -164,7 +164,7 @@ const Sortie = (() => {
     const enemyFleet = ENEMY_FLEETS[enemyKey];
     const isBoss = def.type === 'boss';
     const result = Battle.battle(fleet, enemyFleet.ships, formation, enemyFleet.formation, {
-      allowNight: false, losReq: 0, fleetIdx: so.fleetIdx
+      allowNight: false, fleetIdx: so.fleetIdx
     });
     return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, doomed };
   }

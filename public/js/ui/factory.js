@@ -106,7 +106,7 @@ const FactoryUI = (() => {
             const left = c.end - Date.now();
             return `<div class="panel" style="margin:6px 0">
               <div class="flex" style="justify-content:space-between;align-items:center">
-                <div><b>${UI.esc(def.zh)}</b> <span class="dim">${UI.esc(def.en)}</span> ${UI.portraitImg(c.shipId, '', 'style="width:48px;height:64px;object-fit:cover"')}</div>
+                <div><b>${UI.shipNameHtml(def)}</b> <span class="dim">${UI.esc(def.en)}</span> ${UI.portraitImg(c.shipId, '', 'style="width:48px;height:64px;object-fit:cover"')}</div>
                 <div><span class="countdown" data-until="${c.end}">${left > 0 ? Util.fmtTime(left) : '完成！'}</span></div>
                 <button class="btn btn-gold btn-sm" data-claim="${i}" ${left > 0 ? 'disabled' : ''}>领取</button>
               </div></div>`;
@@ -243,7 +243,7 @@ const FactoryUI = (() => {
             const capTxt = Object.keys(caps).map(k => `${zh[k]}+${caps[k]}`).join(' ');
             return `<div class="improve-row ${avail ? '' : 'improve-locked'}">
               <div class="grow">
-                <b>${UI.esc(def.zh)}</b> <span class="dim">Lv.${s.lv}${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} · ${SHIP_TYPE_ZH[def.type]}</span>
+                <b>${UI.shipNameHtml(def)}</b> <span class="dim">Lv.${s.lv}${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} · ${SHIP_TYPE_ZH[def.type]}</span>
                 <div class="dim">剩余可改修：${capTxt || '改修MAX'}</div>
               </div>
               ${avail ? `<button class="btn btn-gold btn-sm" data-mod-target="${s.uid}">近代化改修</button>` : '<span class="dim">改修MAX</span>'}

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "art": "node scripts/generate_art.js",
+    "art-ai": "node scripts/generate_ai_art.js",
     "sim": "node scripts/simulate.js",
     "test": "node scripts/simulate.js",
     "admin": "node scripts/create_admin.js"

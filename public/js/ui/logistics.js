@@ -113,8 +113,8 @@ const LogisticsUI = (() => {
             const s = st.ships[r.ship];
             const def = Game.shipDef(s);
             const left = r.end - Date.now();
-            return `<div class="ship-card dock-card" style="width:23%">${UI.portraitImg(s.id, 'portrait')}
-              <div class="card-info"><span>${UI.esc(def.zh)}</span><span class="lv countdown" data-until="${r.end}">${Util.fmtTime(left)}</span></div>
+            return `<div class="ship-card dock-card" style="width:23%">${UI.portraitImg(s.id, 'portrait', '', s.kai)}
+              <div class="card-info"><span>${UI.shipNameHtml(def)}</span><span class="lv countdown" data-until="${r.end}">${Util.fmtTime(left)}</span></div>
             </div>`;
           }).join('')}
         </div>
@@ -211,7 +211,7 @@ const LogisticsUI = (() => {
           const done = i < used;
           const ships = f.ships.map(s => {
             const d = ShipData[s.id];
-            return `${UI.esc(d.zh)}Lv${s.lv}`;
+            return `${UI.shipNameHtml(d)}Lv${s.lv}`;
           }).join('、');
           return `<div class="panel" style="margin:8px 0">
             <div class="flex" style="justify-content:space-between;align-items:center">

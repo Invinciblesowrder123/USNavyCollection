@@ -1,7 +1,7 @@
 ﻿'use strict';
 /* ============================================================
  * 战斗引擎 v4 — 还原《舰队收藏》机制（参照舰娘百科 zh.kcwiki.cn「战斗」「航空战」「伤害计算」）
- * 流程: 阵型选择 → 索敌 → 航空战(制空权/S1空战击坠/S2对空炮火/开幕空袭)
+ * 流程: 阵型选择 → 索敌判定(33式索敌值/索敌机未归还/命中回避UP·DOWN) → 航空战(制空权/S1空战击坠/S2对空炮火/开幕空袭)
  *       → 先制对潜 → 开幕雷击 → 交战形态 → 第一轮炮击战(射程制·敌我交替·我方先手)
  *       → 第二轮炮击战(位置制) → 雷击战(双方·中破罚站) → 夜战(单轮·大破罚站)
  * 数值（wiki）: 阈值 昼战炮击220 / 昼战雷击180 / 夜战360 / 航空·对潜170
@@ -217,11 +217,12 @@ const Battle = (() => {
     if ((formAName === '复纵阵' || formAName === '单横阵' || formAName === '梯形阵') &&
       !(formAName === '复纵阵' && formBName === '单横阵') &&
       !(formAName === '梯形阵' && formBName === '单纵阵')) formAcc = 1.2;
-    const acc = 0.07 + (0.93 + lvT + luckT + eqHit) * formAcc * moraleA;
+    const acc = 0.07 + (0.93 + lvT + luckT + eqHit) * formAcc * moraleA * (atk._reconHit || 1);
     /* 回避项 */
     let evd = def.stats.evd;
     if (formBName === '单横阵' || formBName === '梯形阵' || formBName === '轮形阵') evd *= 1.2;
     if (def.morale >= 50) evd *= 1.8;            // 闪回避×1.8
+    evd *= (def._reconEvd || 1);                 // 索敌成功回避UP / 失败回避DOWN（wiki：效果甚微）
     let eva = 0.03 + (evd <= 40 ? evd / 80 : evd / (evd + 40));
     /* 残余燃料<80% 被弹率上升 */
     if (def.fuel !== undefined) {
@@ -361,7 +362,7 @@ const Battle = (() => {
       } });
     };
     /* 对空炮火批量演出事件：一次事件携带全部迎击弹幕，UI 并行演出 */
-    const evFlak = shots => {
+    const evFlak = (shots, totalPlanes) => {
       if (!shots.length) return;
       const map = x => ({
         dmg: x.down,
@@ -374,7 +375,7 @@ const Battle = (() => {
       const first = mapped[0];
       log.push({ event: {
         kind: 'flak', hit: true, dmg: shots.reduce((s, x) => s + x.down, 0),
-        special: null, sink: false,
+        special: null, sink: false, totalPlanes: totalPlanes || 0,
         atkS: first.atkS, atkI: first.atkI, tgtS: null, tgtI: -1,
         shots: mapped
       } });
@@ -435,17 +436,19 @@ const Battle = (() => {
    * 返回 { total, shots }，shots 供 UI 一次性批量演出防空弹幕 */
   function aaShootdown(attackers, defenders, isMySide, aaBonus, log) {
     let total = 0;
+    let totalPlanes = 0;   // 被射击侧参与S2的攻击机总架数（供UI按比例演示坠机）
     const shots = [];
     for (const a of attackers) {
       if (!a.alive) continue;
       for (const sl of a.slots) {
         if (sl.size <= 0 || !sl.plane) continue;
         if (sl.eq && sl.eq.slot === SLOT.FIGHTER) continue;   // 舰战不参与S2
+        totalPlanes += sl.size;
         const defs = defenders.filter(x => x.alive);
-        if (!defs.length) return { total, shots };
+        if (!defs.length) return { total, shots, totalPlanes };
         const interceptor = Util.pick(defs);
-        const wAA = interceptor.stats.aa;
-        const fleetAA = defs.reduce((s, x) => s + x.stats.aa, 0) * aaBonus;
+        const wAA = interceptor.stats.aa * (interceptor._reconAA || 1);
+        const fleetAA = defs.reduce((s, x) => s + x.stats.aa * (x._reconAA || 1), 0) * aaBonus;
         let down = 0;
         /* 比例击坠与固定击坠判定互相独立，成功率均约50% */
         if (Util.chance(0.5)) down += Math.floor(wAA * sl.size * 0.02 * 0.25);
@@ -462,7 +465,78 @@ const Battle = (() => {
         total += down;
       }
     }
-    return { total, shots };
+    return { total, shots, totalPlanes };
+  }
+
+  /* ============ 索敌判定（wiki「索敌」：2-5(33)式简化）
+   * 索敌值 = 分歧点系数(1) × Σ[装备系数 × 装备索敌值] + Σ√(素索敌) - ⌈司令部等级×0.4⌉ + 2×(6-出击舰娘数)
+   * 装备系数（wiki）：舰战/舰爆/电探/探照灯 0.6，舰攻 0.8，舰侦 1.0，水爆 1.1，水侦 1.2
+   * 本作无舰侦/水爆机种，舰侦类并入水侦处理；装备索敌值取装备面板 los 值
+   * 索敌结果（wiki 四种）：成功/失败 × (索敌机未归还/正常归还)；成功→「命中・回避力UP」，
+   * 失败→「対空・回避力DOWN」（实际数值修正取很小，符合wiki「实际验证中并没有太大区别」）
+   * 触发条件：带水侦/水爆或空母带舰载机→必定触发索敌；不带舰载机但索敌值够高（电探/练度）→低概率成功
+   * 索敌失败 → 无法参加航空战（制空权自动丧失）；深海不会索敌失败 ============ */
+  const RECON_COEF = {
+    [SLOT.FIGHTER]: 0.6, [SLOT.ATTACKER]: 0.8, [SLOT.BOMBER]: 0.6,
+    [SLOT.SEAPLANE]: 1.2, [SLOT.RADAR]: 0.6, [SLOT.EQUIP]: 0.6,
+    [SLOT.TORPEDO]: 0.6, [SLOT.SONAR_DC]: 0.6
+  };
+  /* 素索敌 = 舰船总索敌 - 装备索敌之和（wiki：√作用于不考虑装备的索敌面板数值之和） */
+  function baseLosOf(s) {
+    const eqLos = (s.equipped || []).reduce((sum, e) => sum + (e && e.stat && e.stat.los ? e.stat.los : 0), 0);
+    return Math.max(0, s.stats.los - eqLos);
+  }
+  /* 2-5(33)式索敌值（分歧点系数=1）；isPlayer 才扣司令部等级、加舰娘数补正 */
+  function reconValue(side, isPlayer, hqLevel) {
+    let eq = 0, baseSum = 0;
+    for (const s of side) {
+      if (!s.alive) continue;
+      for (const e of (s.equipped || [])) {
+        if (!e || !e.stat || !e.stat.los) continue;
+        eq += e.stat.los * (RECON_COEF[e.slot] || 0.6);
+      }
+      baseSum += Math.sqrt(baseLosOf(s));
+    }
+    let v = eq + baseSum;
+    if (isPlayer) v = v - Math.ceil((hqLevel || 1) * 0.4) + 2 * (6 - side.length);
+    return Math.max(0, v);
+  }
+  /* 索敌判定：我方索敌值 vs 敌方索敌值 → 成功概率
+   * 带航空战力（水侦/舰载机）必定触发索敌阶段；无航空战力则按索敌值给低概率成功（wiki） */
+  function resolveRecon(sideA, sideB, hqLevel) {
+    const myLos = reconValue(sideA, true, hqLevel);
+    const enLos = reconValue(sideB, false, 1);
+    const myAirRecon = sideA.some(s => s.alive && s.slots.some(sl => sl.size > 0 && sl.plane));
+    let p;
+    if (myAirRecon) {
+      /* 有航空兵力：以索敌比值判定（占优则大概率成功） */
+      p = Util.clamp(0.35 + (myLos - enLos) / Math.max(6, enLos) * 0.55, 0.15, 0.95);
+    } else {
+      /* 无航空兵力：索敌值够高（电探/练度）也有较低概率成功 */
+      p = Util.clamp(myLos / 80 * 0.35, 0.05, 0.4);
+    }
+    return { ok: Math.random() < p, myLos, enLos };
+  }
+  /* 索敌机未归还（wiki：「部分索敌机未归还」减少任意格子内的索敌机，多为只用水侦/水爆索敌的情况）
+   * 若某舰水侦/水爆全部损耗（搭载量为零），则无法发动昼战特殊攻击（弹着观测射击） */
+  function reconPlaneLost(side) {
+    const candidates = [];
+    for (const s of side) {
+      if (!s.alive) continue;
+      for (let i = 0; i < s.slots.length; i++) {
+        const sl = s.slots[i];
+        if (sl.size > 0 && sl.plane && sl.eq && sl.eq.slot === SLOT.SEAPLANE) candidates.push({ s, sl });
+      }
+    }
+    if (!candidates.length) return 0;
+    const pick = Util.pick(candidates);
+    const lost = Math.max(1, Math.floor(pick.sl.size * Util.rf(0.2, 0.5)));
+    pick.sl.size = Math.max(0, pick.sl.size - lost);
+    /* 水侦/水爆全损 → 昼战特殊攻击失效（弹着观测射击需水侦且搭载>0） */
+    if (pick.s.hasSeaplane && !pick.s.slots.some(x => x.size > 0 && x.eq && x.eq.slot === SLOT.SEAPLANE)) {
+      pick.s.hasSeaplane = false;
+    }
+    return lost;
   }
 
   /* ============ 开幕空袭（批量结算）：双方防空(S2)结算完毕后，一次性结算全部空袭伤害，
@@ -507,10 +581,13 @@ const Battle = (() => {
       }
     }
     if (strikes.length) {
-      if (hitN > 0) log.push(`${sideLabel}空袭：${hitN} 次命中，共造成 ${totalDmg} 伤害。${missN ? `（${missN} 次未命中）` : ''}`);
-      else log.push(`${sideLabel}空袭：机群全部投弹未命中。`);
+      const line = hitN > 0
+        ? `${sideLabel}空袭：${hitN} 次命中，共造成 ${totalDmg} 伤害。${missN ? `（${missN} 次未命中）` : ''}`
+        : `${sideLabel}空袭：机群全部投弹未命中。`;
+      /* 汇总行在事件之后由调用处 push（避免轰炸动画前的字符串等待造成滞空） */
+      return { strikes, line };
     }
-    return strikes;
+    return { strikes: [], line: null };
   }
 
   /* ============ 夜战（wiki：昼战结束后由玩家选择「夜战突入」或「战斗结束」；
@@ -626,7 +703,7 @@ const Battle = (() => {
     const fA = FORMATIONS[formationA] || FORMATIONS['单纵阵'];
     const fB = FORMATIONS[formationB] || FORMATIONS['单纵阵'];
     const formAName = fA.name, formBName = fB.name;
-    const losOk = (opts.losReq == null) || (G.fleetLos(opts.fleetIdx) >= opts.losReq);
+    const hqLevel = G.state.admiral ? G.state.admiral.level : 1;
     if (sideA.length) sideA[0].isFlag = true;
     if (sideB.length) sideB[0].isFlag = true;
 
@@ -634,7 +711,23 @@ const Battle = (() => {
     const { ev, evAir, evFlak, pushSnap } = makeEventHelpers(log, sideA, sideB);
 
     L(`敌军阵型：${formationB}。我军选择：${formationA}。`);
-    L(`索敌：${losOk ? '成功' : '失败'}！`);
+
+    /* ---- 索敌判定（wiki：阵型选择后首先进行索敌；索敌失败则无法参加航空战） ----
+     * 四结果：成功/失败 × (索敌机未归还/正常归还)；深海不会索敌失败
+     * 索敌成功 → 「命中・回避力UP」；失败 → 「対空・回避力DOWN」（效果微弱，wiki：实际验证区别不大）
+     * 注：wiki 字面存在「成功（未归还）」组合，但产品上索敌成功视为索敌机安全返回，
+     * 未归还仅在索敌失败时出现（减少水侦搭载；水侦全损无法发动昼战特殊攻击） */
+    const recon = resolveRecon(sideA, sideB, hqLevel);
+    const reconOk = recon.ok;
+    /* 索敌机未归还：仅在索敌失败时，携带水侦/舰载机索敌约有 35% 概率部分索敌机未归还（减少水侦格子搭载） */
+    const hasReconAir = sideA.some(s => s.alive && s.slots.some(sl => sl.size > 0 && sl.plane));
+    const planeLost = (!reconOk && hasReconAir && Util.chance(0.35)) ? reconPlaneLost(sideA) : 0;
+    const reconMod = reconOk ? { hit: 1.03, evd: 1.03, aa: 1 } : { hit: 1, evd: 0.95, aa: 0.95 };
+    /* 索敌补正挂到我方舰船（敌方/深海不受影响；夜战同样继承本次判定） */
+    for (const s of sideA) { s._reconHit = reconMod.hit; s._reconEvd = reconMod.evd; s._reconAA = reconMod.aa; }
+    L(`索敌：${reconOk ? '成功' : '失败'}！${reconOk ? '命中・回避力UP！' : '対空・回避力DOWN！'}${planeLost > 0 ? '（索敌机未归还）' : ''}`);
+    /* 索敌演出事件：UI 展示雷达扫描 + 提示横幅 */
+    log.push({ event: { kind: 'recon', ok: reconOk, lost: planeLost > 0, myLos: Math.round(recon.myLos), enLos: Math.round(recon.enLos) } });
     let airSup = false;
 
     /* ---- 交战形态（45/30/15/10，wiki：彩云可100%回避T不利，未实装） ---- */
@@ -654,7 +747,7 @@ const Battle = (() => {
       if (launch.A.length || launch.B.length) log.push({ event: { kind: 'launch', ships: launch } });
     };
     if ((myAir > 0 || enAir > 0)) {
-      if (losOk) {
+      if (reconOk) {
         const air = airState(myAir, enAir);
         L(`航空战！我军制空 ${myAir}，敌军制空 ${enAir}，${air.label}！`);
         airSup = air.key === 'SUP' || air.key === 'SURE';
@@ -676,11 +769,15 @@ const Battle = (() => {
         const s2b = aaShootdown(sideA, sideB, false, fB.aa, log);
         if (s2a.total + s2b.total > 0) L(`对空炮火：击落敌机 ${s2a.total} 架，被击落 ${s2b.total} 架。`);
         /* 对空炮火弹幕：一次性批量演出 */
-        evFlak(s2a.shots);
-        evFlak(s2b.shots);
-        /* 环节三·大规模空袭：防空结算后一次性结算 + 一次性演出 */
-        evAir(airStrike(log, sideA, sideB, '我军', sideB, formBName));
-        evAir(airStrike(log, sideB, sideA, '敌军', sideA, formAName));
+        evFlak(s2a.shots, s2a.totalPlanes);
+        evFlak(s2b.shots, s2b.totalPlanes);
+        /* 环节三·大规模空袭：先放轰炸事件（防空结束立即进入轰炸，无滞空），汇总行随后 push */
+        const airMy = airStrike(log, sideA, sideB, '我军', sideB, formBName);
+        const airEn = airStrike(log, sideB, sideA, '敌军', sideA, formAName);
+        evAir(airMy.strikes);
+        if (airMy.line) L(airMy.line);
+        evAir(airEn.strikes);
+        if (airEn.line) L(airEn.line);
         pushSnap();
       } else {
         L('索敌失败！无法参加航空战，制空权自动丧失！');
@@ -688,8 +785,10 @@ const Battle = (() => {
         markLaunch(sideB, 'B');
         pushLaunch();
         const s2a = aaShootdown(sideB, sideA, true, fA.aa, log);
-        evFlak(s2a.shots);
-        evAir(airStrike(log, sideB, sideA, '敌军', sideA, formAName));
+        evFlak(s2a.shots, s2a.totalPlanes);
+        const airEn = airStrike(log, sideB, sideA, '敌军', sideA, formAName);
+        evAir(airEn.strikes);
+        if (airEn.line) L(airEn.line);
         pushSnap();
       }
     } else {
