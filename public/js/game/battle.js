@@ -85,6 +85,12 @@ const Battle = (() => {
       dc: eqObjs.some(e => e && e.cat === '爆雷'),
       aaCI: (countType(SLOT.HAA) >= 2) || (countType(SLOT.HAA) >= 1 && countType(SLOT.RADAR) >= 1) || (countType(SLOT.HAA) >= 1 && countType(SLOT.MG) >= 1),
       searchlight: eqObjs.some(e => e && e.id === 'searchlight'),
+      /* 消耗性物资/夜战装备/防雷鼓包（出击时消耗或提供被动效果） */
+      dcTeam: eqObjs.some(e => e && e.id === 'dc_team'),
+      rations: eqObjs.some(e => e && e.id === 'rations'),
+      lookout: eqObjs.some(e => e && e.id === 'lookout'),
+      illuminator: eqObjs.some(e => e && e.id === 'star_mk9'),
+      torpBelt: eqObjs.some(e => e && (e.id === 'bulge_m' || e.id === 'bulge_l')),
       alive: stats.hp > 0, hp: stats.hp, dealt: 0
     };
   }
@@ -143,6 +149,7 @@ const Battle = (() => {
       secondaries: 0, apShell: false, radar: false,
       hasSeaplane: false, hasTorpedo: tpl.type === 'DD' || tpl.type === 'CL' || tpl.type === 'SS',
       hasASW: false, sonar: false, dc: false, aaCI: false, searchlight: false,
+      dcTeam: false, rations: false, lookout: false, illuminator: false, torpBelt: false,
       alive: st[0] > 0, hp: st[0], dealt: 0
     };
   }
@@ -285,10 +292,19 @@ const Battle = (() => {
     return Math.max(1, Math.floor(hp * 0.5 + Util.ri(0, Math.max(0, hp - 1)) * 0.3));
   }
 
-  function dealDamage(log, atk, def, dmg, prefix, extra, quiet) {
+  function dealDamage(log, atk, def, dmg, prefix, extra, quiet, isTorpedo) {
     if (dmg <= 0) { if (!quiet) log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，被装甲完全弹开！`); return; }
+    /* 增设防雷鼓包：受到雷击伤害 -20%（wiki：防雷鼓包防鱼雷） */
+    if (isTorpedo && def.torpBelt) dmg = Math.max(1, Math.floor(dmg * 0.8));
     atk.dealt += dmg;
     if (def.isPlayer && dmg >= def.hp) {
+      if (def.dcTeam && !def.dcUsed) {
+        /* 应急修理要员：沉没前一瞬发动，耐久完全恢复（出击后消耗） */
+        def.dcUsed = true;
+        def.hp = def.stats.hpMax;
+        log.push(`${prefix}${atk.name}${extra || ''}攻击 ${def.name}，命中！「${def.name}」发动应急修理要员，耐久完全恢复！`);
+        return;
+      }
       /* 我方舰娘防沉保护（旗舰/非红脸僚舰扣50%~80%；红脸僚舰扣至1） */
       const newHp = (!def.isFlag && (def.morale || 0) < 20) ? 1 : protectedDamage(def.hp);
       def.hp = Math.max(1, newHp);
@@ -310,16 +326,16 @@ const Battle = (() => {
   }
 
   /* 统一的伤害入口：先判定旗舰援护，再结算；quiet=仅静默常规命中行（批量空袭用） */
-  function applyDamage(log, atk, def, dmg, prefix, extra, defSide, defForm, quiet) {
+  function applyDamage(log, atk, def, dmg, prefix, extra, defSide, defForm, quiet, isTorpedo) {
     if (dmg > 0 && defSide && defSide.length && def === defSide[0]) {
       const prot = findProtector(defSide, defForm);
       if (prot) {
         log.push(`${prefix}${atk.name}${extra || ''}攻击旗舰 ${def.name}，僚舰「${prot.name}」挺身掩护！（旗舰援护）`);
-        dealDamage(log, atk, prot, dmg, prefix, extra, quiet);
+        dealDamage(log, atk, prot, dmg, prefix, extra, quiet, isTorpedo);
         return;
       }
     }
-    dealDamage(log, atk, def, dmg, prefix, extra, quiet);
+    dealDamage(log, atk, def, dmg, prefix, extra, quiet, isTorpedo);
   }
 
   /* HP 快照（供 UI 演出） */
@@ -412,6 +428,8 @@ const Battle = (() => {
     if (!spec) return { mult: 1.0, n: 1, name: null };
     let rate = 0.5 + (s.stats.lck || 0) * 0.005;
     if (s.searchlight) rate += 0.1;               // 探照灯提高夜战CI率
+    if (s.lookout) rate += 0.05;                  // 熟练见张员：夜战CI率+5%
+    if (s.illuminator) rate += 0.05;              // 照明弹：夜战CI率+5%
     if (dmgState(s) === 'mid') rate += 0.15;      // 中破CI率+15%
     return Util.chance(Math.min(rate, 0.95)) ? spec : { mult: 1.0, n: 1, name: null };
   }
@@ -611,11 +629,18 @@ const Battle = (() => {
       if (Math.random() > ch) { log.push(`夜战：${s.name} 攻击 ${t.name}，未命中。`); ev('night', s, t, false, 0, null, false); return; }
       const atk = resolveNightAttack(s);
       if (!atk) return;
+      /* 战斗粮食：夜战中消耗一次，舰队夜战攻击力+10%（wiki：夜战开始时自动使用） */
+      let rationsBonus = 1;
+      if (s.rations && !s.rationsUsed) {
+        s.rationsUsed = true;
+        rationsBonus = 1.1;
+        log.push(`夜战：${s.name} 使用了战斗粮食，攻击力上升！`);
+      }
       for (let k = 0; k < atk.n; k++) {
         if (!defSide.some(x => x.alive)) break;
         const tt = pickTarget(defSide, s);
         if (!tt) break;
-        const ap = threshold((s.stats.fp + s.stats.tp) * (s.isPlayer ? fA.night : fB.night) * atk.mult * dmgMult(s, 'shell'), THRESHOLD.NIGHT);
+        const ap = threshold((s.stats.fp + s.stats.tp) * (s.isPlayer ? fA.night : fB.night) * atk.mult * dmgMult(s, 'shell') * rationsBonus, THRESHOLD.NIGHT);
         const dmg = Math.max(0, Math.round(calcDamage(ap, tt.stats.arm, critChance(ch) + 0.05) * ammoBonus(s)));
         const wasAlive = tt.alive;
         applyDamage(log, s, tt, dmg, '夜战：', atk.name ? `发动${atk.name}！` : '', defSide, defForm);
@@ -823,7 +848,7 @@ const Battle = (() => {
       const ap = threshold((s.stats.tp + 5) * dmgMult(s, 'torp'), THRESHOLD.TORP);
       const dmg = Math.max(0, Math.round(calcDamage(ap, t.stats.arm, critChance(ch)) * ammoBonus(s)));
       const wasAlive = t.alive;
-      applyDamage(log, s, t, dmg, '开幕雷击！', '', targetSide, defForm);
+        applyDamage(log, s, t, dmg, '开幕雷击！', '', targetSide, defForm, false, true);
       ev('open_torp', s, t, true, dmg, null, wasAlive && !t.alive);
       pushSnap();
     };
@@ -961,7 +986,7 @@ const Battle = (() => {
         const ap = threshold((s.stats.tp + 5) * (isMy ? fA.tp : fB.tp) * engMod * dmgMult(s, 'torp'), THRESHOLD.TORP);
         const dmg = Math.max(0, Math.round(calcDamage(ap, t.stats.arm, critChance(ch)) * ammoBonus(s)));
         const wasAlive = t.alive;
-        applyDamage(log, s, t, dmg, '雷击战！', '', defSide, defForm);
+        applyDamage(log, s, t, dmg, '雷击战！', '', defSide, defForm, false, true);
         ev('torp', s, t, true, dmg, null, wasAlive && !t.alive);
         pushSnap();
       };

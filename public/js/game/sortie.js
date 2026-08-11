@@ -6,6 +6,17 @@
 const Sortie = (() => {
   const GameRef = () => (typeof window !== 'undefined') ? window.Game : require('../core/state.js').Game;
 
+  /* 消耗指定id的装备（舰上装备中，取出并销毁） */
+  function consumeEquip(st, uid, eqId) {
+    const s = st.ships[uid];
+    if (!s || !Array.isArray(s.equipped)) return false;
+    const idx = s.equipped.findIndex(eu => st.equipment[eu] && st.equipment[eu].id === eqId);
+    if (idx < 0) return false;
+    const euid = s.equipped.splice(idx, 1)[0];
+    if (st.equipment[euid]) delete st.equipment[euid];
+    return true;
+  }
+
   function currentMap() {
     const st = GameRef().state;
     if (!st.sortie) return null;
@@ -160,12 +171,25 @@ const Sortie = (() => {
     }
     /* 大破进击的僚舰将在本次战斗结束后轰沉（开战前快照） */
     const doomed = daPoShips();
+    /* 洋上补给（消耗品）：舰队油弹未满时自动发动，油弹恢复到100%并消耗1个 */
+    let oilerUsed = false;
+    for (const uid of fleet) {
+      const s = st.ships[uid];
+      if (!s || (s.supply.fuel >= 1 && s.supply.ammo >= 1)) continue;
+      if (consumeEquip(st, uid, 'supply_oiler')) {
+        s.supply.fuel = 1;
+        s.supply.ammo = 1;
+        oilerUsed = true;
+        break;
+      }
+    }
     const enemyKey = def.enemy || 'F01';
     const enemyFleet = ENEMY_FLEETS[enemyKey];
     const isBoss = def.type === 'boss';
     const result = Battle.battle(fleet, enemyFleet.ships, formation, enemyFleet.formation, {
       allowNight: false, fleetIdx: so.fleetIdx
     });
+    if (oilerUsed) result.log.unshift('「洋上补给」发动！舰队油弹恢复到100%。');
     return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, doomed };
   }
 
@@ -208,6 +232,22 @@ const Sortie = (() => {
       if (s) s.hp = Math.max(0, sideShip.hp);
     }
 
+    /* 消耗品结算（wiki：应急修理要员在发动后消耗；战斗粮食在进入夜战时消耗） */
+    for (const sideShip of result.mySide) {
+      if (!sideShip.isPlayer || !sideShip.uid || !sideShip.dcUsed) continue;
+      if (consumeEquip(st, sideShip.uid, 'dc_team')) {
+        result.log.push(`「${sideShip.name}」的应急修理要员已消耗。`);
+      }
+    }
+    if (result.nightUsed) {
+      for (const uid of fleet) {
+        if (consumeEquip(st, uid, 'rations')) {
+          result.log.push('舰队消耗了战斗粮食。');
+          break;
+        }
+      }
+    }
+
     /* 大破进击的僚舰轰沉 */
     for (const uid of prep.doomed) {
       const s = st.ships[uid];
@@ -240,8 +280,13 @@ const Sortie = (() => {
       const weights = {};
       dropTable.forEach(id => weights[id] = RARITY_W[ShipData[id].rarity] || 10);
       const id = Util.weighted(weights);
-      drop = G.createShip(id, 1);
-      G.equipDefaults(drop.uid);   // 掉落舰船自带默认装备
+      const needEq = (ShipData[id].equip || []).length;
+      if (!G.isTestMode() && G.equipCapWouldExceed(needEq)) {
+        result.log.push('装备仓库已满，无法接收掉落舰……');
+      } else {
+        drop = G.createShip(id, 1);
+        G.equipDefaults(drop.uid);   // 掉落舰船自带默认装备
+      }
     }
 
     /* 血条与进度 */

@@ -50,6 +50,10 @@ const QUESTS = [
     cond: { kind: 'clear_map', param: '4-1', count: 1 }, reward: { fuel: 700, steel: 500, equip: ['radar_mk37'] } },
   { id: 'w11', type: 'weekly', name: '莱特湾警戒', desc: '通关 5-2 苏里高海峡。',
     cond: { kind: 'clear_map', param: '5-2', count: 1 }, reward: { ammo: 600, baux: 400, screws: 4 } },
+  { id: 'w12', type: 'weekly', name: '菲律宾海哨戒', desc: '通关 4-4 菲律宾海决战。',
+    cond: { kind: 'clear_map', param: '4-4', count: 1 }, reward: { baux: 300, steel: 300, equip: ['rations'] } },
+  { id: 'w13', type: 'weekly', name: '恩加尼奥角警戒', desc: '通关 5-4 恩加尼奥角。',
+    cond: { kind: 'clear_map', param: '5-4', count: 1 }, reward: { fuel: 700, steel: 500, equip: ['dc_team'] } },
 
   /* ---------------- 月常 ---------------- */
   { id: 'm1', type: 'monthly', name: '远征30次', desc: '完成30次远征任务。',
@@ -64,6 +68,8 @@ const QUESTS = [
     cond: { kind: 'clear_map', param: '4-5', count: 1 }, reward: { devMats: 15, fuel: 1000, steel: 1000, screws: 8 } },
   { id: 'm6', type: 'monthly', name: '南方海域决战', desc: '通关 5-5 莱特湾决战。',
     cond: { kind: 'clear_map', param: '5-5', count: 1 }, reward: { devMats: 20, ammo: 1200, baux: 800, screws: 12 } },
+  { id: 'm7', type: 'monthly', name: '月间物资整备', desc: '通关 4-4 菲律宾海决战，补充消耗性物资。',
+    cond: { kind: 'clear_map', param: '4-4', count: 1 }, reward: { devMats: 6, steel: 800, equip: ['supply_oiler', 'rations'] } },
 
   /* ---------------- 一次性（新手引导链） ---------------- */
   { id: 'o1', type: 'once', name: '驱逐队的组建', desc: '在编成界面编入1艘驱逐舰。',
@@ -137,7 +143,21 @@ const QUESTS = [
   { id: 'o33', type: 'once', name: '菲律宾前哨', desc: '击破 5-1 莱特湾前哨的海域血条。',
     cond: { kind: 'clear_map', param: '5-1', count: 1 }, reward: { equip: ['sb2c'], baux: 1000 } },
   { id: 'o34', type: 'once', name: '大和栖姬讨伐', desc: '击破 5-5 莱特湾决战的海域血条，终结深海的野心！',
-    cond: { kind: 'clear_map', param: '5-5', count: 1 }, reward: { ship: ['iowa'], screws: 40, fuel: 2000 } }
+    cond: { kind: 'clear_map', param: '5-5', count: 1 }, reward: { ship: ['iowa'], screws: 40, fuel: 2000 } },
+
+  /* ---------------- 一次性（后期主线链·装备扩充） ---------------- */
+  { id: 'o35', type: 'once', name: '夸贾林要塞攻略', desc: '击破 4-2 夸贾林环礁海域的海域血条。',
+    cond: { kind: 'clear_map', param: '4-2', count: 1 }, reward: { equip: ['radar_sc'], steel: 600, equipCap: 50 } },
+  { id: 'o36', type: 'once', name: '塞班登陆作战', desc: '击破 4-3 塞班岛攻略的海域血条。',
+    cond: { kind: 'clear_map', param: '4-3', count: 1 }, reward: { equip: ['supply_oiler'], ammo: 600, equipCap: 50 } },
+  { id: 'o37', type: 'once', name: '马里亚纳火鸡射击', desc: '击破 4-4 菲律宾海决战的海域血条，制空权决战！',
+    cond: { kind: 'clear_map', param: '4-4', count: 1 }, reward: { equip: ['f6f3n'], baux: 800 } },
+  { id: 'o38', type: 'once', name: '萨马岛海战', desc: '击破 5-3 萨马岛近海的海域血条。',
+    cond: { kind: 'clear_map', param: '5-3', count: 1 }, reward: { equip: ['hedgehog'], screws: 15 } },
+  { id: 'o39', type: 'once', name: '恩加尼奥角空母战', desc: '击破 5-4 恩加尼奥角的海域血条，全歼深海机动部队！',
+    cond: { kind: 'clear_map', param: '5-4', count: 1 }, reward: { equip: ['f6f5n'], screws: 20, fuel: 1000 } },
+  { id: 'o40', type: 'once', name: '装备仓库整备', desc: '累计解体10件装备，整顿装备仓库。',
+    cond: { kind: 'scrap_equip', count: 10 }, reward: { equipCap: 100, steel: 300 } },
 ];
 
 /* 领取奖励时合并（资源部分） */

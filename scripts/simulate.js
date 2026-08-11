@@ -304,7 +304,7 @@ const cvEntries = devEntries(DEV_SEC.CV, DEV_POOL.BAUX);
 assert('空母系铝池含舰战', cvEntries.some(e => e.id === 'f4f'), cvEntries.map(e => e.id).join(','));
 const cvSum = cvEntries.reduce((s, e) => s + e.rate, 0);
 assert('空母系铝池总份额≤50', cvSum <= 50, 'sum=' + cvSum);
-assert('出货率=份额×2%（F4F=6份额→12%）', cvEntries.find(e => e.id === 'f4f').rate * 2 === 12);
+assert('出货率=份额×2%（F4F=4份额→8%）', cvEntries.find(e => e.id === 'f4f').rate * 2 === 8);
 assert('失败份额=50-Σ', devFailShare(DEV_SEC.CV, DEV_POOL.BAUX) === 50 - cvSum);
 /* 开发资材与失败返还 */
 const devMats0 = Game.state.resources.devMats;

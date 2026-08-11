@@ -152,6 +152,21 @@ const UI = (() => {
     return n >= 10 ? '<span class="star-line">★MAX</span>' : `<span class="star-line">★${n}</span>`;
   }
 
+  /* 装备稀有度配色（与舰船稀有度同色系：1白 2绿 3蓝 4紫 5金，参照舰C wiki） */
+  function eqRarityCls(r) { return 'eq-r' + Util.clamp(r || 1, 1, 5); }
+  /* 装备名（按稀有度着色 + 稀有度标记） */
+  function eqNameHtml(ed) {
+    if (!ed) return '';
+    const r = Util.clamp(ed.r || 1, 1, 5);
+    const tag = EQUIP_RARITY_ZH[r] || '';
+    return `<span class="eq-r${r}">${Util.esc(ed.zh || '')}</span><span class="eq-rarity-tag eq-r${r}">${tag}</span>`;
+  }
+  /* 装备稀有度标记（仅标签，用于表格等紧凑场景） */
+  function eqRarityTag(r) {
+    r = Util.clamp(r || 1, 1, 5);
+    return `<span class="eq-rarity-tag eq-r${r}">${EQUIP_RARITY_ZH[r]}</span>`;
+  }
+
   function hpRatio(uid) {
     const s = Game.state.ships[uid];
     if (!s) return 0;
@@ -227,7 +242,7 @@ const UI = (() => {
     return `<span class="countdown">${Util.fmtTime(ms)}</span>`;
   }
 
-  return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipTitle, shipNameHtml, rarityStars, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml };
+  return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipTitle, shipNameHtml, rarityStars, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml, eqNameHtml, eqRarityTag, eqRarityCls };
 })();
 
 window.UI = UI;

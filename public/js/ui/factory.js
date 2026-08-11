@@ -42,6 +42,10 @@ const FactoryUI = (() => {
     return r * modSort.dir;
   }
 
+  /* 装备仓库批量选择状态（会话内保留） */
+  let eqSel = new Set();
+  const EQ_SEL_LOW_MAX = 2;   // 「一键选择低级装备」稀有度上限（白/绿）
+
   function factory(root, arg) {
     let tab = arg === 'dev' ? 'dev' : arg === 'improve' ? 'improve' : arg === 'modernize' ? 'modernize' : arg === 'equip' ? 'equip' : 'build';
     /* 当前配方（输入框值，默认舰载机通用公式） */
@@ -142,7 +146,7 @@ const FactoryUI = (() => {
           <button class="btn btn-gold" data-act="dev10" ${devMats < 1 || !sec ? 'disabled' : ''}>10连开发 ×10</button>
         </div>
         <div id="devPoolPreview">${devPoolHtml()}</div>
-        <div class="hint">规则：投入四项资源（必消耗）+ 1开发资材（成功才消耗）。最高资源决定开发池（油/钢 &gt; 弹药 &gt; 铝）；提督等级≥装备稀有度×3 且 四项资源≥最低资源要求才会成功。开发不论成败均计入每日任务。10连开发按份数整批校验资源，开发资材按成功数逐个消耗、不足时提前停止。</div>
+        <div class="hint">规则：投入四项资源（必消耗）+ 1开发资材（成功才消耗）。最高资源决定开发池（油/钢 &gt; 弹药 &gt; 铝）；提督等级≥装备稀有度×3 且 四项资源≥最低资源要求才会成功。开发不论成败均计入每日任务。10连开发按份数整批校验资源，开发资材按成功数逐个消耗、不足时提前停止。装备仓库（${Game.equipCount()}/${Game.equipCap()}）满时无法开发。</div>
       </div>`;
     }
 
@@ -159,7 +163,7 @@ const FactoryUI = (() => {
             const req = devMinReq(ed);
             const needLv = (ed.r || 1) * 3;
             return `<tr>
-              <td><b>${UI.esc(ed.zh)}</b> <span class="dim">${UI.esc(ed.en)}</span></td>
+              <td><b>${UI.eqNameHtml(ed)}</b> <span class="dim">${UI.esc(ed.en)}</span></td>
               <td class="dim">${EQUIP_CAT_ZH[ed.cat] || ed.cat}</td>
               <td class="num">${e.pct}%</td>
               <td class="dim">${req.fuel}/${req.ammo}/${req.steel}/${req.baux}${st.admiral.level < needLv ? `（需Lv.${needLv}）` : ''}</td>
@@ -192,14 +196,14 @@ const FactoryUI = (() => {
           const needLock = !info.unlocked;
           return `<div class="improve-row ${needLock ? 'improve-locked' : ''}">
             <div class="grow">
-              <b>${UI.esc(ed.zh)}</b> ${UI.starHtml({ star: e.star })}
+              <b>${UI.eqNameHtml(ed)}</b> ${UI.starHtml({ star: e.star })}
               <span class="dim">(${EQUIP_CAT_ZH[ed.cat] || ed.cat})</span>
             </div>
             <div class="dim">${info.available ? `资材×${info.cost.screws} 成功率${info.rate}%` : UI.esc(info.reason)}</div>
             <div class="btn-row" style="gap:4px">
               ${info.available ? `<button class="btn btn-sm" data-improve="${e.euid}">改修</button>
                 <button class="btn btn-sm btn-gold" data-improve-g="${e.euid}">确定化(×2资材)</button>` : ''}
-              ${info.update && info.updateOk ? `<button class="btn btn-sm btn-gold" data-update="${e.euid}">更新→${UI.esc(EquipmentData[info.update.to].zh)}</button>
+              ${info.update && info.updateOk ? `<button class="btn btn-sm btn-gold" data-update="${e.euid}">更新→${UI.eqNameHtml(EquipmentData[info.update.to])}</button>
                 <button class="btn btn-sm" data-update-g="${e.euid}">确定更新(×2资材)</button>` : ''}
             </div>
           </div>`;
@@ -254,7 +258,7 @@ const FactoryUI = (() => {
       </div>`;
     }
 
-    /* ============ 装备仓库（一览 + 解体，参照 wiki「装备」与解体回收） ============ */
+    /* ============ 装备仓库（一览 + 批量选择/移除 + 解体，参照 wiki「装备」与解体回收） ============ */
     function equipPanel() {
       const st = Game.state;
       const all = Object.values(st.equipment);
@@ -264,13 +268,22 @@ const FactoryUI = (() => {
         if (!ed) continue;
         (groups[ed.cat] = groups[ed.cat] || []).push(eq);
       }
-      const catOrder = ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦', '水爆', '对空电探', '对水电探', '高角炮', '机枪', '声呐', '爆雷', '穿甲弹', '设备'];
+      const catOrder = CAT_ORDER;
       const usedBy = {};
       for (const s of Object.values(st.ships)) for (const e of s.equipped || []) usedBy[e] = s.uid;
       const total = all.length;
+      const capTxt = `<b>${total}/${Game.equipCap()}</b>`;
+      const fullWarn = Game.equipCount() >= Game.equipCap() ? '<span class="state-badge danger" style="margin-left:6px">仓库已满！</span>' : '';
+      const selCount = eqSel.size;
       return `<div class="panel">
-        <h3>装备仓库 <span class="dim">共 ${total} 件（点击「解体」回收资源；装备中的装备需先卸下）</span></h3>
-        <div class="hint">装备可在「舰娘详情 → 点击装备槽」安装/卸下。多余装备建议解体换资源，或在「改修工厂」用作改修素材。</div>
+        <h3>装备仓库 <span class="dim">共 ${capTxt} 件（点击「解体」回收资源；装备中的装备需先卸下）</span>${fullWarn}</h3>
+        <div class="hint">装备可在「舰娘详情 → 点击装备槽」安装/卸下。多余装备建议解体换资源，或在「改修工厂」用作改修素材。仓库上限可通过任务扩充（参照 wiki：初始500格）。装备名颜色与标签 = 稀有度（白/绿/蓝/紫/金）。</div>
+        <div class="equip-tools">
+          <button class="btn btn-sm" data-eq-sel-low>一键选择低级装备(R1~R2)</button>
+          <button class="btn btn-sm btn-red" data-eq-remove-sel ${selCount ? '' : 'disabled'}>一键移除选中（${selCount}）</button>
+          <button class="btn btn-sm" data-eq-clear-sel ${selCount ? '' : 'disabled'}>取消选择</button>
+          <span class="dim">勾选后可批量移除；装备中/上锁不可勾选；选中项含稀有度≥3（蓝/紫/金）时移除前需二次确认。</span>
+        </div>
         ${Object.keys(groups).sort((a, b) => catOrder.indexOf(a) - catOrder.indexOf(b)).map(cat => {
           const list = groups[cat];
           return `<div class="section-title">${EQUIP_CAT_ZH[cat] || cat}（${list.length}）</div>
@@ -279,12 +292,14 @@ const FactoryUI = (() => {
               const stx = Object.entries(ed.stat).map(([k, v]) => `${EQUIP_STAT_ZH[k]}${v > 0 ? '+' : ''}${v}`).join(' ');
               const eqd = usedBy[eq.uid];
               const scrap = ed.scrap || {};
-              return `<div class="equip-row">
-                <div class="grow">
-                  <b>${UI.esc(ed.zh)}</b> ${UI.starHtml(eq)}
+              const canSel = !eqd && !eq.locked;
+              return `<div class="equip-row ${eqSel.has(eq.uid) ? 'selected' : ''}">
+                <label class="grow" style="cursor:${canSel ? 'pointer' : 'default'}">
+                  <input type="checkbox" class="eq-chk" data-eq-check="${eq.uid}" ${eqSel.has(eq.uid) ? 'checked' : ''} ${canSel ? '' : 'disabled'}>
+                  ${UI.eqNameHtml(ed)} ${UI.starHtml(eq)}
                   ${eq.locked ? '<span class="state-badge morale">锁</span>' : ''}
                   <span class="dim">(${EQUIP_CAT_ZH[ed.cat] || ed.cat}) ${stx}</span>
-                </div>
+                </label>
                 <div class="dim">${eqd ? `装备中·${UI.esc(UI.shipTitle(st.ships[eqd]))}` : '库存'}
                   ｜ 解体：${Object.keys(scrap).map(k => `${EQUIP_STAT_ZH[k]}${scrap[k]}`).join(' ') || '无'}</div>
                 <div class="btn-row" style="gap:4px">
@@ -350,7 +365,7 @@ const FactoryUI = (() => {
             <span class="modal-close" data-close>×</span>
             <h3>开发成功！</h3>
             <div class="text-center" style="padding:16px">
-              <div style="font-size:20px">${UI.esc(EquipmentData[r.eq.id].zh)}</div>
+              <div style="font-size:20px">${UI.eqNameHtml(EquipmentData[r.eq.id])}</div>
               <div class="dim">${UI.esc(EquipmentData[r.eq.id].en)} · ${EQUIP_CAT_ZH[EquipmentData[r.eq.id].cat]} ${statsTxt}</div>
             </div>
             <div class="hint">消耗 1 开发资材（剩余 ${Game.state.resources.devMats || 0}）。${UI.esc(pv.secZh)}·${UI.esc(pv.poolZh)} 出货率 ${pv.entries.find(x => x.id === r.eq.id).pct}%。</div>
@@ -371,14 +386,14 @@ const FactoryUI = (() => {
         Game.save();
         const groups = {};
         for (const eq of r.eqs) groups[eq.id] = (groups[eq.id] || 0) + 1;
-        const listHtml = Object.keys(groups).map(id => `${UI.esc(EquipmentData[id].zh)}×${groups[id]}`).join('、');
+        const listHtml = Object.keys(groups).map(id => `${UI.eqNameHtml(EquipmentData[id])}×${groups[id]}`).join('、');
         const m = UI.modal(`
           <span class="modal-close" data-close>×</span>
           <h3>10连开发结果</h3>
           <div class="dev-batch-result">
             <div>成功 <b>${r.success}</b> 件 ｜ 失败 <b>${r.fail}</b> 件 ｜ 消耗开发资材 <b>${r.devMatsUsed}</b> 个</div>
             ${r.eqs.length ? `<div class="section-title">获得装备</div><div>${listHtml}</div>` : ''}
-            ${r.stopped ? `<div class="hint" style="color:#ff9a9a">开发资材不足，本次共进行 ${r.attempts} 次后停止。</div>` : ''}
+            ${r.stopped ? `<div class="hint" style="color:#ff9a9a">${UI.esc(r.reason || '开发资材不足')}，本次共进行 ${r.attempts} 次后停止。</div>` : ''}
           </div>
           <div class="btn-row"><button class="btn btn-gold" data-close>好</button></div>`);
         m.root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { m.close(); render(); }));
@@ -411,7 +426,7 @@ const FactoryUI = (() => {
         b.addEventListener('click', () => {
           const r = Improve.updateEquip(b.dataset.update, false);
           if (!r.ok) { UI.toast(r.msg); return; }
-          UI.toast(r.success ? `更新成功！获得 ${UI.esc(EquipmentData[r.to].zh)}★5！` : '更新失败……（素材已消耗）');
+          UI.toast(r.success ? `更新成功！获得 ${UI.eqNameHtml(EquipmentData[r.to])}★5！` : '更新失败……（素材已消耗）');
           Game.save(); render();
         });
       });
@@ -419,7 +434,7 @@ const FactoryUI = (() => {
         b.addEventListener('click', () => {
           const r = Improve.updateEquip(b.dataset.updateG, true);
           if (!r.ok) { UI.toast(r.msg); return; }
-          UI.toast(`确定化更新成功！获得 ${UI.esc(EquipmentData[r.to].zh)}★5！`);
+          UI.toast(`确定化更新成功！获得 ${UI.eqNameHtml(EquipmentData[r.to])}★5！`);
           Game.save(); render();
         });
       });
@@ -446,6 +461,87 @@ const FactoryUI = (() => {
           if (!r.ok) { UI.toast(r.msg); return; }
           Game.save(); render();
         });
+      });
+
+      /* ============ 装备仓库：批量选择 / 一键移除 ============ */
+      const lowSelBtn = root.querySelector('[data-eq-sel-low]');
+      if (lowSelBtn) lowSelBtn.addEventListener('click', () => {
+        const st = Game.state;
+        const used = new Set();
+        for (const s of Object.values(st.ships)) for (const e of s.equipped || []) used.add(e);
+        for (const k in st.equipment) {
+          const eq = st.equipment[k];
+          const ed = EquipmentData[eq.id];
+          if (!ed || used.has(k) || eq.locked) continue;
+          if ((ed.r || 1) > EQ_SEL_LOW_MAX) continue;   // 只选低级（白/绿）
+          if (eq.star > 0) continue;                    // 已改修的不算低级
+          eqSel.add(k);
+        }
+        render();
+      });
+      root.querySelectorAll('[data-eq-check]').forEach(el => {
+        el.addEventListener('change', () => {
+          const euid = el.dataset.eqCheck;
+          if (el.checked) eqSel.add(euid); else eqSel.delete(euid);
+          render();
+        });
+      });
+      const clearSelBtn = root.querySelector('[data-eq-clear-sel]');
+      if (clearSelBtn) clearSelBtn.addEventListener('click', () => { eqSel.clear(); render(); });
+      const rmSelBtn = root.querySelector('[data-eq-remove-sel]');
+      if (rmSelBtn) rmSelBtn.addEventListener('click', () => {
+        const st = Game.state;
+        const sel = [...eqSel].map(eu => st.equipment[eu]).filter(Boolean);
+        if (!sel.length) return;
+        const high = sel.filter(eq => (EquipmentData[eq.id].r || 1) >= 3);
+        /* 预览：按装备分组 + 合计解体回收 */
+        const groups = {};
+        const scrapSum = {};
+        for (const eq of sel) {
+          const ed = EquipmentData[eq.id];
+          (groups[eq.id] = groups[eq.id] || { ed, n: 0 }).n++;
+          for (const k in (ed.scrap || {})) scrapSum[k] = (scrapSum[k] || 0) + ed.scrap[k];
+        }
+        const listHtml = Object.keys(groups).map(id => `<div>${UI.eqNameHtml(groups[id].ed)} ×${groups[id].n}</div>`).join('');
+        const sumHtml = Object.keys(scrapSum).map(k => `${EQUIP_STAT_ZH[k]}+${scrapSum[k]}`).join(' ');
+        const warnHtml = high.length
+          ? `<div class="hint" style="color:#ff9a9a">⚠ 选中项中包含 <b>${high.length}</b> 件高级装备（稀有度≥3：蓝/紫/金）！请勾选下方确认后再移除。</div>`
+          : '';
+        const m = UI.modal(`
+          <span class="modal-close" data-close>×</span>
+          <h3>批量移除装备（共 ${sel.length} 件）</h3>
+          <div class="dev-batch-result">
+            ${listHtml}
+            <div class="section-title">预计解体回收</div>
+            <div>${sumHtml || '无'}</div>
+            ${warnHtml}
+            ${high.length ? `<label style="display:block;margin:6px 0"><input type="checkbox" data-confirm-high> 我已确认要移除高级装备</label>` : ''}
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-red" data-do-remove ${high.length ? 'disabled' : ''}>确认移除</button>
+            <button class="btn" data-close>取消</button>
+          </div>`);
+        if (high.length) {
+          const ck = m.root.querySelector('[data-confirm-high]');
+          const goBtn = m.root.querySelector('[data-do-remove]');
+          ck.addEventListener('change', () => { goBtn.disabled = !ck.checked; });
+        }
+        m.root.querySelector('[data-do-remove]').addEventListener('click', () => {
+          let ok = 0, fail = 0;
+          const gained = {};
+          for (const eq of sel) {
+            const r = Factory.scrapEquip(eq.uid);
+            if (r.ok) { ok++; for (const k in r.gain) gained[k] = (gained[k] || 0) + r.gain[k]; }
+            else fail++;
+          }
+          eqSel.clear();
+          m.close();
+          const gTxt = Object.keys(gained).map(k => `${EQUIP_STAT_ZH[k]}+${gained[k]}`).join(' ');
+          UI.toast(`已移除 ${ok} 件装备${fail ? `，${fail} 件失败（装备中/上锁）` : ''}！回收 ${gTxt || '无'}`);
+          Game.save();
+          render();
+        });
+        m.root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { m.close(); render(); }));
       });
     }
   }

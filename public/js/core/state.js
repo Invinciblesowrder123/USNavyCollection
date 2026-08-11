@@ -15,6 +15,7 @@ const Game = (() => {
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
   const INFINITE_RES = 999999;   // 测试模式资源显示值
   const SCREW_CAP = 3000;
+  const EQUIP_CAP_DEFAULT = 500; // 装备仓库上限（参照 kcwiki：初始150格，本作扩至500格，可任务扩充）
 
   /* ---- 测试模式（不写入游戏存档） ---- */
   let debug = { testMode: false };
@@ -53,6 +54,7 @@ const Game = (() => {
     fleetUnlock: { 3: false, 4: false },    // 舰队3/4解锁状态（1/2初始可用）
     ships: {},                          // uid -> shipInstance
     equipment: {},                      // uid -> equipInstance {uid,id,star}
+    equipCap: EQUIP_CAP_DEFAULT,        // 装备仓库上限（初始500，任务可扩充）
     construction: [],                   // {start,end,recipe} 建造队列
     development: [],                    // {start,end,recipe} 开发队列
     repairs: [null, null],              // 入渠槽位 {ship,start,end}
@@ -217,6 +219,18 @@ const Game = (() => {
     delete state.equipment[uid];
   }
 
+  /* ============ 装备仓库上限（数量系统，参照 kcwiki「装备」：初始500格） ============ */
+  function equipCount() { return Object.keys(state.equipment || {}).length; }
+  function equipCap() { return state.equipCap || EQUIP_CAP_DEFAULT; }
+  /* 扩充仓库（任务奖励调用） */
+  function expandEquipCap(n) {
+    state.equipCap = Math.max(EQUIP_CAP_DEFAULT, (state.equipCap || EQUIP_CAP_DEFAULT) + (n || 0));
+  }
+  /* 新增 need 件装备是否会超过仓库上限 */
+  function equipCapWouldExceed(need) {
+    return equipCount() + (need || 0) > equipCap();
+  }
+
   /* 当前形态定义（含改造形态） */
   function shipDef(inst) {
     let d = ShipData[inst.id];
@@ -243,17 +257,21 @@ const Game = (() => {
     const s = Math.sqrt(star);
     const out = {};
     switch (ed.cat) {
-      case '小主炮': case '中主炮': case '副炮': case '穿甲弹': case '设备':
+      case '小主炮': case '中主炮': case '副炮': case '穿甲弹': case '设备': case '上陆用舟艇':
         out.fp = s; break;
       case '大主炮': out.fp = 1.5 * s; break;
       case '鱼雷': out.tp = 1.2 * s; break;
       case '机枪': out.aa = 3 * s; out.tp = 1.2 * s; break;
       case '高角炮': out.aa = 2 * s; break;
-      case '声呐': case '爆雷': out.asw = s; break;
-      case '对空电探': case '对水电探': out.los = 1.25 * s; break;
-      case '水侦': case '水爆': out.los = 1.2 * s; break;
+      case '高射装置': case '对空弹': out.aa = s; break;
+      case '声呐': case '爆雷': case '爆雷投射机': case '对潜哨戒机': out.asw = s; break;
+      case '对空电探': case '对水电探': case '两用电探': out.los = 1.25 * s; break;
+      case '水侦': case '水爆': case '大型飞行艇': case '舰侦': case '照明弹': out.los = 1.2 * s; break;
+      case '夜间舰战': case '喷式舰战': case '航空要员': out.aa = 0.2 * star; break;
       case '舰战': out.aa = 0.2 * star; break;
-      case '舰攻': out.tp = 0.2 * star; out.bmb = 0.2 * star; break;
+      case '舰攻': case '夜间舰攻': out.tp = 0.2 * star; out.bmb = 0.2 * star; break;
+      case '增设装甲': out.arm = s; break;
+      case '机关部强化': out.evd = s; break;
       default: return null;
     }
     return out;
@@ -320,6 +338,7 @@ const Game = (() => {
     state.fleetUnlock = { 3: false, 4: false };
     state.ships = {};
     state.equipment = {};
+    state.equipCap = EQUIP_CAP_DEFAULT;
     state.construction = [];
     state.development = [];
     state.repairs = [null, null];
@@ -381,6 +400,13 @@ const Game = (() => {
       state.resources[k] = Math.floor(state.resources[k]);
     }
     if (!state.improve) state.improve = { date: '', count: 0 };
+    /* 旧档迁移：装备仓库上限（缺失或异常 → 默认500；旧档以150为基准，保留任务扩容部分） */
+    if (typeof state.equipCap !== 'number' || state.equipCap < 150) {
+      state.equipCap = EQUIP_CAP_DEFAULT;
+    } else if (state.equipCap < EQUIP_CAP_DEFAULT) {
+      /* 旧档（150/200/250 等）：扩容值 = 旧值 - 旧基准150，迁移后叠加到新基准500 */
+      state.equipCap = EQUIP_CAP_DEFAULT + Math.max(0, state.equipCap - 150);
+    }
     /* 旧版开发队列（20秒队列制）已废弃：开发改为即时结算（wiki） */
     if (Array.isArray(state.development) && state.development.length) state.development = [];
     for (const k in state.equipment) {
@@ -492,6 +518,7 @@ const Game = (() => {
   return {
     state, save, load, loadData, serialize, setSaveHook, newGame, regen, canAfford, spend, gain,
     createShip, createEquip, destroyShip, destroyEquip, equipDefaults,
+    equipCount, equipCap, expandEquipCap, equipCapWouldExceed,
     shipDef, shipStats, fleetLos, fleetHasName, addAdmiralExp, resourceCap,
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
     setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets

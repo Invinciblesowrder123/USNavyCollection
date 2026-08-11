@@ -43,6 +43,11 @@ const Factory = (() => {
     const st = G.state;
     const job = st.construction[i];
     if (!job || Date.now() < job.end) return { ok: false, msg: '尚未建造完成！' };
+    /* 装备仓库上限检查（新舰自带初始装备，仓库满则无法领取；测试模式豁免） */
+    const needEq = (ShipData[job.shipId].equip || []).length;
+    if (!G.isTestMode() && G.equipCapWouldExceed(needEq)) {
+      return { ok: false, msg: `装备仓库已满（${G.equipCount()}/${G.equipCap()}）！新舰自带初始装备，请先解体或用掉部分装备。` };
+    }
     st.construction.splice(i, 1);
     const ship = G.createShip(job.shipId, 1);
     G.equipDefaults(ship.uid);   // 新船自带默认装备（参照wiki：入手舰船自带初始搭载）
@@ -78,6 +83,10 @@ const Factory = (() => {
     const devMats = st.resources.devMats || 0;
     if (devMats < 1) return { ok: false, msg: '开发资材不足！请先完成任务或远征获取开发资材。' };
     if (!G.canAfford(recipe)) return { ok: false, msg: '资源不足！' };
+    /* 装备仓库上限检查（wiki：装备数达到上限时无法开发，开发前即拒绝；测试模式豁免） */
+    if (!G.isTestMode() && G.equipCapWouldExceed(1)) {
+      return { ok: false, msg: `装备仓库已满（${G.equipCount()}/${G.equipCap()}）！请先解体或用掉部分装备。` };
+    }
     const pv = developPreview(recipe, secretaryUid);
     const secInst = secretaryUid ? st.ships[secretaryUid] : null;
     const sec = secInst ? G.shipDef(secInst) : null;
@@ -97,21 +106,21 @@ const Factory = (() => {
     const ed = EquipmentData[eqId];
 
     /* 2. 判定成功/失败（wiki：等级≥稀有度×10 且 4项资源≥最低资源要求；
-     * 本作提督经验曲线较缓，等级门槛按 稀有度×3 缩放） */
+     * 本作提督经验曲线较缓，等级门槛按 稀有度×3 缩放；测试模式豁免门槛） */
     const needLv = (ed.r || 1) * 3;
     const req = devMinReq(ed);
     const resOk = (recipe.fuel || 0) >= req.fuel && (recipe.ammo || 0) >= req.ammo &&
       (recipe.steel || 0) >= req.steel && (recipe.baux || 0) >= req.baux;
-    if (st.admiral.level < needLv || !resOk) {
+    if (!G.isTestMode() && (st.admiral.level < needLv || !resOk)) {
       G.spend(recipe);
       st.stats.develop++;
       Progression.notify('develop', 1);
       return { ok: true, success: false, msg: `开发失败……（${ed.zh}需要提督Lv.${needLv}且资源满足${req.fuel}/${req.ammo}/${req.steel}/${req.baux}）`, pv };
     }
 
-    /* 3. 成功：消耗资源 + 1 开发资材，获得装备 */
+    /* 3. 成功：消耗资源 + 1 开发资材，获得装备（测试模式不扣开发资材） */
     G.spend(recipe);
-    st.resources.devMats = Math.max(0, devMats - 1);
+    if (!G.isTestMode()) st.resources.devMats = Math.max(0, devMats - 1);
     const eq = G.createEquip(eqId);
     st.stats.develop++;
     Progression.notify('develop', 1);
@@ -131,12 +140,13 @@ const Factory = (() => {
     if (!G.canAfford(total)) return { ok: false, msg: `资源不足！${count}连需要 ${total.fuel}/${total.ammo}/${total.steel}/${total.baux}` };
     const sec = st.ships[secretaryUid];
     if (!sec) return { ok: false, msg: '需要设置秘书舰（第一舰队旗舰）才能开发。' };
-    const out = { ok: true, count, attempts: 0, success: 0, fail: 0, eqs: [], devMatsUsed: 0, stopped: false };
+    const out = { ok: true, count, attempts: 0, success: 0, fail: 0, eqs: [], devMatsUsed: 0, stopped: false, reason: '' };
     for (let i = 0; i < count; i++) {
-      if ((st.resources.devMats || 0) < 1) { out.stopped = true; break; }
+      if (!G.isTestMode() && (st.resources.devMats || 0) < 1) { out.stopped = true; out.reason = '开发资材不足'; break; }
       const r = develop(recipe, secretaryUid);
       out.attempts++;
       if (r.ok && r.success) { out.success++; out.eqs.push(r.eq); out.devMatsUsed++; }
+      else if (!r.ok) { out.stopped = true; out.reason = r.msg || '开发中止'; break; }
       else out.fail++;
     }
     return out;
@@ -156,6 +166,7 @@ const Factory = (() => {
     const gain = { ...(ed.scrap || {}) };
     G.destroyEquip(euid);
     G.gain(gain);
+    Progression.notify('scrap_equip', 1);
     return { ok: true, gain, name: ed.zh };
   }
 

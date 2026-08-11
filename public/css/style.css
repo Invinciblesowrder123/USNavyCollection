@@ -125,6 +125,21 @@ body.unauth #topbar, body.unauth #navbar { display: none; }
   font-size: 12px;
 }
 .equip-row .grow { min-width: 200px; }
+.equip-row.selected { background: rgba(232, 194, 74, 0.12); border-color: var(--gold); }
+.equip-row .eq-chk { margin-right: 2px; accent-color: var(--gold); cursor: pointer; }
+.equip-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 4px; font-size: 12px; }
+
+/* ---------- 装备稀有度（等级）配色（参照舰C wiki：白→绿→蓝→紫→金） ---------- */
+.eq-r1 { color: #cfd6e6; }
+.eq-r2 { color: #8ee08e; }
+.eq-r3 { color: #6db3ff; }
+.eq-r4 { color: #c77dff; }
+.eq-r5 { color: var(--gold); text-shadow: 0 0 6px rgba(255, 215, 0, 0.45); }
+.eq-rarity-tag {
+  display: inline-block; margin-left: 5px; padding: 0 4px;
+  font-size: 10px; line-height: 1.4; vertical-align: 1px;
+  border: 1px solid currentColor; border-radius: 3px; opacity: 0.9;
+}
 
 /* ---------- 批量开发结果 ---------- */
 .dev-batch-result { padding: 4px 0 8px; line-height: 1.8; font-size: 13px; }
@@ -240,6 +255,7 @@ body.unauth #topbar, body.unauth #navbar { display: none; }
 .state-badge.expedition { color: var(--orange); border: 1px solid var(--orange); }
 .state-badge.broken { color: var(--red); border: 1px solid var(--red); }
 .state-badge.morale { color: #7fe07f; }
+.state-badge.danger { color: var(--red); border: 1px solid var(--red); }
 
 /* ---------- 稀有度差异化（参照舰C wiki：名字配色 + 卡片金★ + 立绘边框） ---------- */
 .rn-1 { color: #cfd6e6; }

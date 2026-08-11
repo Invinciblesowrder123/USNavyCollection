@@ -61,7 +61,7 @@ const Homeport = (() => {
         const types = (sl.types || sl).map(t => ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦/水爆', '电探', '高角炮', '机枪', '声呐/爆雷', '设备'][t - 1]).join('/');
         const size = def.sizes ? def.sizes[i] : 24;
         return `<div class="eq-slot" data-slot="${i}">
-          ${ed ? `<b>${Util.esc(ed.zh)}</b> ${UI.starHtml(eq)}` : `<span class="dim">空槽</span>`}
+          ${ed ? `${UI.eqNameHtml(ed)} ${UI.starHtml(eq)}` : `<span class="dim">空槽</span>`}
           <span class="dim">[${types}${def.sizes ? ` · ${size}机` : ''}]</span>
         </div>`;
       }).join('');
@@ -166,14 +166,14 @@ const Homeport = (() => {
       const cat = EquipmentData[eq.id].cat;
       (groups[cat] = groups[cat] || []).push(eq);
     }
-    const catOrder = ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '舰攻', '舰爆', '水侦', '水爆', '对空电探', '对水电探', '高角炮', '机枪', '声呐', '爆雷', '穿甲弹', '设备'];
+    const catOrder = CAT_ORDER;
     const groupHtml = Object.keys(groups).sort((a, b) => catOrder.indexOf(a) - catOrder.indexOf(b)).map(cat => `
       <div class="eq-cat-title">${EQUIP_CAT_ZH[cat] || cat}（${groups[cat].length}）</div>
       ${groups[cat].map(eq => {
         const ed = EquipmentData[eq.id];
         const stx = Object.entries(ed.stat).map(([k, v]) => `${EQUIP_STAT_ZH[k]}${v > 0 ? '+' : ''}${v}`).join(' ');
         return `<div class="eq-pick-item" data-eq="${eq.uid}">
-          <span><b>${UI.esc(ed.zh)}</b> ${UI.starHtml(eq)}</span>
+          <span><b>${UI.eqNameHtml(ed)}</b> ${UI.starHtml(eq)}</span>
           <span class="eq-stat">${stx}</span>
         </div>`;
       }).join('')}`).join('');
@@ -181,7 +181,7 @@ const Homeport = (() => {
     const html = `
       <span class="modal-close" data-close>×</span>
       <h3>更换装备 <span class="dim">${UI.esc(UI.shipTitle(s))} · 槽位 ${slotIdx + 1} [${types}]</span></h3>
-      <div class="hint">当前装备：${cur ? UI.esc(EquipmentData[cur.id].zh) : '<span class="dim">（空）</span>'} ｜ 点击下方装备替换；「卸下」将装备放回仓库。</div>
+      <div class="hint">当前装备：${cur ? UI.eqNameHtml(EquipmentData[cur.id]) : '<span class="dim">（空）</span>'} ｜ 点击下方装备替换；「卸下」将装备放回仓库。</div>
       <div class="eq-picker">${groupHtml || '<div class="hint">没有可用的同类装备。去工厂开发吧！</div>'}</div>
       <div class="btn-row"><button class="btn btn-red btn-sm" data-clear>卸下当前装备</button></div>`;
 
