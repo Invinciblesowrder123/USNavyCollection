@@ -26,6 +26,7 @@ const UI = (() => {
     /* 顶部一级菜单（图标+文字置顶UI） */
     const defs = [
       ['home', '🏠 母港', ''],
+      ['dormitory', '🛏 宿舍', ''],
       ['sortie', '⚔️ 出击', ''],
       ['formation', '👥 编成', ''],
       ['factory', '🛠 工厂', ''],
@@ -49,9 +50,9 @@ const UI = (() => {
     }
   }
 
-  function toast(msg, ms = 2600) {
+  function toast(msg, ms = 2600, opts = {}) {
     let t = $('#toast');
-    t.innerHTML = `<div class="toast">${Util.esc(msg)}</div>`;
+    t.innerHTML = `<div class="toast">${opts.html ? msg : Util.esc(msg)}</div>`;
     clearTimeout(t._h);
     t._h = setTimeout(() => { t.innerHTML = ''; }, ms);
   }
@@ -202,12 +203,30 @@ const UI = (() => {
     return `<div class="ship-card" data-uid="${uid}">
       ${flag}
       ${stateBadges(uid)}
-      ${portraitImg(s.id, 'portrait', '', s.kai)}
+      ${shipIcon(uid)}
       <div class="hpbar"><div class="${cls}" style="width:${Math.round(ratio * 100)}%"></div></div>
       <div class="card-info">
         <span>${shipNameHtml(def)}${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} <span class="dim">${def.en}</span></span>
         <span class="lv">Lv.${s.lv}</span>
       </div>
+    </div>`;
+  }
+
+  /* 舰艇图标（舰种徽章 + 稀有度星标，替代立绘头像的紧凑展示，用于列表/卡片/战斗） */
+  function shipIcon(uid, extra = '') {
+    const s = Game.state.ships[uid];
+    if (!s) return '';
+    return shipIconDef(Game.shipDef(s), extra);
+  }
+
+  /* 舰艇图标（按舰船定义渲染；建造队列等无 uid 场景；extra 附加样式类） */
+  function shipIconDef(def, extra = '') {
+    if (!def) return '';
+    const t = def.type || 'UN';
+    const r = Util.clamp(def.rarity || 1, 1, 5);
+    return `<div class="sicon type-${Util.esc(t)} sicon-r${r}${extra ? ' ' + extra : ''}">
+      <span class="type-code">${Util.esc(t)}</span>
+      <span class="type-stars">${'★'.repeat(r)}</span>
     </div>`;
   }
 
@@ -242,7 +261,7 @@ const UI = (() => {
     return `<span class="countdown">${Util.fmtTime(ms)}</span>`;
   }
 
-  return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipTitle, shipNameHtml, rarityStars, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml, eqNameHtml, eqRarityTag, eqRarityCls };
+  return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipIcon, shipIconDef, shipTitle, shipNameHtml, rarityStars, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml, eqNameHtml, eqRarityTag, eqRarityCls };
 })();
 
 window.UI = UI;

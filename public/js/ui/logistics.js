@@ -113,7 +113,7 @@ const LogisticsUI = (() => {
             const s = st.ships[r.ship];
             const def = Game.shipDef(s);
             const left = r.end - Date.now();
-            return `<div class="ship-card dock-card" style="width:23%">${UI.portraitImg(s.id, 'portrait', '', s.kai)}
+            return `<div class="ship-card dock-card" style="width:23%">${UI.shipIcon(s.uid)}
               <div class="card-info"><span>${UI.shipNameHtml(def)}</span><span class="lv countdown" data-until="${r.end}">${Util.fmtTime(left)}</span></div>
             </div>`;
           }).join('')}

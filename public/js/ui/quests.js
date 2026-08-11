@@ -53,9 +53,9 @@ const QuestsUI = (() => {
         const parts = [];
         if (r.q.reward.unlockFleet) parts.push(`第${['', '一', '二', '三', '四'][r.q.reward.unlockFleet]}舰队已解锁！`);
         if (r.q.reward.equipCap) parts.push(`装备仓库+${r.q.reward.equipCap}格`);
-        if (r.ships.length) parts.push(`舰娘：${r.ships.map(s => UI.shipNameHtml(Game.shipDef(s))).join('、')}`);
-        if (r.eqs.length) parts.push(`装备：${r.eqs.map(e => UI.eqNameHtml(EquipmentData[e.id])).join('、')}`);
-        UI.toast(`任务完成！${parts.join(' ')}`);
+        if (r.ships.length) parts.push(`舰娘：${r.ships.map(s => UI.shipNameHtml(Game.shipDef(s)) + (s.locked ? '（已自动上锁）' : '')).join('、')}`);
+        if (r.eqs.length) parts.push(`装备：${r.eqs.map(e => UI.eqNameHtml(EquipmentData[e.id]) + (e.locked ? '（已自动上锁）' : '')).join('、')}`);
+        UI.toast(`任务完成！${parts.join(' ')}`, 2600, { html: true });
         Game.save();
         quests(root);
       });

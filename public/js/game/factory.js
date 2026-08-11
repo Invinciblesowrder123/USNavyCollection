@@ -43,11 +43,7 @@ const Factory = (() => {
     const st = G.state;
     const job = st.construction[i];
     if (!job || Date.now() < job.end) return { ok: false, msg: '尚未建造完成！' };
-    /* 装备仓库上限检查（新舰自带初始装备，仓库满则无法领取；测试模式豁免） */
-    const needEq = (ShipData[job.shipId].equip || []).length;
-    if (!G.isTestMode() && G.equipCapWouldExceed(needEq)) {
-      return { ok: false, msg: `装备仓库已满（${G.equipCount()}/${G.equipCap()}）！新舰自带初始装备，请先解体或用掉部分装备。` };
-    }
+    /* 新舰自带初始装备直接装备在舰上，不占仓库（闲置）容量，无需仓库上限检查 */
     st.construction.splice(i, 1);
     const ship = G.createShip(job.shipId, 1);
     G.equipDefaults(ship.uid);   // 新船自带默认装备（参照wiki：入手舰船自带初始搭载）
@@ -83,9 +79,9 @@ const Factory = (() => {
     const devMats = st.resources.devMats || 0;
     if (devMats < 1) return { ok: false, msg: '开发资材不足！请先完成任务或远征获取开发资材。' };
     if (!G.canAfford(recipe)) return { ok: false, msg: '资源不足！' };
-    /* 装备仓库上限检查（wiki：装备数达到上限时无法开发，开发前即拒绝；测试模式豁免） */
+    /* 装备仓库上限检查（wiki：闲置装备数达到上限时无法开发，开发前即拒绝；测试模式豁免） */
     if (!G.isTestMode() && G.equipCapWouldExceed(1)) {
-      return { ok: false, msg: `装备仓库已满（${G.equipCount()}/${G.equipCap()}）！请先解体或用掉部分装备。` };
+      return { ok: false, msg: `装备仓库已满（${G.equipIdleCount()}/${G.equipCap()}）！请先解体或用掉部分装备。` };
     }
     const pv = developPreview(recipe, secretaryUid);
     const secInst = secretaryUid ? st.ships[secretaryUid] : null;

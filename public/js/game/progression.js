@@ -308,11 +308,10 @@ const Progression = (() => {
     const st = G.state;
     if (!canClaim(qid)) return { ok: false, msg: '任务未完成' };
     const q = QUESTS.find(x => x.id === qid);
-    /* 装备仓库上限检查（wiki：装备数满时无法领取含装备/舰娘的任务奖励；测试模式豁免） */
-    const needEq = (q.reward.equip ? q.reward.equip.length : 0) +
-      (q.reward.ship ? q.reward.ship.reduce((s, id) => s + (ShipData[id].equip || []).length, 0) : 0);
+    /* 装备仓库上限检查（wiki：闲置装备数满时无法领取含装备奖励的任务；舰娘奖励自带装备直接装备在舰上不占仓库容量；测试模式豁免） */
+    const needEq = (q.reward.equip ? q.reward.equip.length : 0);
     if (!G.isTestMode() && needEq > 0 && G.equipCapWouldExceed(needEq)) {
-      return { ok: false, msg: `装备仓库已满（${G.equipCount()}/${G.equipCap()}）！请先解体或用掉部分装备后再领取奖励。` };
+      return { ok: false, msg: `装备仓库已满（${G.equipIdleCount()}/${G.equipCap()}）！请先解体或用掉部分装备后再领取奖励。` };
     }
     st.quests[qid].claimed = true;
     const r = addQuestReward(st, q);

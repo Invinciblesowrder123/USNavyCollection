@@ -68,9 +68,9 @@ const Homeport = (() => {
 
       return `
         <span class="modal-close" data-close>×</span>
-        <h3>${UI.shipNameHtml(def)} ${UI.rarityStars(def.rarity)} <span class="dim">${UI.esc(def.en)}</span> <span class="dim">${SHIP_TYPE_ZH[def.type]}</span></h3>
+        <h3>${UI.shipNameHtml(def)} ${UI.rarityStars(def.rarity)} ${s.locked ? '<span class="state-badge morale">锁</span>' : ''} <span class="dim">${UI.esc(def.en)}</span> <span class="dim">${SHIP_TYPE_ZH[def.type]}</span></h3>
         <div class="flex">
-          <div style="width:170px">${UI.portraitImg(s.id, 'portrait', '', s.kai)}
+          <div style="width:170px">${UI.shipIcon(s.uid, 'tall')}
             <div class="text-center dim">Lv.${s.lv} ${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} · 补给${supply}%</div>
           </div>
           <div class="grow">
@@ -123,6 +123,7 @@ const Homeport = (() => {
         Game.save(); refresh();
       });
       m.root.querySelector('[data-act="scrap"]').addEventListener('click', () => {
+        if (s.locked) { UI.toast('该舰艇已上锁（首个舰艇/稀有舰艇自动上锁），请先解锁再解体。'); return; }
         if (!confirm(`确定解体 ${Game.shipDef(s).zh}？\n（解体后其装备一并销毁）`)) return;
         Game.destroyShip(uid);
         Game.save();
@@ -343,7 +344,7 @@ const Homeport = (() => {
       ${secDef ? `
       <div class="panel panel-deco secretary-panel">
         <div class="sec-frame">
-          ${UI.portraitImg(sec.id, 'portrait', '', sec.kai)}
+          ${UI.shipIcon(sec.uid, 'tall')}
           <div class="sec-type-badge">${SHIP_TYPE_ZH[secDef.type]}</div>
         </div>
         <div class="secretary-info">

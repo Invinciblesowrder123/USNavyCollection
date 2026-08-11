@@ -16,6 +16,10 @@ const Game = (() => {
   const INFINITE_RES = 999999;   // 测试模式资源显示值
   const SCREW_CAP = 3000;
   const EQUIP_CAP_DEFAULT = 500; // 装备仓库上限（参照 kcwiki：初始150格，本作扩至500格，可任务扩充）
+  /* 自动上锁（参照舰C：防误解体/误用素材）：
+   * 首个获得的舰艇必定上锁；稀有舰艇=稀有度≥4（紫/金）；稀有装备=稀有度≥4（紫）；消耗品全部上锁 */
+  const RARE_SHIP_MIN = 4;
+  const RARE_EQ_MIN = 4;
 
   /* ---- 测试模式（不写入游戏存档） ---- */
   let debug = { testMode: false };
@@ -55,6 +59,7 @@ const Game = (() => {
     ships: {},                          // uid -> shipInstance
     equipment: {},                      // uid -> equipInstance {uid,id,star}
     equipCap: EQUIP_CAP_DEFAULT,        // 装备仓库上限（初始500，任务可扩充）
+    firstShipLocked: false,             // 首个获得的舰艇已自动上锁（记录一次）
     construction: [],                   // {start,end,recipe} 建造队列
     development: [],                    // {start,end,recipe} 开发队列
     repairs: [null, null],              // 入渠槽位 {ship,start,end}
@@ -175,10 +180,23 @@ const Game = (() => {
   /* ============ 舰船实例 ============ */
   function nextUid() { return uidSeq++; }
 
+  /* 自动上锁判定 */
+  function shouldAutoLockShip(shipId) {
+    const d = ShipData[shipId];
+    return !!(d && (d.rarity || 1) >= RARE_SHIP_MIN);
+  }
+  function shouldAutoLockEquip(equipId) {
+    const ed = EquipmentData[equipId];
+    return !!(ed && ((ed.r || 1) >= RARE_EQ_MIN || ed.cat === '消耗品'));
+  }
+
   function createShip(shipId, lv = 1) {
     const uid = 's' + nextUid();
     const def = ShipData[shipId];
     const st = def.stats;
+    /* 首个获得的舰艇（无论稀有度）自动上锁 */
+    const firstShip = !state.firstShipLocked;
+    if (firstShip) state.firstShipLocked = true;
     state.ships[uid] = {
       uid, id: shipId, kai: 0, lv, exp: 0,
       hp: st[0], morale: 49,
@@ -186,7 +204,7 @@ const Game = (() => {
       equipped: [],                  // 装备 uid 列表
       modern: { fp: 0, tp: 0, aa: 0, arm: 0, evd: 0, asw: 0, los: 0 },
       supply: { fuel: 1, ammo: 1 },  // 0~1 补给比例
-      locked: false
+      locked: firstShip || shouldAutoLockShip(shipId)   // 首个舰艇 / 稀有舰艇（紫/金）自动上锁
     };
     if (typeof Progression !== 'undefined') {
       const t = def.type;
@@ -201,6 +219,8 @@ const Game = (() => {
   function createEquip(equipId) {
     const uid = 'e' + nextUid();
     state.equipment[uid] = { uid, id: equipId, star: 0 };
+    /* 稀有装备（紫）/ 消耗品 自动上锁 */
+    if (shouldAutoLockEquip(equipId)) state.equipment[uid].locked = true;
     return state.equipment[uid];
   }
 
@@ -219,16 +239,25 @@ const Game = (() => {
     delete state.equipment[uid];
   }
 
-  /* ============ 装备仓库上限（数量系统，参照 kcwiki「装备」：初始500格） ============ */
+  /* ============ 装备仓库上限（数量系统，参照 kcwiki「装备」：初始500格）
+   * 存储计数仅统计「闲置装备」（未装备在舰艇上的）；装备在舰艇上的不占仓库容量 ============ */
   function equipCount() { return Object.keys(state.equipment || {}).length; }
+  /* 闲置装备数（未装备在任何舰艇上） */
+  function equipIdleCount() {
+    const used = new Set();
+    for (const s of Object.values(state.ships || {})) for (const e of (s.equipped || [])) used.add(e);
+    let n = 0;
+    for (const k in state.equipment) if (!used.has(k)) n++;
+    return n;
+  }
   function equipCap() { return state.equipCap || EQUIP_CAP_DEFAULT; }
   /* 扩充仓库（任务奖励调用） */
   function expandEquipCap(n) {
     state.equipCap = Math.max(EQUIP_CAP_DEFAULT, (state.equipCap || EQUIP_CAP_DEFAULT) + (n || 0));
   }
-  /* 新增 need 件装备是否会超过仓库上限 */
+  /* 新增 need 件闲置装备是否会超过仓库上限 */
   function equipCapWouldExceed(need) {
-    return equipCount() + (need || 0) > equipCap();
+    return equipIdleCount() + (need || 0) > equipCap();
   }
 
   /* 当前形态定义（含改造形态） */
@@ -339,6 +368,7 @@ const Game = (() => {
     state.ships = {};
     state.equipment = {};
     state.equipCap = EQUIP_CAP_DEFAULT;
+    state.firstShipLocked = false;
     state.construction = [];
     state.development = [];
     state.repairs = [null, null];
@@ -406,6 +436,10 @@ const Game = (() => {
     } else if (state.equipCap < EQUIP_CAP_DEFAULT) {
       /* 旧档（150/200/250 等）：扩容值 = 旧值 - 旧基准150，迁移后叠加到新基准500 */
       state.equipCap = EQUIP_CAP_DEFAULT + Math.max(0, state.equipCap - 150);
+    }
+    /* 旧档迁移：首个舰艇自动上锁标记（已有舰艇 → 视为已上锁过，不追溯；无舰艇 → 下一艘即首个） */
+    if (typeof state.firstShipLocked !== 'boolean') {
+      state.firstShipLocked = Object.keys(state.ships || {}).length > 0;
     }
     /* 旧版开发队列（20秒队列制）已废弃：开发改为即时结算（wiki） */
     if (Array.isArray(state.development) && state.development.length) state.development = [];
@@ -518,7 +552,8 @@ const Game = (() => {
   return {
     state, save, load, loadData, serialize, setSaveHook, newGame, regen, canAfford, spend, gain,
     createShip, createEquip, destroyShip, destroyEquip, equipDefaults,
-    equipCount, equipCap, expandEquipCap, equipCapWouldExceed,
+    equipCount, equipIdleCount, equipCap, expandEquipCap, equipCapWouldExceed,
+    shouldAutoLockShip, shouldAutoLockEquip,
     shipDef, shipStats, fleetLos, fleetHasName, addAdmiralExp, resourceCap,
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
     setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets

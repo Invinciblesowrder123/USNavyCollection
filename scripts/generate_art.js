@@ -10,14 +10,14 @@ const path = require('path');
 const { SHIPS, SHIP_TYPE_ZH } = require('../public/js/data/ships.js');
 
 /* ---------- 配色 ---------- */
-const TYPE_BG = {
-  BB: ['#1c3a5e', '#0e1f33'], BBV: ['#1c3a5e', '#0e1f33'],
-  CV: ['#1b5e8a', '#0c2d44'], CVB: ['#1b5e8a', '#0c2d44'], CVL: ['#2a7a9e', '#14485f'],
-  CA: ['#264a6e', '#12283c'], CAV: ['#264a6e', '#12283c'],
-  CL: ['#3b6ea5', '#1c3a5e'], CLT: ['#3b6ea5', '#1c3a5e'],
-  DD: ['#2f6f4f', '#143725'], DE: ['#2f6f4f', '#143725'],
-  SS: ['#22353f', '#0d161c'],
-  AV: ['#5e3a6e', '#2c1a35'], AS: ['#7a5a2a', '#3d2c12']
+/* 立绘背景按稀有度配色（与舰名配色/立绘边框同色系：1银白 2绿 3蓝 4紫 5金），
+ * 深色调保证浅色文字与人物可读；舰种仍以左上角徽章与底部信息条区分 */
+const RARITY_BG = {
+  1: ['#3a4256', '#1c2230'],
+  2: ['#2f6f4f', '#143725'],
+  3: ['#1c4a7a', '#0e2540'],
+  4: ['#4a2f6b', '#241238'],
+  5: ['#6b5518', '#33280c']
 };
 
 const TYPE_COLLAR = {
@@ -120,7 +120,7 @@ function facePart(seeded) {
 
 /* ---------- 生成一张立绘 ---------- */
 function portrait(ship) {
-  const bg = TYPE_BG[ship.type] || TYPE_BG.DD;
+  const bg = RARITY_BG[ship.rarity] || RARITY_BG[1];
   const collar = TYPE_COLLAR[ship.type] || '#cfe8ff';
   const hairColor = HAIR_COLORS[(ship.id.length + ship.rarity) % HAIR_COLORS.length];
   const style = HAIR_OVERRIDE[ship.id] || HAIRSTYLES[(ship.id.length + ship.stats[8]) % HAIRSTYLES.length];

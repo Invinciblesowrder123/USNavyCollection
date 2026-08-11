@@ -606,6 +606,7 @@ fk2.kai = 1;
 assert('素材值 改DD=火力2', Progression.materialValue(fk2.uid).fp === 2, JSON.stringify(Progression.materialValue(fk2.uid)));
 const iowaM = Game.createShip('iowa', 60);
 iowaM.kai = 1;
+iowaM.locked = false;   // 稀有舰艇自动上锁，素材测试需先解锁
 const imv = Progression.materialValue(iowaM.uid);
 assert('素材值 改BB=火力4装甲4对空2', imv.fp === 4 && imv.arm === 4 && imv.aa === 2, JSON.stringify(imv));
 /* 奖励/偏斜公式（参照wiki上升量表） */
@@ -646,19 +647,26 @@ Progression.modernize(t4.uid, [Game.createShip('fletcher', 1).uid]);
 assert('普通素材不提供运/对潜/耐久', !t4.modern.lck && !t4.modern.asw && !t4.modern.hp, JSON.stringify(t4.modern));
 /* 海防舰(DE)改修：耐久/对潜/运 */
 const de = Game.createShip('sbroberts', 1);
+de.locked = false;   // 稀有舰艇自动上锁，素材测试需先解锁
 const dev1 = Progression.materialValue(de.uid);
 assert('DE素材=耐久1对潜1运1', dev1.hp === 1 && dev1.asw === 1 && dev1.lck === 1, JSON.stringify(dev1));
 const t5 = Game.createShip('mahan', 1);
 const pv5 = Progression.modernizePreview(t5.uid, [de.uid]);
 assert('DE预览提供耐久/对潜/运', pv5.ok && pv5.shown.hp === 1 && pv5.shown.asw === 1 && pv5.shown.lck === 1, JSON.stringify(pv5));
-Progression.modernize(t5.uid, [de.uid, Game.createShip('sbroberts', 1).uid]);
+const de2 = Game.createShip('sbroberts', 1);
+de2.locked = false;
+Progression.modernize(t5.uid, [de.uid, de2.uid]);
 assert('DE改修后三属性+1以上', t5.modern.hp >= 1 && t5.modern.asw >= 1 && t5.modern.lck >= 1, JSON.stringify(t5.modern));
 assert('运改修上限+8', Progression.modernCap(t4.uid, 'lck') === 8, 'cap=' + Progression.modernCap(t4.uid, 'lck'));
 assert('对潜改修上限+9', Progression.modernCap(t4.uid, 'asw') === 9);
 /* 改造重置：火力/雷装/对空/装甲不继承，运/对潜/耐久继承 */
 const t6 = Game.createShip('mahan', 30);
-Progression.modernize(t6.uid, [Game.createShip('fletcher', 1).uid, Game.createShip('fletcher', 1).uid]);
-Progression.modernize(t6.uid, [Game.createShip('sbroberts', 1).uid, Game.createShip('sbroberts', 1).uid]);
+const fkM1 = Game.createShip('fletcher', 1); fkM1.locked = false;   // 稀有舰艇自动上锁，素材测试需先解锁
+const fkM2 = Game.createShip('fletcher', 1); fkM2.locked = false;
+Progression.modernize(t6.uid, [fkM1.uid, fkM2.uid]);
+const de3 = Game.createShip('sbroberts', 1); de3.locked = false;
+const de4 = Game.createShip('sbroberts', 1); de4.locked = false;
+Progression.modernize(t6.uid, [de3.uid, de4.uid]);
 assert('改造前有改修值', t6.modern.fp > 0 || t6.modern.tp > 0);
 assert('改造前DE属性已改修', t6.modern.asw >= 1);
 const rmt = Progression.remodel(t6.uid);

@@ -1073,7 +1073,7 @@ const SortieUI = (() => {
       root.querySelector('#battleLog').insertAdjacentHTML('beforeend',
         `<div class="line" style="margin-top:8px">
           <span class="big-rank">${r.result.rank} ${rankLabel}</span>
-          ${r.drop ? `<span style="color:var(--gold)"> 掉落新舰娘：${UI.esc(Game.shipDef(r.drop).zh)}！</span>` : ''}
+          ${r.drop ? `<span style="color:var(--gold)"> 掉落新舰娘：${UI.esc(Game.shipDef(r.drop).zh)}${r.drop.locked ? '（已自动上锁）' : ''}！</span>` : ''}
           <div class="hint">${gains.map(g => { const s = st.ships[g.uid]; return `${UI.esc(Game.shipDef(s).zh)} EXP+${g.exp}${g.ups ? ` 升级Lv.${s.lv}！` : ''}`; }).join(' ｜ ')}${admExp ? ` ｜ 提督EXP+${admExp}` : ''}</div>
         </div>`);
       const nav = document.createElement('div');
@@ -1136,12 +1136,27 @@ const SortieUI = (() => {
     step();
   }
 
+  /* 战斗图标稀有度：玩家舰/演习对手取数据稀有度；深海敌舰按 栖姬=5星 / 精锐·旗舰=4星 / 普通=3星 */
+  function battleRarity(s) {
+    if (s.isPlayer && s.uid) {
+      const inst = Game.state.ships[s.uid];
+      if (inst) return Util.clamp(Game.shipDef(inst).rarity || 1, 1, 5);
+    }
+    if (s.key) {
+      if (ShipData[s.key]) return Util.clamp(ShipData[s.key].rarity || 1, 1, 5);
+      const d = DEEP_TEMPLATES[s.key];
+      if (d) return d.boss ? 5 : (s.key.endsWith('e') || s.key.endsWith('f') ? 4 : 3);
+    }
+    return 3;
+  }
+
   function battleShipHtml(s, idx) {
     const name = s.zh || s.name || '';
     const t = s.type || 'UN';
-    const zh = (typeof SHIP_TYPE_ZH !== 'undefined' && SHIP_TYPE_ZH[t]) ? SHIP_TYPE_ZH[t] : t;
+    const r = battleRarity(s);
+    const stars = '★'.repeat(r) + '☆'.repeat(5 - r);
     return `<div class="battle-ship" data-ship="${idx}">
-      <div class="ship-icon type-${Util.esc(t)}"><span class="type-code">${Util.esc(t)}</span><span class="type-name">${Util.esc(zh)}</span></div>
+      <div class="ship-icon type-${Util.esc(t)}"><span class="type-code">${Util.esc(t)}</span><span class="type-stars">${stars}</span></div>
       <div class="bname">${Util.esc(name)}${s.boss ? ' ☠' : ''}</div>
       <div class="bhp"><div class="ok" style="width:100%"></div></div>
     </div>`;

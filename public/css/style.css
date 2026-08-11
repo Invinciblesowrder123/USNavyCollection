@@ -128,6 +128,11 @@ body.unauth #topbar, body.unauth #navbar { display: none; }
 .equip-row.selected { background: rgba(232, 194, 74, 0.12); border-color: var(--gold); }
 .equip-row .eq-chk { margin-right: 2px; accent-color: var(--gold); cursor: pointer; }
 .equip-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 4px; font-size: 12px; }
+.equip-tools select {
+  padding: 3px 6px; border-radius: 4px; font-size: 12px; cursor: pointer;
+  background: #0d1b2e; color: var(--text); border: 1px solid var(--line);
+}
+.equip-tools .eq-rare-chip { cursor: pointer; user-select: none; }
 
 /* ---------- 装备稀有度（等级）配色（参照舰C wiki：白→绿→蓝→紫→金） ---------- */
 .eq-r1 { color: #cfd6e6; }
@@ -461,6 +466,24 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 }
 .roster-area.drag-over { border-color: var(--blue); background: rgba(90,168,232,0.08); }
 
+/* ---------- 舰艇宿舍 ---------- */
+.dorm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 8px; }
+.dorm-cell { position: relative; }
+.dorm-fleet-badge {
+  position: absolute; top: 4px; left: 4px; z-index: 2;
+  background: rgba(10,20,36,0.85); color: var(--blue);
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--blue);
+}
+.dorm-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.dorm-chip {
+  font-size: 12px; color: var(--dim);
+  background: rgba(10,20,36,0.5); border: 1px solid var(--line);
+  padding: 3px 10px; border-radius: 4px;
+}
+.dorm-chip b { color: var(--gold); margin-left: 2px; }
+.dorm-chip.danger b { color: var(--red); }
+
 /* ---------- 模态框 ---------- */
 #modal-root .modal-mask {
   position: fixed; inset: 0; background: rgba(2,6,12,0.75); z-index: 100;
@@ -501,6 +524,52 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .eq-pick-item:hover { border-color: var(--gold); background: rgba(232,194,74,0.08); }
 .eq-pick-item .eq-stat { color: var(--dim); font-size: 11px; }
 
+/* ---------- 舰艇图标（舰种徽章 + 稀有度星标，替代立绘头像的紧凑展示） ---------- */
+.sicon {
+  width: 100%; aspect-ratio: 4 / 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  background: linear-gradient(180deg, #203a55, #101f33);
+}
+.sicon .type-code {
+  font-size: 30px; font-weight: 800; letter-spacing: 1px; line-height: 1;
+  color: #cfe0f2; text-shadow: 0 0 10px rgba(120,180,255,.6);
+}
+.sicon .type-stars {
+  color: var(--gold); font-size: 12px; letter-spacing: 1px; line-height: 1;
+  text-shadow: 0 0 4px rgba(0,0,0,.8);
+}
+.sicon.type-DD  { background: linear-gradient(180deg, #203a55, #101f33); }
+.sicon.type-CL  { background: linear-gradient(180deg, #1c4a6b, #0e2438); }
+.sicon.type-CLT { background: linear-gradient(180deg, #1c5a6b, #0e3038); }
+.sicon.type-CA  { background: linear-gradient(180deg, #45286b, #231238); }
+.sicon.type-CAV { background: linear-gradient(180deg, #3d2a6b, #1e1238); }
+.sicon.type-BB  { background: linear-gradient(180deg, #6b1e2c, #380e14); }
+.sicon.type-BBV { background: linear-gradient(180deg, #5e2a1c, #32160e); }
+.sicon.type-CV  { background: linear-gradient(180deg, #6b5a1c, #38300e); }
+.sicon.type-CVB { background: linear-gradient(180deg, #6b4a1c, #38260e); }
+.sicon.type-CVL { background: linear-gradient(180deg, #5a6b1c, #2e380e); }
+.sicon.type-SS  { background: linear-gradient(180deg, #1c5a3a, #0e3020); }
+.sicon.type-SSV { background: linear-gradient(180deg, #1c4a5a, #0e2830); }
+.sicon.type-DE  { background: linear-gradient(180deg, #2a5a6b, #143038); }
+.sicon.type-AV  { background: linear-gradient(180deg, #3d5a2a, #1e3014); }
+.sicon.type-AS  { background: linear-gradient(180deg, #4a4a5a, #262630); }
+.sicon.type-AP  { background: linear-gradient(180deg, #4a4a3a, #26261e); }
+.sicon-r1 { box-shadow: inset 0 0 0 1px rgba(207,214,230,.5); }
+.sicon-r2 { box-shadow: inset 0 0 0 1px rgba(142,224,142,.6); }
+.sicon-r3 { box-shadow: inset 0 0 0 1px rgba(109,179,255,.65); }
+.sicon-r4 { box-shadow: inset 0 0 0 1px rgba(199,125,255,.7); }
+.sicon-r5 { box-shadow: inset 0 0 0 1.5px #ffd700, 0 0 8px rgba(255,215,0,.3); }
+.sicon.tall { aspect-ratio: 2 / 3; }
+.sicon.tall .type-code { font-size: 40px; }
+.sicon.tall .type-stars { font-size: 14px; }
+.ship-card .sicon { border-bottom: 1px solid var(--line); }
+.dock-card .sicon { height: 100px; aspect-ratio: auto; }
+.sec-frame .sicon {
+  border-radius: 8px; border: 1px solid rgba(255, 215, 0, .35);
+  animation: secFloat 5.5s ease-in-out infinite;
+}
+.modal .sicon { border-radius: 8px; }
+
 /* ---------- 战斗 ---------- */
 .battlefield { display: flex; flex-direction: column; gap: 10px; position: relative; }
 #bf.night .battle-row { filter: brightness(.62) saturate(.8) hue-rotate(8deg); transition: filter .6s; }
@@ -521,7 +590,10 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
   font-size: 26px; font-weight: 800; letter-spacing: 1px; color: #cfe0f2;
   text-shadow: 0 0 10px rgba(120,180,255,.65); transition: transform .16s ease, color .2s ease;
 }
-.battle-ship .type-name { font-size: 10px; color: #9fb4c8; }
+.battle-ship .type-stars {
+  font-size: 9px; color: var(--gold); letter-spacing: 1px; line-height: 1;
+  text-shadow: 0 0 4px rgba(0,0,0,.85);
+}
 .battle-ship .ship-icon.type-DD  { background: linear-gradient(180deg, #203a55, #101f33); }
 .battle-ship .ship-icon.type-CL  { background: linear-gradient(180deg, #1c4a6b, #0e2438); }
 .battle-ship .ship-icon.type-CLT { background: linear-gradient(180deg, #1c5a6b, #0e3038); }

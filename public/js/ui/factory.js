@@ -44,7 +44,20 @@ const FactoryUI = (() => {
 
   /* 装备仓库批量选择状态（会话内保留） */
   let eqSel = new Set();
-  const EQ_SEL_LOW_MAX = 2;   // 「一键选择低级装备」稀有度上限（白/绿）
+  let eqSelType = 'ALL';          // 类别筛选（'ALL'=全部类别）
+  let eqSelRares = new Set();     // 稀有度筛选（空=全部，1白~5金）
+  let eqShowEquipped = false;     // 是否在仓库中显示装备在舰艇上的装备（默认不显示）
+  /* 装备是否满足「按条件选择」筛选（自动选择仅限 ★0 库存装备，装备中/上锁跳过） */
+  function eqSelMatch(st, euid, used) {
+    const eq = st.equipment[euid];
+    const ed = eq && EquipmentData[eq.id];
+    if (!ed || used.has(euid) || eq.locked) return null;
+    if (eq.star > 0) return null;
+    if (eqSelType !== 'ALL' && ed.cat !== eqSelType) return null;
+    const r = ed.r || 1;
+    if (eqSelRares.size && !eqSelRares.has(r)) return null;
+    return eq;
+  }
 
   function factory(root, arg) {
     let tab = arg === 'dev' ? 'dev' : arg === 'improve' ? 'improve' : arg === 'modernize' ? 'modernize' : arg === 'equip' ? 'equip' : 'build';
@@ -110,7 +123,7 @@ const FactoryUI = (() => {
             const left = c.end - Date.now();
             return `<div class="panel" style="margin:6px 0">
               <div class="flex" style="justify-content:space-between;align-items:center">
-                <div><b>${UI.shipNameHtml(def)}</b> <span class="dim">${UI.esc(def.en)}</span> ${UI.portraitImg(c.shipId, '', 'style="width:48px;height:64px;object-fit:cover"')}</div>
+                <div><b>${UI.shipNameHtml(def)}</b> <span class="dim">${UI.esc(def.en)}</span> <span style="display:inline-block;width:48px;vertical-align:middle">${UI.shipIconDef(def)}</span></div>
                 <div><span class="countdown" data-until="${c.end}">${left > 0 ? Util.fmtTime(left) : '完成！'}</span></div>
                 <button class="btn btn-gold btn-sm" data-claim="${i}" ${left > 0 ? 'disabled' : ''}>领取</button>
               </div></div>`;
@@ -146,7 +159,7 @@ const FactoryUI = (() => {
           <button class="btn btn-gold" data-act="dev10" ${devMats < 1 || !sec ? 'disabled' : ''}>10连开发 ×10</button>
         </div>
         <div id="devPoolPreview">${devPoolHtml()}</div>
-        <div class="hint">规则：投入四项资源（必消耗）+ 1开发资材（成功才消耗）。最高资源决定开发池（油/钢 &gt; 弹药 &gt; 铝）；提督等级≥装备稀有度×3 且 四项资源≥最低资源要求才会成功。开发不论成败均计入每日任务。10连开发按份数整批校验资源，开发资材按成功数逐个消耗、不足时提前停止。装备仓库（${Game.equipCount()}/${Game.equipCap()}）满时无法开发。</div>
+        <div class="hint">规则：投入四项资源（必消耗）+ 1开发资材（成功才消耗）。最高资源决定开发池（油/钢 &gt; 弹药 &gt; 铝）；提督等级≥装备稀有度×3 且 四项资源≥最低资源要求才会成功。开发不论成败均计入每日任务。10连开发按份数整批校验资源，开发资材按成功数逐个消耗、不足时提前停止。装备仓库（${Game.equipIdleCount()}/${Game.equipCap()} 闲置）满时无法开发。</div>
       </div>`;
     }
 
@@ -271,21 +284,38 @@ const FactoryUI = (() => {
       const catOrder = CAT_ORDER;
       const usedBy = {};
       for (const s of Object.values(st.ships)) for (const e of s.equipped || []) usedBy[e] = s.uid;
-      const total = all.length;
-      const capTxt = `<b>${total}/${Game.equipCap()}</b>`;
-      const fullWarn = Game.equipCount() >= Game.equipCap() ? '<span class="state-badge danger" style="margin-left:6px">仓库已满！</span>' : '';
+      /* 存储计数：仅统计闲置装备（装备在舰艇上的不占仓库容量） */
+      const idleCount = Object.keys(st.equipment).filter(eu => !usedBy[eu]).length;
+      const equippedCount = all.length - idleCount;
+      const capTxt = `<b>${idleCount}/${Game.equipCap()}</b>`;
+      const fullWarn = idleCount >= Game.equipCap() ? '<span class="state-badge danger" style="margin-left:6px">仓库已满！</span>' : '';
       const selCount = eqSel.size;
+      /* 筛选面板：类别下拉 + 稀有度标签（会话内保留） */
+      const usedSet = new Set();
+      for (const s of Object.values(st.ships)) for (const e of s.equipped || []) usedSet.add(e);
+      const typeOpts = ['ALL', ...Object.keys(groups).sort((a, b) => catOrder.indexOf(a) - catOrder.indexOf(b))]
+        .map(t => `<option value="${t}" ${eqSelType === t ? 'selected' : ''}>${t === 'ALL' ? '全部类别' : (EQUIP_CAT_ZH[t] || t)}</option>`).join('');
+      const rareChips = [1, 2, 3, 4, 5].map(r =>
+        `<span class="preset-recipe eq-rare-chip ${eqSelRares.has(r) ? 'active' : ''}" data-eq-rare="${r}" title="稀有度${EQUIP_RARITY_ZH[r]}">${EQUIP_RARITY_ZH[r]}</span>`).join('');
+      const matchCount = Object.keys(st.equipment).filter(eu => eqSelMatch(st, eu, usedSet)).length;
       return `<div class="panel">
-        <h3>装备仓库 <span class="dim">共 ${capTxt} 件（点击「解体」回收资源；装备中的装备需先卸下）</span>${fullWarn}</h3>
+        <h3>装备仓库 <span class="dim">共 ${capTxt} 件闲置（装备中 ${equippedCount} 件不占仓库容量）</span>${fullWarn}</h3>
         <div class="hint">装备可在「舰娘详情 → 点击装备槽」安装/卸下。多余装备建议解体换资源，或在「改修工厂」用作改修素材。仓库上限可通过任务扩充（参照 wiki：初始500格）。装备名颜色与标签 = 稀有度（白/绿/蓝/紫/金）。</div>
         <div class="equip-tools">
-          <button class="btn btn-sm" data-eq-sel-low>一键选择低级装备(R1~R2)</button>
+          <select data-eq-sel-type title="按装备类别筛选">${typeOpts}</select>
+          <span class="dim">稀有度：</span>
+          ${rareChips}
+          <button class="btn btn-sm" data-eq-sel-filter>按条件选择（可匹配 ${matchCount}）</button>
           <button class="btn btn-sm btn-red" data-eq-remove-sel ${selCount ? '' : 'disabled'}>一键移除选中（${selCount}）</button>
           <button class="btn btn-sm" data-eq-clear-sel ${selCount ? '' : 'disabled'}>取消选择</button>
-          <span class="dim">勾选后可批量移除；装备中/上锁不可勾选；选中项含稀有度≥3（蓝/紫/金）时移除前需二次确认。</span>
+          <label class="dim" style="cursor:pointer;margin-left:4px">
+            <input type="checkbox" class="eq-chk" data-eq-show-equipped ${eqShowEquipped ? 'checked' : ''}> 显示装备中（${equippedCount}）
+          </label>
         </div>
+        <div class="hint">「按条件选择」按 类别+稀有度 勾选 ★0 库存装备（装备中/上锁自动跳过，可再手动勾选补选）；选中项含稀有度≥3（蓝/紫/金）时移除前需二次确认。装备在舰艇上的装备不占用仓库容量。</div>
         ${Object.keys(groups).sort((a, b) => catOrder.indexOf(a) - catOrder.indexOf(b)).map(cat => {
-          const list = groups[cat];
+          const list = eqShowEquipped ? groups[cat] : groups[cat].filter(eq => !usedBy[eq.uid]);
+          if (!list.length) return '';
           return `<div class="section-title">${EQUIP_CAT_ZH[cat] || cat}（${list.length}）</div>
             ${list.map(eq => {
               const ed = EquipmentData[eq.id];
@@ -308,7 +338,9 @@ const FactoryUI = (() => {
                 </div>
               </div>`;
             }).join('')}`;
-        }).join('') || '<span class="dim">仓库为空，去「装备开发」制造装备吧！</span>'}
+        }).join('') || (equippedCount > 0 && !eqShowEquipped
+          ? '<span class="dim">闲置仓库为空（可勾选「显示装备中」查看舰艇上的装备）。</span>'
+          : '<span class="dim">仓库为空，去「装备开发」制造装备吧！</span>')}
         <div class="hint">解体回收量：<b>燃料/弹药/钢材/铝土</b> 按装备种类返还（参照 wiki：装备解体获得钢材与铝土为主）。开发成功判定的「最低资源要求」= 解体回收值×10。</div>
       </div>`;
     }
@@ -365,7 +397,7 @@ const FactoryUI = (() => {
             <span class="modal-close" data-close>×</span>
             <h3>开发成功！</h3>
             <div class="text-center" style="padding:16px">
-              <div style="font-size:20px">${UI.eqNameHtml(EquipmentData[r.eq.id])}</div>
+              <div style="font-size:20px">${UI.eqNameHtml(EquipmentData[r.eq.id])} ${r.eq.locked ? '<span class="state-badge morale">已自动上锁</span>' : ''}</div>
               <div class="dim">${UI.esc(EquipmentData[r.eq.id].en)} · ${EQUIP_CAT_ZH[EquipmentData[r.eq.id].cat]} ${statsTxt}</div>
             </div>
             <div class="hint">消耗 1 开发资材（剩余 ${Game.state.resources.devMats || 0}）。${UI.esc(pv.secZh)}·${UI.esc(pv.poolZh)} 出货率 ${pv.entries.find(x => x.id === r.eq.id).pct}%。</div>
@@ -402,7 +434,7 @@ const FactoryUI = (() => {
         b.addEventListener('click', () => {
           const r = Factory.claimBuild(parseInt(b.dataset.claim, 10));
           if (!r.ok) { UI.toast(r.msg); return; }
-          UI.toast(`建造完成！获得 ${UI.esc(Game.shipDef(r.ship).zh)}！`);
+          UI.toast(`建造完成！获得 ${UI.esc(Game.shipDef(r.ship).zh)}${r.ship.locked ? '（已自动上锁）' : ''}！`);
           Game.save(); render();
         });
       });
@@ -426,7 +458,7 @@ const FactoryUI = (() => {
         b.addEventListener('click', () => {
           const r = Improve.updateEquip(b.dataset.update, false);
           if (!r.ok) { UI.toast(r.msg); return; }
-          UI.toast(r.success ? `更新成功！获得 ${UI.eqNameHtml(EquipmentData[r.to])}★5！` : '更新失败……（素材已消耗）');
+          UI.toast(r.success ? `更新成功！获得 ${UI.eqNameHtml(EquipmentData[r.to])}★5！` : '更新失败……（素材已消耗）', 2600, { html: true });
           Game.save(); render();
         });
       });
@@ -434,7 +466,7 @@ const FactoryUI = (() => {
         b.addEventListener('click', () => {
           const r = Improve.updateEquip(b.dataset.updateG, true);
           if (!r.ok) { UI.toast(r.msg); return; }
-          UI.toast(`确定化更新成功！获得 ${UI.eqNameHtml(EquipmentData[r.to])}★5！`);
+          UI.toast(`确定化更新成功！获得 ${UI.eqNameHtml(EquipmentData[r.to])}★5！`, 2600, { html: true });
           Game.save(); render();
         });
       });
@@ -463,20 +495,35 @@ const FactoryUI = (() => {
         });
       });
 
-      /* ============ 装备仓库：批量选择 / 一键移除 ============ */
-      const lowSelBtn = root.querySelector('[data-eq-sel-low]');
-      if (lowSelBtn) lowSelBtn.addEventListener('click', () => {
+      /* ============ 装备仓库：条件筛选 / 批量选择 / 一键移除 ============ */
+      const showEqBtn = root.querySelector('[data-eq-show-equipped]');
+      if (showEqBtn) showEqBtn.addEventListener('change', () => {
+        eqShowEquipped = showEqBtn.checked;
+        render();
+      });
+      const typeSel = root.querySelector('[data-eq-sel-type]');
+      if (typeSel) typeSel.addEventListener('change', () => { eqSelType = typeSel.value; render(); });
+      root.querySelectorAll('[data-eq-rare]').forEach(el =>
+        el.addEventListener('click', () => {
+          const r = parseInt(el.dataset.eqRare, 10);
+          if (eqSelRares.has(r)) eqSelRares.delete(r); else eqSelRares.add(r);
+          render();
+        }));
+      const filterBtn = root.querySelector('[data-eq-sel-filter]');
+      if (filterBtn) filterBtn.addEventListener('click', () => {
         const st = Game.state;
         const used = new Set();
         for (const s of Object.values(st.ships)) for (const e of s.equipped || []) used.add(e);
+        let added = 0;
         for (const k in st.equipment) {
-          const eq = st.equipment[k];
-          const ed = EquipmentData[eq.id];
-          if (!ed || used.has(k) || eq.locked) continue;
-          if ((ed.r || 1) > EQ_SEL_LOW_MAX) continue;   // 只选低级（白/绿）
-          if (eq.star > 0) continue;                    // 已改修的不算低级
-          eqSel.add(k);
+          if (eqSelMatch(st, k, used)) {
+            if (!eqSel.has(k)) added++;
+            eqSel.add(k);
+          }
         }
+        UI.toast(added
+          ? `已按条件选择 ${added} 件装备（当前共选 ${eqSel.size} 件）`
+          : '没有符合条件的装备（已排除装备中/上锁/已改修★>0 的装备）');
         render();
       });
       root.querySelectorAll('[data-eq-check]').forEach(el => {

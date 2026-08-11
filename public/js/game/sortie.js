@@ -273,20 +273,15 @@ const Sortie = (() => {
     admGain = Math.round(admGain);
     if (admGain > 0) G.addAdmiralExp(admGain);
 
-    /* 掉落 */
+    /* 掉落（掉落舰自带默认装备直接装备在舰上，不占仓库闲置容量） */
     let drop = null;
     const dropTable = isBoss ? map.bossDrops : map.drops;
     if (dropTable && dropTable.length && Util.chance(isBoss ? 0.65 : 0.35)) {
       const weights = {};
       dropTable.forEach(id => weights[id] = RARITY_W[ShipData[id].rarity] || 10);
       const id = Util.weighted(weights);
-      const needEq = (ShipData[id].equip || []).length;
-      if (!G.isTestMode() && G.equipCapWouldExceed(needEq)) {
-        result.log.push('装备仓库已满，无法接收掉落舰……');
-      } else {
-        drop = G.createShip(id, 1);
-        G.equipDefaults(drop.uid);   // 掉落舰船自带默认装备
-      }
+      drop = G.createShip(id, 1);
+      G.equipDefaults(drop.uid);   // 掉落舰船自带默认装备
     }
 
     /* 血条与进度 */

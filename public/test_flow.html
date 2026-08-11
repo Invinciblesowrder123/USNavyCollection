@@ -23,6 +23,7 @@
 <script src="js/game/sortie.js"></script>
 <script src="js/ui/common.js"></script>
 <script src="js/ui/homeport.js"></script>
+<script src="js/ui/dormitory.js"></script>
 <script src="js/ui/sortie.js"></script>
 <script src="js/ui/factory.js"></script>
 <script src="js/ui/logistics.js"></script>
@@ -182,7 +183,7 @@
       const rmM = Progression.modernize(tgt.uid, [Game.createShip('benson', 1).uid]);
       R(rmM.ok, 'modernize:synthesize', JSON.stringify(rmM));
       /* 顶部一级菜单 + 工厂近代化改修页签 */
-      R(document.querySelectorAll('#navbar button').length === 9, 'nav:topmenu', 'n=' + document.querySelectorAll('#navbar button').length);
+      R(document.querySelectorAll('#navbar button').length === 10, 'nav:topmenu', 'n=' + document.querySelectorAll('#navbar button').length);
       UI.go('factory', 'modernize');
       R(document.querySelector('#screen').innerHTML.includes('近代化改修') && document.querySelector('#screen').innerHTML.includes('剩余可改修'), 'screen:factory-modernize');
       document.querySelector('#screen').querySelector('[data-mod-target]').click();
@@ -222,6 +223,47 @@
       const spare = Object.keys(Game.state.equipment).find(eu => !Object.values(Game.state.ships).some(s => (s.equipped || []).includes(eu)));
       const scrapR = Factory.scrapEquip(spare);
       R(scrapR.ok && !Game.state.equipment[spare], 'factory:scrapEquip', JSON.stringify(scrapR.gain));
+
+      /* 9. 舰艇宿舍：总览/筛选/排序/详情 */
+      UI.go('dormitory');
+      let dorHtml = document.querySelector('#screen').innerHTML;
+      R(dorHtml.includes('舰艇宿舍') && dorHtml.includes('dorm-grid'), 'dormitory:screen');
+      const dorCards = document.querySelectorAll('#screen .dorm-grid .ship-card');
+      R(dorCards.length >= 4, 'dormitory:cards', 'n=' + dorCards.length);
+      R(dorHtml.includes('稀有度') && dorHtml.includes('舰队') && dorHtml.includes('排序'), 'dormitory:tools');
+      /* 稀有度筛选：只显示★5 金色舰娘 */
+      document.querySelector('#screen [data-drarity="5"]').click();
+      const expR5 = Object.values(Game.state.ships).filter(s => (Game.shipDef(s).rarity || 1) === 5).length;
+      const goldCards = document.querySelectorAll('#screen .dorm-grid .ship-card');
+      R(goldCards.length === expR5 && expR5 > 0, 'dormitory:rarityFilter', 'n=' + goldCards.length + ' exp=' + expR5);
+      /* 舰队筛选：第1队 */
+      document.querySelector('#screen [data-drarity="0"]').click();
+      document.querySelector('#screen [data-dfleet="1"]').click();
+      const expF1 = Object.values(Game.state.ships).filter(s => Game.state.fleet[1].includes(s.uid)).length;
+      const f1Cards = document.querySelectorAll('#screen .dorm-grid .ship-card');
+      R(f1Cards.length === expF1, 'dormitory:fleetFilter', 'n=' + f1Cards.length + ' exp=' + expF1);
+      /* 未编队筛选 */
+      document.querySelector('#screen [data-dfleet="-1"]').click();
+      const expIdle = Object.values(Game.state.ships).filter(s => ![1, 2, 3, 4].some(f => Game.state.fleet[f].includes(s.uid))).length;
+      const idleCards = document.querySelectorAll('#screen .dorm-grid .ship-card');
+      R(idleCards.length === expIdle, 'dormitory:idleFilter', 'n=' + idleCards.length + ' exp=' + expIdle);
+      /* 舰种筛选：驱逐舰 */
+      document.querySelector('#screen [data-dfleet="0"]').click();
+      document.querySelector('#screen [data-drarity="0"]').click();
+      document.querySelector('#screen [data-dtype="DD"]').click();
+      const ddCards = document.querySelectorAll('#screen .dorm-grid .ship-card');
+      R(ddCards.length >= 1 && [...ddCards].every(c => Game.shipDef(Game.state.ships[c.dataset.uid]).type === 'DD'), 'dormitory:typeFilter', 'n=' + ddCards.length);
+      /* 排序：等级 低→高（首卡等级应最低） */
+      document.querySelector('#screen [data-dtype="ALL"]').click();
+      document.querySelector('#screen [data-dsort="lv:1"]').click();
+      const sortedCards = document.querySelectorAll('#screen .dorm-grid .ship-card');
+      const firstLv = Game.state.ships[sortedCards[0].dataset.uid].lv;
+      const minLv = Math.min(...[...sortedCards].map(c => Game.state.ships[c.dataset.uid].lv));
+      R(firstLv === minLv, 'dormitory:sortLvAsc', 'first=' + firstLv + ' min=' + minLv);
+      /* 点击舰娘图标 → 详情弹窗 */
+      document.querySelector('#screen .dorm-grid .ship-card').click();
+      R(document.querySelector('#modal-root').innerHTML.includes('耐久') && document.querySelector('#modal-root').innerHTML.includes('装备'), 'dormitory:detailModal');
+      document.querySelector('#modal-root').innerHTML = '';
 
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {
