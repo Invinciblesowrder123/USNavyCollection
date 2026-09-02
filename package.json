@@ -9,6 +9,7 @@
     "art-ai": "node scripts/generate_ai_art.js",
     "sim": "node scripts/simulate.js",
     "test": "node scripts/simulate.js",
+    "test:migration": "node scripts/test_save_migration.js",
     "admin": "node scripts/create_admin.js"
   },
   "dependencies": {

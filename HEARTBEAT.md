@@ -402,6 +402,23 @@
 
 ---
 
+## 2026-09-02 — 存档迁移框架版本化
+
+**完成：**
+- `state.js` 新增 `CURRENT_SAVE_VERSION = 2`，新存档同时写入 `version/saveVersion`。
+- 将旧档历史补丁集中到 `migrateV1ToV2()`，新增 `SAVE_MIGRATIONS` 版本流水线。
+- 新增 `normalizeSave()`，每次读档统一修复资源、舰队、解锁状态、海域进度和容器字段。
+- `applySave()` 精简为迁移 → 规范化 → 初始舰队/历史装备补发 → UID 重建 → 离线资源恢复。
+- 兼容早期没有可靠版本号的存档，经验迁移仍以 `expMigrated` 兜底。
+- 新增 `scripts/test_save_migration.js` 与 `npm run test:migration`，覆盖旧档、损坏档、当前档和重复迁移。
+- 改动前备份：`backup/USNavyCollection_20260902_before_save_migration/`。
+- 测试：迁移专项 11 项全过；`npm run sim` 1273 项全过；`node --check public/js/core/state.js` 通过。
+
+**下一步：**
+- [ ] 新增系统时继续按版本迁移器扩展，不再向 `applySave()` 添加历史补丁
+
+---
+
 ## 2026-08-10 索敌判定 + 开幕空袭动画三步走（参照 kcwiki「索敌」「航空战」）
 
 **问题：**

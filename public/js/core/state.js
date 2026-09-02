@@ -10,6 +10,7 @@
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
+  const CURRENT_SAVE_VERSION = 2;
   const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
@@ -51,7 +52,7 @@ const Game = (() => {
   let uidSeq = 1;
 
   const state = {
-    version: 1,
+    version: CURRENT_SAVE_VERSION,
     admiral: { name: '提督', level: 1, exp: 0 },
     resources: { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 },  // screws=改修资材（上限3000）, devMats=开发资材（上限3000）
     fleet: { 1: [], 2: [], 3: [], 4: [] },  // 舰队1=出击主力(6)，舰队2~4=远征/出击用(6)；舰队3/4需任务解锁
@@ -419,79 +420,101 @@ const Game = (() => {
     }
   }
 
-  /* 将存档数据应用到当前状态（含旧档迁移与离线补算） */
-  function applySave(data) {
-    Object.assign(state, data);
-    /* 旧存档迁移 */
-    if (typeof state.resources.screws !== 'number') state.resources.screws = 0;
-    if (typeof state.resources.devMats !== 'number') state.resources.devMats = 10;
-    state.resources.devMats = Math.min(3000, Math.floor(state.resources.devMats));
+  /* ============ 存档迁移 ============
+   * 历史迁移只负责版本之间的字段变化；每次载入的结构修复由 normalizeSave 负责。
+   * 旧版存档没有可靠的版本分层，因此 v1 -> v2 收纳此前所有历史补丁。 */
+  function cloneSave(data) {
+    return JSON.parse(JSON.stringify(data || {}));
+  }
+
+  function migrateEquipCap(cap) {
+    if (typeof cap !== 'number' || cap < 150) return EQUIP_CAP_DEFAULT;
+    if (cap < EQUIP_CAP_DEFAULT) return EQUIP_CAP_DEFAULT + Math.max(0, cap - 150);
+    return cap;
+  }
+
+  function migrateAdmiralExp(save) {
+    const admiral = save.admiral;
+    if (!admiral || save.expMigrated === true || admiral.level <= 1) return;
+    const oldLv = Math.min(Math.max(1, admiral.level), ADMIRAL_MAX_LV);
+    const total = 1000 * oldLv * (oldLv - 1) / 2 + (admiral.exp || 0);
+    let level = 1;
+    while (level < ADMIRAL_MAX_LV && total >= HQ_CUM[level + 1]) level++;
+    admiral.level = level;
+    admiral.exp = Math.max(0, total - HQ_CUM[level]);
+    save.expMigrated = true;
+  }
+
+  function migrateV1ToV2(data) {
+    const save = cloneSave(data);
+    if (!save.resources || typeof save.resources !== 'object') save.resources = {};
+    if (typeof save.resources.screws !== 'number') save.resources.screws = 0;
+    if (typeof save.resources.devMats !== 'number') save.resources.devMats = 10;
+    save.resources.devMats = Math.min(3000, Math.floor(save.resources.devMats));
     for (const k of ['fuel', 'ammo', 'steel', 'baux']) {
-      state.resources[k] = Math.floor(state.resources[k]);
+      save.resources[k] = Math.floor(Number(save.resources[k]) || 0);
     }
-    if (!state.improve) state.improve = { date: '', count: 0 };
-    /* 旧档迁移：装备仓库上限（缺失或异常 → 默认500；旧档以150为基准，保留任务扩容部分） */
-    if (typeof state.equipCap !== 'number' || state.equipCap < 150) {
-      state.equipCap = EQUIP_CAP_DEFAULT;
-    } else if (state.equipCap < EQUIP_CAP_DEFAULT) {
-      /* 旧档（150/200/250 等）：扩容值 = 旧值 - 旧基准150，迁移后叠加到新基准500 */
-      state.equipCap = EQUIP_CAP_DEFAULT + Math.max(0, state.equipCap - 150);
+    save.equipCap = migrateEquipCap(save.equipCap);
+    save.firstShipLocked = typeof save.firstShipLocked === 'boolean'
+      ? save.firstShipLocked : Object.keys(save.ships || {}).length > 0;
+    save.development = [];
+    for (const k in save.equipment || {}) {
+      if (typeof save.equipment[k].star !== 'number') save.equipment[k].star = 0;
     }
-    /* 旧档迁移：首个舰艇自动上锁标记（已有舰艇 → 视为已上锁过，不追溯；无舰艇 → 下一艘即首个） */
-    if (typeof state.firstShipLocked !== 'boolean') {
-      state.firstShipLocked = Object.keys(state.ships || {}).length > 0;
+    if (!save.admiral || typeof save.admiral !== 'object') save.admiral = { name: '提督', level: 1, exp: 0 };
+    migrateAdmiralExp(save);
+    save.saveVersion = 2;
+    save.version = 2;
+    return save;
+  }
+
+  const SAVE_MIGRATIONS = { 1: migrateV1ToV2 };
+
+  function normalizeSave(save) {
+    if (!save.resources || typeof save.resources !== 'object') {
+      save.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 };
     }
-    /* 旧版开发队列（20秒队列制）已废弃：开发改为即时结算（wiki） */
-    if (Array.isArray(state.development) && state.development.length) state.development = [];
-    for (const k in state.equipment) {
-      if (typeof state.equipment[k].star !== 'number') state.equipment[k].star = 0;
+    for (const k of ['fuel', 'ammo', 'steel', 'baux', 'screws', 'devMats']) {
+      save.resources[k] = Math.max(0, Math.floor(Number(save.resources[k]) || 0));
     }
-    if (!state.admiral) state.admiral = { name: '提督', level: 1, exp: 0 };
-    /* 旧档迁移：提督经验曲线改为 wiki 曲线（旧曲线=每级1000×等级）
-     * 旧累计 = 1000×(旧等级-1)×旧等级/2 + 当前经验，映射到新曲线 */
-    if (!state.expMigrated && state.admiral && state.admiral.level > 1) {
-      const oldLv = Math.min(state.admiral.level, ADMIRAL_MAX_LV);
-      let total = 1000 * oldLv * (oldLv - 1) / 2 + (state.admiral.exp || 0);
-      let nlv = 1;
-      while (nlv < ADMIRAL_MAX_LV && total >= HQ_CUM[nlv + 1]) nlv++;
-      state.admiral.level = nlv;
-      state.admiral.exp = Math.max(0, total - HQ_CUM[nlv]);
-      state.expMigrated = true;
+    if (!save.improve || typeof save.improve !== 'object') save.improve = { date: '', count: 0 };
+    if (!save.fleet || typeof save.fleet !== 'object') save.fleet = { 1: [], 2: [], 3: [], 4: [] };
+    for (const i of [1, 2, 3, 4]) if (!Array.isArray(save.fleet[i])) save.fleet[i] = [];
+    if (!save.fleetUnlock || typeof save.fleetUnlock !== 'object') save.fleetUnlock = { 3: false, 4: false };
+    save.fleetUnlock[3] = save.fleetUnlock[3] === true;
+    save.fleetUnlock[4] = save.fleetUnlock[4] === true;
+    if (!save.mapProgress || typeof save.mapProgress !== 'object') save.mapProgress = {};
+    for (const m of MAPS) if (!save.mapProgress[m.id]) save.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0 };
+    if (!save.ships || typeof save.ships !== 'object') save.ships = {};
+    if (!save.equipment || typeof save.equipment !== 'object') save.equipment = {};
+    if (!Array.isArray(save.construction)) save.construction = [];
+    if (!Array.isArray(save.development)) save.development = [];
+    if (!Array.isArray(save.repairs)) save.repairs = [null, null];
+    if (!save.expeditions || typeof save.expeditions !== 'object') save.expeditions = { 1: null, 2: null };
+    return save;
+  }
+
+  function migrateSave(data) {
+    let save = cloneSave(data);
+    let version = Number.isInteger(save.saveVersion) ? save.saveVersion : (Number.isInteger(save.version) ? save.version : 1);
+    if (version < 1) version = 1;
+    while (version < CURRENT_SAVE_VERSION) {
+      const migrate = SAVE_MIGRATIONS[version];
+      if (typeof migrate !== 'function') throw new Error(`缺少存档迁移器: ${version} -> ${version + 1}`);
+      save = migrate(save);
+      version++;
     }
-    if (!state.resources) state.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 };
-    if (!state.fleet || typeof state.fleet !== 'object') state.fleet = { 1: [], 2: [], 3: [], 4: [] };
-    if (!Array.isArray(state.fleet[1])) state.fleet[1] = [];
-    if (!Array.isArray(state.fleet[2])) state.fleet[2] = [];
-    if (!Array.isArray(state.fleet[3])) state.fleet[3] = [];
-    if (!Array.isArray(state.fleet[4])) state.fleet[4] = [];
-    /* 舰队3/4解锁状态（旧档无此字段 → 默认未解锁，需完成任务解锁） */
-    if (!state.fleetUnlock || typeof state.fleetUnlock !== 'object') state.fleetUnlock = { 3: false, 4: false };
-    if (state.fleetUnlock[3] !== true) state.fleetUnlock[3] = false;
-    if (state.fleetUnlock[4] !== true) state.fleetUnlock[4] = false;
-    /* 破损存档修复：补全所有海域进度（缺失 → 出击页无法渲染海域列表） */
-    if (!state.mapProgress || typeof state.mapProgress !== 'object') state.mapProgress = {};
-    for (const m of MAPS) {
-      if (!state.mapProgress[m.id]) state.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0 };
+    /* 兼容早期当前档：旧版曾没有可靠写入版本号，经验迁移标记仍是唯一判据 */
+    if (version >= CURRENT_SAVE_VERSION && save.expMigrated !== true && save.admiral && save.admiral.level > 1) {
+      migrateAdmiralExp(save);
     }
-    /* 破损存档修复：无任何舰船 → 补发初始舰队（马汉/本森）与初始装备 */
-    if (Object.keys(state.ships || {}).length === 0) {
-      const starterEq = ['gun5in_30', 'gun5in_30', 'sec5in_1', 'aa_20mm', 'aa_20mm', 'torp_mk15'];
-      for (const id of starterEq) createEquip(id);
-      for (const sid of STARTER_IDS) {
-        const s = createShip(sid, 10);
-        state.fleet[1].push(s.uid);
-        equipDefaults(s.uid);
-      }
-    }
+    save.saveVersion = CURRENT_SAVE_VERSION;
+    save.version = CURRENT_SAVE_VERSION;
+    return normalizeSave(save);
+  }
+
+  function rebuildUidSequence() {
     uidSeq = 1;
-    /* 破损存档修复：历史版本入手舰船未发放默认装备（空槽无搭载）→ 补发一次（迁移后不再重复） */
-    if (state.migratedStock !== true) {
-      for (const k in state.ships) {
-        const s = state.ships[k];
-        if (s && Array.isArray(s.equipped) && s.equipped.length === 0) equipDefaults(s.uid);
-      }
-      state.migratedStock = true;
-    }
     for (const k in state.ships) {
       const n = parseInt(k.slice(1), 10);
       if (n >= uidSeq) uidSeq = n + 1;
@@ -500,6 +523,29 @@ const Game = (() => {
       const n = parseInt(k.slice(1), 10);
       if (n >= uidSeq) uidSeq = n + 1;
     }
+  }
+
+  /* 将存档数据应用到当前状态（含版本迁移、结构规范化与离线补算） */
+  function applySave(data) {
+    const save = migrateSave(data);
+    Object.assign(state, save);
+    if (Object.keys(state.ships).length === 0) {
+      const starterEq = ['gun5in_30', 'gun5in_30', 'sec5in_1', 'aa_20mm', 'aa_20mm', 'torp_mk15'];
+      for (const id of starterEq) createEquip(id);
+      for (const sid of STARTER_IDS) {
+        const s = createShip(sid, 10);
+        state.fleet[1].push(s.uid);
+        equipDefaults(s.uid);
+      }
+    }
+    if (state.migratedStock !== true) {
+      for (const k in state.ships) {
+        const ship = state.ships[k];
+        if (ship && Array.isArray(ship.equipped) && ship.equipped.length === 0) equipDefaults(ship.uid);
+      }
+      state.migratedStock = true;
+    }
+    rebuildUidSequence();
     regen(Date.now());
   }
 
@@ -556,7 +602,8 @@ const Game = (() => {
     shouldAutoLockShip, shouldAutoLockEquip,
     shipDef, shipStats, fleetLos, fleetHasName, addAdmiralExp, resourceCap,
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
-    setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets
+    setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets,
+    migrateSave, normalizeSave, CURRENT_SAVE_VERSION
   };
 })();
 
