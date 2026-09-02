@@ -11,7 +11,7 @@
 - 依据：`../舰队收藏网页游戏核心机制与玩法设计分析报告.md`（战斗/养成/资源/远征/任务/活动六大系统）+ kcwiki 舰娘百科
 - 技术栈：**Node.js (Express) 静态服务器 + 纯前端 JS 单页应用 + localStorage 存档**
 - 分支策略：`main`（稳定版，首次提交后创建）+ `develop`（开发分支，日常在 develop 上工作）
-- 位置：`C:\Users\johnz\Desktop\WG\USNavyCollection`
+- 位置：`D:\AI\WG\USNavyCollection`（2026-09 换机迁移后路径；旧机为 `C:\Users\johnz\Desktop\WG\USNavyCollection`）
 
 ## 关键决策记录（ADR）
 
