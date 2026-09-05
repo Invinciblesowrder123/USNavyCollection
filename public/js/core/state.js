@@ -10,7 +10,7 @@
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
-  const CURRENT_SAVE_VERSION = 2;
+  const CURRENT_SAVE_VERSION = 3;
   const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
@@ -59,6 +59,7 @@ const Game = (() => {
     fleetUnlock: { 3: false, 4: false },    // 舰队3/4解锁状态（1/2初始可用）
     ships: {},                          // uid -> shipInstance
     equipment: {},                      // uid -> equipInstance {uid,id,star}
+    library: { ships: {}, equips: {} }, // 图鉴登录：曾经获得过的舰船/装备 id -> true
     equipCap: EQUIP_CAP_DEFAULT,        // 装备仓库上限（初始500，任务可扩充）
     firstShipLocked: false,             // 首个获得的舰艇已自动上锁（记录一次）
     construction: [],                   // {start,end,recipe} 建造队列
@@ -207,6 +208,7 @@ const Game = (() => {
       supply: { fuel: 1, ammo: 1 },  // 0~1 补给比例
       locked: firstShip || shouldAutoLockShip(shipId)   // 首个舰艇 / 稀有舰艇（紫/金）自动上锁
     };
+    if (state.library && state.library.ships) state.library.ships[shipId] = true;
     if (typeof Progression !== 'undefined') {
       const t = def.type;
       if (t === 'DD' || t === 'DE') Progression.notify('get_type', 1, 'DD');
@@ -222,6 +224,7 @@ const Game = (() => {
     state.equipment[uid] = { uid, id: equipId, star: 0 };
     /* 稀有装备（紫）/ 消耗品 自动上锁 */
     if (shouldAutoLockEquip(equipId)) state.equipment[uid].locked = true;
+    if (state.library && state.library.equips) state.library.equips[equipId] = true;
     return state.equipment[uid];
   }
 
@@ -468,7 +471,26 @@ const Game = (() => {
     return save;
   }
 
-  const SAVE_MIGRATIONS = { 1: migrateV1ToV2 };
+  /* v2 -> v3：新增图鉴登录表。旧档没有该字段，按当前持有情况补登历史 */
+  function migrateV2ToV3(data) {
+    const save = cloneSave(data);
+    save.library = save.library || {};
+    save.library.ships = save.library.ships || {};
+    save.library.equips = save.library.equips || {};
+    for (const k in save.ships || {}) {
+      const id = save.ships[k] && save.ships[k].id;
+      if (id) save.library.ships[id] = true;
+    }
+    for (const k in save.equipment || {}) {
+      const id = save.equipment[k] && save.equipment[k].id;
+      if (id) save.library.equips[id] = true;
+    }
+    save.saveVersion = 3;
+    save.version = 3;
+    return save;
+  }
+
+  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3 };
 
   function normalizeSave(save) {
     if (!save.resources || typeof save.resources !== 'object') {
@@ -487,6 +509,9 @@ const Game = (() => {
     for (const m of MAPS) if (!save.mapProgress[m.id]) save.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0 };
     if (!save.ships || typeof save.ships !== 'object') save.ships = {};
     if (!save.equipment || typeof save.equipment !== 'object') save.equipment = {};
+    if (!save.library || typeof save.library !== 'object') save.library = { ships: {}, equips: {} };
+    if (!save.library.ships || typeof save.library.ships !== 'object') save.library.ships = {};
+    if (!save.library.equips || typeof save.library.equips !== 'object') save.library.equips = {};
     if (!Array.isArray(save.construction)) save.construction = [];
     if (!Array.isArray(save.development)) save.development = [];
     if (!Array.isArray(save.repairs)) save.repairs = [null, null];
@@ -524,6 +549,22 @@ const Game = (() => {
       if (n >= uidSeq) uidSeq = n + 1;
     }
   }
+
+  /* ============ 图鉴 ============
+   * 记录曾经获得过的舰船/装备（解体或消耗后图鉴仍保留登录） */
+  function libraryStats() {
+    const allShips = Object.keys(ShipData || {});
+    const allEquips = Object.keys(EquipmentData || {});
+    const shipIds = allShips.filter(id => state.library.ships[id]);
+    const equipIds = allEquips.filter(id => state.library.equips[id]);
+    return {
+      ships: { total: allShips.length, owned: shipIds.length },
+      equips: { total: allEquips.length, owned: equipIds.length },
+      shipIds, equipIds
+    };
+  }
+  function libraryHasShip(id) { return !!(state.library.ships && state.library.ships[id]); }
+  function libraryHasEquip(id) { return !!(state.library.equips && state.library.equips[id]); }
 
   /* 将存档数据应用到当前状态（含版本迁移、结构规范化与离线补算） */
   function applySave(data) {
@@ -603,7 +644,8 @@ const Game = (() => {
     shipDef, shipStats, fleetLos, fleetHasName, addAdmiralExp, resourceCap,
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
     setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets,
-    migrateSave, normalizeSave, CURRENT_SAVE_VERSION
+    migrateSave, normalizeSave, CURRENT_SAVE_VERSION,
+    libraryStats, libraryHasShip, libraryHasEquip
   };
 })();
 

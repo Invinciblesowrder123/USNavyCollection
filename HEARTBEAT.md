@@ -402,6 +402,41 @@
 
 ---
 
+## 2026-09-06 — 第一梯队四项全部落地（E2E / 音效 / 掉落表 / 图鉴）
+
+**1. E2E 自动化（零依赖）**
+- `scripts/e2e.js` + `npm run test:e2e`：自动起服务器 → 系统 Edge/Chrome 无头跑
+  `test_flow.html` → 解析 `#result` JSON → 失败项退出码 1（可直接接 CI）。
+- 不需要 playwright，也不需要下载浏览器二进制（本机已有 Edge / Chrome）。
+- 坑：必须访问 `127.0.0.1` 而非 `localhost`；产物 `.e2e-dump.html` 已加入 .gitignore。
+
+**2. 音效与 BGM（程序化生成）**
+- `scripts/generate_audio.py`：用 python `wave` 合成 12 个音效 + 3 首 BGM，
+  ffmpeg 压为 mp3（音效 64k / BGM 96k，共约 1.1MB），wav 已清理。
+- `public/js/core/audio.js`：Web Audio 解码缓存、多音效叠加、BGM 循环、
+  音量与静音持久化（独立 localStorage 键，不进游戏存档）、首次手势解锁。
+- 接入：全局点击音、战斗事件音（炮击/雷击/航空/爆炸）、结算胜利与败北音、
+  建造与远征完成音；场景 BGM 母港/战斗/凯旋自动切换；顶栏音效开关。
+
+**3. 掉落表补全**
+- 104 艘舰此前只有 51 艘可掉落（普通 21 + BOSS 35），**53 艘只能靠建造**。
+- 按「区域主题 + 稀有度梯度」补全：r1-r2 落区域 1-2，r3 落区域 2-3，
+  r4 落区域 3-4，r5 落区域 5；所罗门多巡洋驱逐、阿留申多潜艇、
+  中太平洋多航母、菲律宾为最终决战；BOSS 图放该区域最稀有舰。
+- 结果：**104/104 全部可掉落**。
+
+**4. 图鉴系统**
+- `state.js` 新增 `library: { ships, equips }`，记录曾经获得过的 id（解体后仍保留）。
+- 存档版本 v2 → v3：旧档按当前持有补登图鉴；`libraryStats/hasShip/hasEquip` 已导出。
+- 新增 `public/js/ui/library.js` + 导航项「📖 图鉴」：收集率进度条、
+  舰船/装备双页签、舰种与类别筛选、稀有度筛选、只看已获得；未获得显示为灰化 ???。
+
+**测试**：引擎 1326 项全过；迁移专项 18 项全过；浏览器 E2E 88 项全过、0 JS 错误。
+**备注**：`test_flow.html` 是独立页面，有自己的 script 清单，
+新增 UI 模块时**必须同时改 index.html 和 test_flow.html**，否则 E2E 报 unknown screen。
+
+---
+
 ## 2026-09-02 — 存档迁移框架版本化
 
 **完成：**

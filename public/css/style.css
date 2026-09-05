@@ -1038,3 +1038,33 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .grow { flex: 1; }
 .text-center { text-align: center; }
 .big-rank { font-size: 30px; font-weight: bold; color: var(--gold); }
+
+/* ===== 图鉴（收集率总览） ===== */
+.lib-summary { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+.lib-bar {
+  flex: 1; max-width: 320px; height: 12px; overflow: hidden;
+  background: var(--navy); border: 1px solid var(--line); border-radius: 6px;
+}
+.lib-bar-in { height: 100%; background: linear-gradient(90deg, var(--blue), var(--gold)); }
+.lib-pct { color: var(--gold); font-weight: bold; min-width: 44px; }
+.lib-filters { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; flex-wrap: wrap; }
+.lib-filters select {
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--line); padding: 4px 8px; border-radius: 4px;
+}
+.lib-check { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); cursor: pointer; }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.lib-card {
+  background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px; text-align: center;
+}
+.lib-card.locked { opacity: 0.45; filter: grayscale(1); }
+.lib-thumb {
+  height: 92px; display: flex; align-items: center; justify-content: center;
+  background: var(--navy); border-radius: 4px; overflow: hidden; margin-bottom: 4px;
+}
+.lib-portrait { max-height: 86px; max-width: 100%; }
+.lib-empty { color: var(--dim); font-size: 26px; }
+.lib-eq { color: var(--orange); font-weight: bold; font-size: 13px; }
+.lib-name { font-size: 12px; line-height: 1.35; word-break: break-all; }
+.lib-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }

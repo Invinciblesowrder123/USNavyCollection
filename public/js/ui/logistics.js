@@ -95,6 +95,7 @@ const LogisticsUI = (() => {
         if (!r.ok) { UI.toast(r.msg); return; }
         const rw = Object.entries(r.reward).map(([k, v]) => `${({ fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土', devMats: '开发资材' })[k]}+${v}`).join(' ');
         UI.toast(`远征「${r.ex.name}」${r.great ? '大成功！' : '成功！'}获得 ${rw}`);
+        if (typeof Sound !== 'undefined') Sound.play('complete', r.great ? 0.7 : 0.5);
         Game.save(); render();
       });
     }

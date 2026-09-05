@@ -14,11 +14,14 @@ Object.assign(global, {
 });
 const { Game } = require('../public/js/core/state.js');
 
+const CUR = Game.CURRENT_SAVE_VERSION;
+
 function check(name, condition) {
   assert.ok(condition, name);
   console.log('  ✓ ' + name);
 }
-function oldSave() {
+
+function v1Save() {
   return {
     version: 1,
     admiral: { name: '旧提督', level: 40, exp: 0 },
@@ -30,24 +33,54 @@ function oldSave() {
   };
 }
 
+function v2Save() {
+  return {
+    saveVersion: 2, version: 2,
+    admiral: { name: '提督', level: 5, exp: 0 },
+    resources: { fuel: 500, ammo: 500, steel: 500, baux: 500, screws: 0, devMats: 10 },
+    ships: { s1: { uid: 's1', id: 'mahan' }, s2: { uid: 's2', id: 'benson' } },
+    equipment: { e1: { uid: 'e1', id: 'gun5in_30' } },
+    fleet: { 1: ['s1'], 2: [], 3: [], 4: [] },
+    mapProgress: {}
+  };
+}
+
 console.log('\n== 存档迁移专项测试 ==');
-const migrated = Game.migrateSave(oldSave());
-check('旧档升级到当前版本', migrated.saveVersion === Game.CURRENT_SAVE_VERSION && migrated.version === 2);
-check('旧版经验曲线只迁移一次', migrated.admiral.level === 97 && migrated.admiral.exp === 18500 && migrated.expMigrated === true);
-check('旧装备补齐改修星级', migrated.equipment.e41.star === 0);
-check('旧资源补齐新字段', migrated.resources.screws === 0 && migrated.resources.devMats === 10);
-check('废弃开发队列为空', Array.isArray(migrated.development) && migrated.development.length === 0);
-check('舰队与地图结构规范化', [1, 2, 3, 4].every(i => Array.isArray(migrated.fleet[i])) && Object.keys(migrated.mapProgress).length === MAPS.length);
 
-const onceMore = Game.migrateSave(migrated);
-check('重复迁移结果稳定', JSON.stringify(onceMore) === JSON.stringify(migrated));
+/* v1 旧档 → 当前版本 */
+const fromV1 = Game.migrateSave(v1Save());
+check('v1 旧档升级到当前版本', fromV1.saveVersion === CUR && fromV1.version === CUR);
+check('v1 旧经验曲线只迁移一次', fromV1.admiral.level === 97 && fromV1.admiral.exp === 18500 && fromV1.expMigrated === true);
+check('v1 旧装备补齐改修星级', fromV1.equipment.e41.star === 0);
+check('v1 旧资源补齐新字段', fromV1.resources.screws === 0 && fromV1.resources.devMats === 10);
+check('v1 废弃开发队列清空', Array.isArray(fromV1.development) && fromV1.development.length === 0);
+check('v1 舰队与地图结构规范化', [1, 2, 3, 4].every(i => Array.isArray(fromV1.fleet[i])) && Object.keys(fromV1.mapProgress).length === MAPS.length);
 
-const damaged = Game.migrateSave({ saveVersion: 2, resources: null, fleet: null, ships: null, equipment: null });
-check('损坏存档资源可恢复', damaged.resources.fuel === 1000 && damaged.resources.devMats === 10);
-check('损坏存档容器可恢复', damaged.ships && damaged.equipment && damaged.fleet[1] && damaged.repairs);
+/* v2 → v3：图鉴登录表 */
+const fromV2 = Game.migrateSave(v2Save());
+check('v2 档升级到含图鉴的版本', fromV2.saveVersion === CUR && fromV2.version === CUR);
+check('v2 图鉴按持有补登舰船', fromV2.library.ships.mahan === true && fromV2.library.ships.benson === true);
+check('v2 图鉴按持有补登装备', fromV2.library.equips.gun5in_30 === true);
+check('v2 图鉴不误登未持有项', !fromV2.library.ships.iowa);
 
-const current = Game.migrateSave({ saveVersion: 2, version: 2, resources: { fuel: 9, ammo: 8, steel: 7, baux: 6, screws: 5, devMats: 4 }, ships: {}, equipment: {} });
-check('当前档不改变资源', current.resources.fuel === 9 && current.resources.screws === 5 && current.resources.devMats === 4);
-check('当前档版本保持不变', current.saveVersion === 2 && current.version === 2);
+/* 幂等 */
+check('v1 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV1)) === JSON.stringify(fromV1));
+check('v2 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV2)) === JSON.stringify(fromV2));
 
-console.log('\n通过 11 项，失败 0 项');
+/* 损坏存档 */
+const damaged = Game.migrateSave({ saveVersion: CUR, resources: null, fleet: null, ships: null, equipment: null, library: null });
+check('损坏存档资源恢复默认', damaged.resources.fuel === 1000 && damaged.resources.devMats === 10);
+check('损坏存档容器恢复', damaged.ships && damaged.equipment && damaged.fleet[1] && damaged.repairs);
+check('损坏存档图鉴恢复', damaged.library && damaged.library.ships && damaged.library.equips);
+
+/* 当前版本存档不被改写 */
+const current = Game.migrateSave({
+  saveVersion: CUR, version: CUR,
+  resources: { fuel: 9, ammo: 8, steel: 7, baux: 6, screws: 5, devMats: 4 },
+  ships: {}, equipment: {}, library: { ships: { mahan: true }, equips: {} }
+});
+check('当前档资源保持不变', current.resources.fuel === 9 && current.resources.screws === 5 && current.resources.devMats === 4);
+check('当前档图鉴保持不变', current.library.ships.mahan === true);
+check('当前档版本号不变', current.saveVersion === CUR && current.version === CUR);
+
+console.log('\n通过 18 项，失败 0 项');

@@ -28,6 +28,7 @@
 <script src="js/ui/factory.js"></script>
 <script src="js/ui/logistics.js"></script>
 <script src="js/ui/quests.js"></script>
+<script src="js/ui/library.js"></script>
 <script>
   window.__errors = [];
   window.onerror = function (msg, src, line) { window.__errors.push(msg + ' @' + (src || '').split('/').pop() + ':' + line); };
@@ -183,7 +184,7 @@
       const rmM = Progression.modernize(tgt.uid, [Game.createShip('benson', 1).uid]);
       R(rmM.ok, 'modernize:synthesize', JSON.stringify(rmM));
       /* 顶部一级菜单 + 工厂近代化改修页签 */
-      R(document.querySelectorAll('#navbar button').length === 10, 'nav:topmenu', 'n=' + document.querySelectorAll('#navbar button').length);
+      R(document.querySelectorAll('#navbar button').length === 11, 'nav:topmenu', 'n=' + document.querySelectorAll('#navbar button').length);
       UI.go('factory', 'modernize');
       R(document.querySelector('#screen').innerHTML.includes('近代化改修') && document.querySelector('#screen').innerHTML.includes('剩余可改修'), 'screen:factory-modernize');
       document.querySelector('#screen').querySelector('[data-mod-target]').click();
@@ -264,6 +265,27 @@
       document.querySelector('#screen .dorm-grid .ship-card').click();
       R(document.querySelector('#modal-root').innerHTML.includes('耐久') && document.querySelector('#modal-root').innerHTML.includes('装备'), 'dormitory:detailModal');
       document.querySelector('#modal-root').innerHTML = '';
+
+      /* 图鉴：收集率统计、已获得登录、未获得占位、装备页签 */
+      UI.go('library');
+      const libHtml = document.querySelector('#screen').innerHTML;
+      R(libHtml.includes('图鉴') && libHtml.includes('已登录'), 'library:render');
+      const libStats = Game.libraryStats();
+      R(libStats.ships.total > 0 && libStats.ships.owned > 0, 'library:stats', JSON.stringify(libStats.ships));
+      R(libStats.ships.owned <= libStats.ships.total, 'library:statsSane');
+      const libCards = document.querySelectorAll('#screen .lib-card');
+      R(libCards.length === libStats.ships.total, 'library:cardCount', 'n=' + libCards.length);
+      R(document.querySelectorAll('#screen .lib-card.locked').length > 0, 'library:lockedCards');
+      R(Game.libraryHasShip(libStats.shipIds[0]), 'library:hasShipApi');
+      document.querySelector('#screen [data-tab="equips"]').click();
+      R(document.querySelector('#screen').innerHTML.includes('全部类别'), 'library:equipTab');
+      const eqCards = document.querySelectorAll('#screen .lib-card');
+      R(eqCards.length === libStats.equips.total, 'library:equipCardCount', 'n=' + eqCards.length);
+      /* 只看已获得 */
+      const onlyBox = document.querySelector('#screen [data-fowned]');
+      onlyBox.checked = true;
+      onlyBox.dispatchEvent(new Event('change'));
+      R(document.querySelectorAll('#screen .lib-card.locked').length === 0, 'library:onlyOwned');
 
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {

@@ -210,7 +210,7 @@ const MAPS = [
       A: { type: 'battle', enemy: 'F01' },
       B: { type: 'boss', enemy: 'F03' }
     },
-    drops: ['benson', 'mahan'],
+    drops: ['benson', 'mahan', 'ward', 'reubenjames'],
     bossDrops: ['helena', 'portland', 'sandiego']
   },
   {
@@ -229,7 +229,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F06' }
     },
     branch: { at: 'S', if: { los: 20 }, to: ['C'] },   // 索敌≥20发现弹药补给路线（C→D 一战到BOSS）；否则走 A→B 长路线
-    drops: ['neworleans', 'fletcher', 'kidd'],
+    drops: ['neworleans', 'fletcher', 'kidd', 'sims', 'bagley', 'langley'],
     bossDrops: ['fletcher', 'atlanta', 'independence']
   },
   {
@@ -249,7 +249,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F09' }
     },
     branch: { at: 'A', if: { los: 40 }, to: ['B'] },   // 索敌≥40 直取B；否则绕E补给
-    drops: ['brooklyn', 'benson', 'gato'],
+    drops: ['brooklyn', 'benson', 'gato', 'blue', 'hammann', 'omaha'],
     bossDrops: ['iowa', 'missouri', 'essex', 'baltimore']
   },
   {
@@ -268,7 +268,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F15' }
     },
     branch: { at: 'S', if: { los: 30 }, to: ['A'] },   // 索敌≥30 走钢材资源点；否则直接迎击B
-    drops: ['laffey', 'heermann', 'porter'],
+    drops: ['laffey', 'heermann', 'porter', 'pensacola', 'gudgeon'],
     bossDrops: ['johnston', 'sanfrancisco', 'quincy']
   },
   /* ==================== 2.所罗门群岛海域 ==================== */
@@ -286,7 +286,7 @@ const MAPS = [
       B: { type: 'resource', reward: ['fuel'] },
       C: { type: 'boss', enemy: 'F17' }
     },
-    drops: ['obannon', 'hoel'],
+    drops: ['obannon', 'hoel', 'newyork', 'curtiss'],
     bossDrops: ['wichita', 'indianapolis', 'laffey']
   },
   {
@@ -305,7 +305,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F21' }
     },
     branch: { at: 'S', if: { dd: 3 }, to: ['B'] },   // 驱逐舰≥3 直取水雷线（2战到BOSS）；否则绕反潜点（3战）
-    drops: ['sumner', 'belleauwood'],
+    drops: ['sumner', 'belleauwood', 'cushing', 'sullivan'],
     bossDrops: ['sbroberts', 'reno', 'indianapolis']
   },
   {
@@ -327,7 +327,7 @@ const MAPS = [
       H: { type: 'boss', enemy: 'F26' }
     },
     branch: { at: 'C', if: { los: 45 }, to: ['D'] },   // 索敌≥45 走燃料补给线直达BOSS；否则沟入输送舰队
-    drops: ['princeton', 'sbroberts'],
+    drops: ['princeton', 'sbroberts', 'aaronward', 'saltlakecity'],
     bossDrops: ['yorktown', 'hornet', 'southdakota']
   },
   {
@@ -346,7 +346,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F29' }
     },
     branch: { at: 'A', if: { los: 60 }, to: ['B'] },   // 索敌≥60 走夜战水雷线；否则走哨戒线
-    drops: ['archerfish', 'tang'],
+    drops: ['archerfish', 'tang', 'honolulu', 'stlouis', 'chicago'],
     bossDrops: ['northcarolina', 'washington', 'wasp']
   },
   /* ==================== 3.阿留申群岛海域 ==================== */
@@ -372,7 +372,7 @@ const MAPS = [
       { at: 'A', if: { los: 55 }, to: ['C'] },   // 索敌≥55 走通商破坏水雷线；否则走哨戒舰队线
       { at: 'C', if: { dd: 2 }, to: ['F'] }      // 驱逐舰≥2 走重巡任务部队线；否则绕空母支援部队
     ],
-    drops: ['tang', 'barb'],
+    drops: ['tang', 'barb', 'balao', 'bowfin'],
     bossDrops: ['saratoga', 'enterprise', 'colorado']
   },
   {
@@ -396,7 +396,7 @@ const MAPS = [
       { at: 'S', if: { dd: 5 }, to: ['B'] },   // 驱逐舰≥5 走弹药补给捷径；否则绕游击部队（wiki：驱逐主力带路）
       { at: 'C', if: { dd: 4 }, to: ['L'] }    // 驱逐舰≥4 直取BOSS；否则迎击战列舰打击舰队
     ],
-    drops: ['kidd', 'gato'],
+    drops: ['kidd', 'gato', 'pampanito', 'wahoo'],
     bossDrops: ['yorktown', 'intrepid', 'alabama']
   },
   {
@@ -417,7 +417,7 @@ const MAPS = [
       E: { type: 'boss', enemy: 'F43' }
     },
     branch: { at: 'A', if: { los: 70 }, to: ['B'] },   // 索敌≥70 走铝土补给线；否则迎击空母机动部队
-    drops: ['barb', 'archerfish'],
+    drops: ['barb', 'archerfish', 'silversides', 'cabot'],
     bossDrops: ['essex', 'southdakota', 'massachusetts']
   },
   {
@@ -436,7 +436,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F46' }
     },
     branch: { at: 'S', if: { los: 80 }, to: ['A'] },   // 索敌≥80 走燃料补给线；否则直接迎击
-    drops: ['indiana', 'westvirginia'],
+    drops: ['indiana', 'westvirginia', 'tennessee', 'newmexico'],
     bossDrops: ['missouri', 'enterprise', 'essex', 'intrepid']
   },
   /* ==================== BOSS海域（EO，need 同区域4号图） ==================== */
@@ -456,7 +456,7 @@ const MAPS = [
       J: { type: 'boss', enemy: 'F50' }
     },
     drops: ['sumner', 'sbroberts'],
-    bossDrops: ['atlanta', 'juneau', 'wichita']
+    bossDrops: ['atlanta', 'juneau', 'wichita', 'nevada', 'texas', 'vestal']
   },
   {
     id: '2-5', name: '萨沃岛近海', desc: '深海机动部队的制空决战！萨沃岛近海的天空由舰队掌控！', stars: 9,
@@ -475,7 +475,7 @@ const MAPS = [
     },
     branch: { at: 'A', if: { los: 40 }, to: ['B'] },   // 索敌≥40 走弹药补给线；否则连战空袭部队
     drops: ['obannon', 'kidd'],
-    bossDrops: ['lexington', 'ranger', 'washington']
+    bossDrops: ['lexington', 'ranger', 'washington', 'arizona', 'pennsylvania']
   },
   {
     id: '3-5', name: '阿留申海域决战', desc: '北方栖姬坐镇的阿留申泊地挡在前方！突入阿留申，击破敌增援主力！', stars: 11,
@@ -498,7 +498,7 @@ const MAPS = [
     },
     branch: { at: 'S', if: { dd: 5 }, to: ['F'] },   // 驱逐舰≥5 走下路（F-G-K）；否则走上路（B-D-H 遇北方栖姬）
     drops: ['tang', 'barb'],
-    bossDrops: ['saratoga', 'intrepid', 'westvirginia']
+    bossDrops: ['saratoga', 'intrepid', 'westvirginia', 'harder', 'albacore', 'cleveland']
   },
   /* ==================== 4.中太平洋海域（马绍尔/马里亚纳，wiki 6-X） ==================== */
   {
@@ -517,7 +517,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F63' }
     },
     branch: { at: 'S', if: { los: 35 }, to: ['A'] },   // 索敌≥35 走反潜线；否则走哨戒线
-    drops: ['sumner', 'sbroberts'],
+    drops: ['sumner', 'sbroberts', 'cavalla', 'sealion'],
     bossDrops: ['lexington', 'northcarolina', 'hornet']
   },
   {
@@ -536,7 +536,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F66' }
     },
     branch: { at: 'A', if: { los: 45 }, to: ['B'] },   // 索敌≥45 走铝土补给线；否则走警戒线
-    drops: ['archerfish', 'gato'],
+    drops: ['archerfish', 'gato', 'dace', 'darter'],
     bossDrops: ['yorktown', 'alabama', 'washington']
   },
   {
@@ -555,7 +555,7 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F70' }
     },
     branch: { at: 'A', if: { los: 55 }, to: ['B'] },   // 索敌≥55 走夜战线；否则连战攻略部队
-    drops: ['barb', 'tang'],
+    drops: ['barb', 'tang', 'houston', 'minneapolis'],
     bossDrops: ['wasp', 'massachusetts', 'indiana']
   },
   {
@@ -572,7 +572,7 @@ const MAPS = [
       B: { type: 'battle', enemy: 'F72' },   // 空袭主力
       C: { type: 'boss', enemy: 'F73' }      // 机动部队本队
     },
-    drops: ['heermann', 'laffey'],
+    drops: ['heermann', 'laffey', 'nicholas', 'charlesausburne', 'gearing'],
     bossDrops: ['essex', 'southdakota', 'saratoga']
   },
   {
@@ -592,7 +592,7 @@ const MAPS = [
     },
     branch: { at: 'A', if: { los: 60 }, to: ['B'] },   // 索敌≥60 走空袭线；否则走夜战线
     drops: ['indiana', 'westvirginia'],
-    bossDrops: ['enterprise', 'iowa', 'essex']
+    bossDrops: ['enterprise', 'iowa', 'essex', 'maryland', 'ticonderoga', 'england']
   },
   /* ==================== 5.菲律宾海域（莱特湾，wiki 5-X） ==================== */
   {
@@ -626,7 +626,7 @@ const MAPS = [
       B: { type: 'battle', enemy: 'F81' },   // 战列夜战线
       C: { type: 'boss', enemy: 'F82' }
     },
-    drops: ['tang', 'archerfish'],
+    drops: ['tang', 'archerfish', 'franklin'],
     bossDrops: ['wasp', 'washington', 'hornet']
   },
   {
@@ -643,7 +643,7 @@ const MAPS = [
       B: { type: 'battle', enemy: 'F84' },   // 重打击部队
       C: { type: 'boss', enemy: 'F85' }      // 中央舰队（战列舰Re级flagship）
     },
-    drops: ['barb', 'gato'],
+    drops: ['barb', 'gato', 'bunkerhill'],
     bossDrops: ['essex', 'saratoga', 'southdakota']
   },
   {
@@ -662,7 +662,7 @@ const MAPS = [
       C: { type: 'boss', enemy: 'F88' }      // 机动部队本队
     },
     branch: { at: 'A', if: { los: 65 }, to: ['B'] },   // 索敌≥65 直取空袭主力；否则绕燃料补给线
-    drops: ['obannon', 'porter'],
+    drops: ['obannon', 'porter', 'alaska'],
     bossDrops: ['missouri', 'yorktown', 'alabama']
   },
   {
@@ -682,7 +682,7 @@ const MAPS = [
     },
     branch: { at: 'A', if: { los: 70 }, to: ['B'] },   // 索敌≥70 走空袭线；否则走夜战线
     drops: ['indiana', 'westvirginia'],
-    bossDrops: ['iowa', 'missouri', 'enterprise', 'saratoga']
+    bossDrops: ['iowa', 'missouri', 'enterprise', 'saratoga', 'newjersey', 'wisconsin', 'midway']
   }
 ];
 

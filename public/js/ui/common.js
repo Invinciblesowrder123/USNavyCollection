@@ -19,6 +19,8 @@ const UI = (() => {
     root.className = '';
     Screens[name](root, arg);
     refreshNav();
+    /* 场景 BGM：出击用战斗曲，其余用母港曲（未解锁时由 Sound 内部排队） */
+    if (typeof Sound !== 'undefined') Sound.playBgm(name === 'sortie' ? 'battle' : 'port');
   }
 
   function refreshNav() {
@@ -34,7 +36,8 @@ const UI = (() => {
       ['logistics', '⛽ 补给', 'supply'],
       ['logistics', '🚢 远征', 'expedition'],
       ['logistics', '🏆 演习', 'practice'],
-      ['quests', '📋 任务', '']
+      ['quests', '📋 任务', ''],
+      ['library', '📖 图鉴', '']
     ];
     nav.innerHTML = defs.map(([k, label, tab]) =>
       `<button data-s="${k}" data-tab="${tab}" class="${current && current.name === k && (!tab || current.arg === tab) ? 'active' : ''}">${label}</button>`).join('');
@@ -260,6 +263,14 @@ const UI = (() => {
   function countdown(ms) {
     return `<span class="countdown">${Util.fmtTime(ms)}</span>`;
   }
+
+  /* 全局点击音效：事件委托，覆盖后续动态生成的按钮 */
+  document.addEventListener('click', e => {
+    if (typeof Sound === 'undefined') return;
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest('button, .ship-card, .eq-item, [data-s]')) Sound.play('click', 0.45);
+  }, true);
 
   return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipIcon, shipIconDef, shipTitle, shipNameHtml, rarityStars, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml, eqNameHtml, eqRarityTag, eqRarityCls };
 })();

@@ -10,6 +10,7 @@
     "sim": "node scripts/simulate.js",
     "test": "node scripts/simulate.js",
     "test:migration": "node scripts/test_save_migration.js",
+    "test:e2e": "node scripts/e2e.js",
     "admin": "node scripts/create_admin.js"
   },
   "dependencies": {
