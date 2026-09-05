@@ -28,6 +28,30 @@
   });
   syncDebugBtn();
 
+  /* ---- 音效开关与首次解锁 ---- */
+  const sndBtn = $('#soundToggle');
+  function syncSoundBtn() {
+    const muted = Sound.isMuted();
+    sndBtn.textContent = muted ? '🔇 静音' : '🔊 音效';
+    sndBtn.classList.toggle('on', !muted);
+  }
+  sndBtn.addEventListener('click', () => {
+    Sound.setMuted(!Sound.isMuted());
+    syncSoundBtn();
+    UI.toast(Sound.isMuted() ? '音效已关闭' : '音效已开启');
+  });
+  /* 浏览器自动播放策略：首次交互时解锁并起播母港 BGM */
+  const unlockAudio = () => {
+    Sound.unlock();
+    const cur = UI.current && UI.current.name;
+    Sound.playBgm(cur === 'sortie' ? 'battle' : 'port');
+    document.removeEventListener('pointerdown', unlockAudio);
+    document.removeEventListener('keydown', unlockAudio);
+  };
+  document.addEventListener('pointerdown', unlockAudio);
+  document.addEventListener('keydown', unlockAudio);
+  syncSoundBtn();
+
   /* ---- 账号栏（顶栏） ---- */
   const accBtn = $('#accountBtn');
   const accInfo = $('#accountInfo');

@@ -441,6 +441,24 @@
 
 ---
 
+## 2026-09-06 — 音效重做：合成 → CC0 真实素材
+
+**背景**：程序化合成的 BGM 质量太差（氛围底噪无旋律记忆点），用户要求移除后用真实素材重做。
+
+**素材来源（全部 CC0，无需署名）**：
+- BGM：OpenGameArt — "War Theme"（战斗，4:43）+ "Minimalistic Flute & Strings Tune"（母港，3:14），作者 Spring Spring
+- SE：Kenney — interface-sounds（点击/确认/错误/完成）+ impact-sounds（金属撞击=炮击）+ sci-fi-sounds（低频爆炸/引擎=鱼雷/飞机）
+
+**实现**：
+- `public/audio/`：12 个 SE + 2 首 BGM，共 5.7MB（mp3 格式，SE 64kbps / BGM 96kbps）
+- `public/js/core/audio.js`：Web Audio API 解码缓存 SE + HTMLAudio 循环播放 BGM；音量/静音 localStorage 持久化；首次手势解锁
+- 接入：全局点击音、战斗事件音（炮击/雷击/航空/爆炸）、结算胜负音、建造与远征完成音；场景 BGM 母港/战斗自动切换；顶栏音效开关
+- `public/audio/CREDITS.md`：完整授权记录
+
+**测试**：引擎 1326 / 迁移 18 / E2E 88，全部通过，0 JS 错误。
+
+---
+
 ## 2026-09-02 — 存档迁移框架版本化
 
 **完成：**
