@@ -435,7 +435,6 @@ const FactoryUI = (() => {
           const r = Factory.claimBuild(parseInt(b.dataset.claim, 10));
           if (!r.ok) { UI.toast(r.msg); return; }
           UI.toast(`建造完成！获得 ${UI.esc(Game.shipDef(r.ship).zh)}${r.ship.locked ? '（已自动上锁）' : ''}！`);
-          if (typeof Sound !== 'undefined') Sound.play('get', 0.6);
           Game.save(); render();
         });
       });

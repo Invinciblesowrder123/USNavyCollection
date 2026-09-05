@@ -970,18 +970,6 @@ const SortieUI = (() => {
     function playEvent(ev) {
       const atkEl = shipEl(ev.atkS, ev.atkI);
       const tgtEl = shipEl(ev.tgtS, ev.tgtI);
-      /* 战斗音效：按事件类型触发，重创追加爆炸声 */
-      if (typeof Sound !== 'undefined') {
-        switch (ev.kind) {
-          case 'shell': case 'night': Sound.play('shell', 0.5); break;
-          case 'torp': case 'open_torp': Sound.play('torpedo', 0.55); break;
-          case 'air': case 'launch': case 'airfight': Sound.play('plane', 0.4); break;
-          case 'asw': Sound.play('explosion', 0.4); break;
-          case 'flak': Sound.play('shell', 0.28); break;
-          case 'recon': Sound.play('confirm', 0.3); break;
-        }
-        if ((ev.dmg || 0) >= 25) setTimeout(() => Sound.play('explosion', 0.5), 220);
-      }
       switch (ev.kind) {
         case 'shell': case 'night': gunAnim(ev, atkEl, tgtEl); break;
         case 'torp': case 'open_torp': torpAnim(ev, atkEl, tgtEl); break;
@@ -1088,18 +1076,6 @@ const SortieUI = (() => {
           ${r.drop ? `<span style="color:var(--gold)"> 掉落新舰娘：${UI.esc(Game.shipDef(r.drop).zh)}${r.drop.locked ? '（已自动上锁）' : ''}！</span>` : ''}
           <div class="hint">${gains.map(g => { const s = st.ships[g.uid]; return `${UI.esc(Game.shipDef(s).zh)} EXP+${g.exp}${g.ups ? ` 升级Lv.${s.lv}！` : ''}`; }).join(' ｜ ')}${admExp ? ` ｜ 提督EXP+${admExp}` : ''}</div>
         </div>`);
-      /* 结算音效：胜利用凯旋曲，败北用警报；掉落与升级另有提示音 */
-      if (typeof Sound !== 'undefined') {
-        const rank = r.result.rank;
-        if (rank === 'S' || rank === 'A' || rank === 'B') {
-          Sound.play('complete', 0.55);
-          Sound.playBgm('victory');
-        } else {
-          Sound.play('alarm', 0.5);
-        }
-        if (r.drop) Sound.play('drop', 0.6);
-        if (gains.some(g => g.ups)) Sound.play('levelup', 0.5);
-      }
       const nav = document.createElement('div');
       nav.className = 'btn-row';
       const nxt = isSortie && Sortie.currentMap() && !Sortie.atBoss() && !r.cleared;
