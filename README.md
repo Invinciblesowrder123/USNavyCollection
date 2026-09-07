@@ -13,7 +13,7 @@
 
 | 版本 | 位置 | 说明 |
 |---|---|---|
-| **当前版** | 仓库根目录 | 舰艇104艘 + 稀有度差异化（名字配色/金★/立绘边框）+ 经验系统v2 + 装备开发/解体v2 + **装备体系115件（16新类别）+ 装备稀有度 + 装备仓库上限500格 + 批量移除 + 消耗性物资** + 账号强化（管理员/HttpOnly Cookie） |
+| **当前版** | 仓库根目录 | 舰艇104艘 + 稀有度差异化（名字配色/金★/立绘边框）+ 经验系统v2 + 装备开发/解体v2 + **装备体系115件（16新类别）+ 装备稀有度 + 装备仓库上限500格 + 批量移除 + 消耗性物资** + 账号强化（管理员/HttpOnly Cookie）+ **全舰掉落表（104/104）+ 图鉴系统 + Edge/Chrome 无头 E2E** |
 | **快照（2026-08-06）** | `archive/USNavyCollection_20260806/` | 中间版本快照，独立 `.gitignore`，仅供对照回滚 |
 | **旧版备份（v0.1，2026-08-04）** | `archive/USNavyCollection_20260804/` | 上线前完整快照，独立 `.gitignore`，仅供对照回滚 |
 
@@ -43,10 +43,20 @@ npm start          # 启动服务器 → http://localhost:3000
 ## 测试
 
 ```bash
-npm run sim     # headless 引擎测试（1273项断言）
+npm test              # headless 引擎测试（1326 项断言）
+npm run test:migration # 存档迁移专项测试（18 项）
+npm run test:e2e       # 系统 Edge/Chrome 无头浏览器测试（88 项）
 ```
-浏览器端 E2E：访问 `http://localhost:3000/test_flow.html`（headless 运行，45项断言）
-（可用 Edge/Chrome 无头模式：`msedge --headless --dump-dom http://localhost:3000/test_flow.html`）
+
+当前基线：**1326 + 18 + 88 全部通过，E2E 0 个 JS 错误**。
+
+E2E 脚本会自动启动本地服务器、调用系统 Edge/Chrome 无头运行 `test_flow.html`、解析结果并在失败时返回非零退出码，可直接接入 CI。
+
+## 当前状态
+
+- 已完成：104 艘舰船全部有掉落来源；图鉴记录曾获得的舰船/装备，解体后仍保留；v2 存档自动迁移至 v3。
+- 已完成：E2E 自动化测试，覆盖登录、母港、编成、建造、图鉴等核心流程。
+- 暂缓：音效与背景音乐。此前尝试过程序化合成及外部素材，但试听效果不达标；当前版本不包含音频资源和播放代码，后续待找到合适的成品素材后再单独接入。
 
 ## 目录
 
@@ -55,7 +65,7 @@ server.js                Express 服务器（静态 + API）
 auth.js                  账号系统（注册/登录/会话/云存档）
 scripts/generate_art.js  SVG立绘生成器（104+2张）
 scripts/simulate.js      引擎回归测试（含账号系统测试）
-public/js/core/          存档/工具/账号会话
+public/js/core/          存档/工具/账号会话（含版本迁移）
 public/js/data/          舰船/装备/地图/远征/任务数据
 public/js/game/          战斗/工厂/改修工厂/后勤/养成/出击引擎
 public/js/ui/            各屏幕渲染器（含登录/注册）
