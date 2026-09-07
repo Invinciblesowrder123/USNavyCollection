@@ -10,6 +10,24 @@ const UI = (() => {
   let current = null;      // { name, arg }
   let currentTick = null;  // 每秒刷新回调
 
+  /* 页面标题区元数据：标题 + 副标题（logistics 按 tab 区分） */
+  const PAGE_HEADS = {
+    home: ['母港', '司令部总览 · 舰队与待办'],
+    dormitory: ['宿舍', '舰艇休整与管理'],
+    sortie: ['出击', '海域出击与战斗指挥'],
+    formation: ['编成', '舰队编组与替换'],
+    factory: ['工厂', '建造 · 开发 · 解体'],
+    logistics: {
+      dock: ['入渠', '舰艇修理与恢复'],
+      supply: ['补给', '舰队燃料与弹药'],
+      expedition: ['远征', '舰队派遣与收益'],
+      practice: ['演习', '定期实战演练'],
+      _: ['后勤', '入渠 · 补给 · 远征 · 演习']
+    },
+    quests: ['任务', '目标与奖励总览'],
+    library: ['图鉴', '舰船与装备收集记录']
+  };
+
   function go(name, arg) {
     if (!Screens[name]) { console.error('unknown screen', name); return; }
     current = { name, arg };
@@ -18,27 +36,44 @@ const UI = (() => {
     root.innerHTML = '';
     root.className = '';
     Screens[name](root, arg);
+    const meta = PAGE_HEADS[name];
+    if (meta && current.name === name) {
+      const pair = Array.isArray(meta) ? meta : (meta[arg] || meta._);
+      if (pair) {
+        root.insertAdjacentHTML('afterbegin',
+          `<div class="page-head"><span class="ph-title">${pair[0]}</span><span class="ph-sub">${pair[1]}</span></div>`);
+      }
+    }
     refreshNav();
   }
 
   function refreshNav() {
     const nav = $('#navbar');
-    /* 顶部一级菜单（图标+文字置顶UI） */
-    const defs = [
-      ['home', '🏠 母港', ''],
-      ['dormitory', '🛏 宿舍', ''],
-      ['sortie', '⚔️ 出击', ''],
-      ['formation', '👥 编成', ''],
-      ['factory', '🛠 工厂', ''],
-      ['logistics', '🔧 入渠', 'dock'],
-      ['logistics', '⛽ 补给', 'supply'],
-      ['logistics', '🚢 远征', 'expedition'],
-      ['logistics', '🏆 演习', 'practice'],
-      ['quests', '📋 任务', ''],
-      ['library', '📖 图鉴', '']
+    /* 顶部一级菜单：按 司令部 / 舰队行动 / 后勤与生产 三组组织（不改路由） */
+    const groups = [
+      ['司令部', [
+        ['home', '🏠 母港', ''],
+        ['quests', '📋 任务', ''],
+        ['library', '📖 图鉴', '']
+      ]],
+      ['舰队行动', [
+        ['sortie', '⚔️ 出击', ''],
+        ['formation', '👥 编成', '']
+      ]],
+      ['后勤与生产', [
+        ['dormitory', '🛏 宿舍', ''],
+        ['factory', '🛠 工厂', ''],
+        ['logistics', '🔧 入渠', 'dock'],
+        ['logistics', '⛽ 补给', 'supply'],
+        ['logistics', '🚢 远征', 'expedition'],
+        ['logistics', '🏆 演习', 'practice']
+      ]]
     ];
-    nav.innerHTML = defs.map(([k, label, tab]) =>
-      `<button data-s="${k}" data-tab="${tab}" class="${current && current.name === k && (!tab || current.arg === tab) ? 'active' : ''}">${label}</button>`).join('');
+    nav.innerHTML = groups.map(([label, items]) =>
+      `<span class="nav-group"><span class="nav-group-label">${label}</span>` +
+      items.map(([k, text, tab]) =>
+        `<button data-s="${k}" data-tab="${tab}" class="${current && current.name === k && (!tab || current.arg === tab) ? 'active' : ''}">${text}</button>`).join('') +
+      `</span>`).join('');
     nav.querySelectorAll('button').forEach(b => {
       b.addEventListener('click', () => {
         if (b.classList.contains('active')) return;
@@ -234,12 +269,11 @@ const UI = (() => {
   function resHtml() {
     const r = Game.state.resources;
     const cap = Game.resourceCap();
-    return `<span class="res"><span class="ico ico-fuel"></span><b>${r.fuel}</b><span class="dim">/${cap}</span></span>
-      <span class="res"><span class="ico ico-ammo"></span><b>${r.ammo}</b><span class="dim">/${cap}</span></span>
-      <span class="res"><span class="ico ico-steel"></span><b>${r.steel}</b><span class="dim">/${cap}</span></span>
-      <span class="res"><span class="ico ico-baux"></span><b>${r.baux}</b><span class="dim">/${cap}</span></span>
-      <span class="res"><span class="ico ico-screw"></span><b>${r.screws || 0}</b></span>
-      <span class="res"><span class="ico ico-devmat"></span><b>${r.devMats || 0}</b></span>`;
+    const item = (ico, v, c) =>
+      `<span class="res${c > 0 && v >= c ? ' full' : ''}"><span class="ico ${ico}"></span><b>${v}</b>${c ? `<span class="dim">/${c}</span>` : ''}</span>`;
+    return item('ico-fuel', r.fuel, cap) + item('ico-ammo', r.ammo, cap) +
+      item('ico-steel', r.steel, cap) + item('ico-baux', r.baux, cap) +
+      item('ico-screw', r.screws || 0, 0) + item('ico-devmat', r.devMats || 0, 0);
   }
 
   function refreshTop() {
