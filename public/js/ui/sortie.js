@@ -15,7 +15,8 @@ const SortieUI = (() => {
   /* ---------- 海域地图（参考Kancolle海图UI） ---------- */
   const MAP_BOARD = { w: 760, h: 460 };
   const MAP_MINI = { w: 236, h: 168 };
-  const NODE_TYPE_ZH = { start: '出击点', battle: '战斗点', boss: 'BOSS点', resource: '资源点', supply: '补给点', empty: '航路节点' };
+  const NODE_TYPE_ZH = { start: '出击点', battle: '战斗点', boss: 'BOSS点', resource: '资源点', supply: '补给点', whirlpool: '漩涡', empty: '航路节点' };
+  const NODE_MODE_ZH = { night: '夜战点', sub: '潜艇点' };
   const RES_ICON = { fuel: ['油', 'res-fuel'], ammo: ['弹', 'res-ammo'], steel: ['钢', 'res-steel'], baux: ['铝', 'res-baux'] };
   const RES_NAME = { fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土' };
   let _boardUid = 0;
@@ -41,6 +42,7 @@ const SortieUI = (() => {
         return { cls: 'resource ' + m[1], icon: m[0] };
       }
       case 'supply': return { cls: 'supply', icon: '⚓' };
+      case 'whirlpool': return { cls: 'whirlpool', icon: '🌀' };
       default: return { cls: 'empty', icon: '?' };
     }
   }
@@ -150,6 +152,7 @@ const SortieUI = (() => {
         if (n && !items.includes(n)) items.push(n);
       });
       if (d.type === 'supply' && !items.includes('补给点')) items.push('补给点');
+      if (d.type === 'whirlpool' && !items.includes('漩涡')) items.push('漩涡');
     });
     return items;
   }
@@ -211,6 +214,7 @@ const SortieUI = (() => {
         <div class="gauge-bar"><div class="gauge-fill${mp.cleared ? ' full' : ''}" style="width:${pct}%"></div></div>
       </div>
       <div class="md-desc">${m.desc}</div>
+      ${m.brief ? `<div class="map-brief"><b>作战简报</b><br>${m.brief.replace(/\n/g, '<br>')}</div>` : ''}
       <div class="md-rows">
         ${items.length ? `<div><b>出现物品</b>：${items.join('、')}</div>` : ''}
         ${losNeed ? `<div><b>分支索敌</b>：≥${losNeed}<span class="${los >= losNeed ? '' : 'red'}">（当前 ${los}${los >= losNeed ? '，满足' : '，不足' }）</span></div>` : ''}
@@ -334,13 +338,20 @@ const SortieUI = (() => {
           ${mapTopbar(map, so)}
           <div class="map-board-wrap">${mapBoard(map, so)}</div>
           <div class="map-nodeinfo">
-            <b>当前节点 ${so.node}</b>：${NODE_TYPE_ZH[def.type] || def.type}
-            ${def.type === 'battle' || def.type === 'boss'
-              ? `<span class="dim">｜ 敌军：${(ENEMY_FLEETS[def.enemy] || { ships: [], formation: '未知' }).ships.length} 舰（${(ENEMY_FLEETS[def.enemy] || { formation: '未知' }).formation}）</span>`
-              : def.type === 'resource'
-                ? `<span class="dim">｜ 可获得：${(def.reward || []).map(r => RES_NAME[r] || r).join('、')}</span>`
-                : def.type === 'supply' ? `<span class="dim">｜ 恢复一半油弹</span>` : ''}
+            <b>当前节点 ${so.node}</b>：${def.mode ? NODE_MODE_ZH[def.mode] : (NODE_TYPE_ZH[def.type] || def.type)}
+            ${def.mode === 'night'
+              ? `<span class="dim">｜ 无昼战，直接夜战：驱逐/轻巡的夜战火力是关键</span>`
+              : def.mode === 'sub'
+                ? `<span class="dim">｜ 潜艇伏击：需对潜舰艇（DD/CL）；低速大目标更易被雷击</span>`
+                : def.type === 'whirlpool'
+                  ? `<span class="dim">｜ 燃料 -min(${def.lossBase || 200}, 10%)；编入电探可减半</span>`
+                  : def.type === 'battle' || def.type === 'boss'
+                    ? `<span class="dim">｜ 敌军：${(ENEMY_FLEETS[def.enemy] || { ships: [], formation: '未知' }).ships.length} 舰（${(ENEMY_FLEETS[def.enemy] || { formation: '未知' }).formation}）</span>`
+                    : def.type === 'resource'
+                      ? `<span class="dim">｜ 可获得：${(def.reward || []).map(r => RES_NAME[r] || r).join('、')}</span>`
+                      : def.type === 'supply' ? `<span class="dim">｜ 恢复一半油弹</span>` : ''}
           </div>
+          ${map.brief ? `<div class="map-brief"><b>作战简报</b><br>${map.brief.replace(/\n/g, '<br>')}</div>` : ''}
           ${nodeAction()}
         </div>`;
       root.querySelector('[data-act="retreat"]').addEventListener('click', () => {
@@ -388,6 +399,11 @@ const SortieUI = (() => {
       } else if (r.type === 'supply') {
         UI.toast('舰队获得补给！');
         Sortie.moveToNext();
+      } else if (r.type === 'whirlpool') {
+        UI.toast(r.amount > 0
+          ? `舰队穿越漩涡，损失燃料 ${r.amount}${r.radar ? '（电探减半）' : ''}`
+          : '舰队安全穿越漩涡。', 3200);
+        Sortie.moveToNext();
       } else if (r.type === 'move') {
         Sortie.moveToNext();
       }
@@ -406,6 +422,7 @@ const SortieUI = (() => {
         sortieActive(root);
       }, {
         splitNight: true,
+        autoNight: !!prep.result.forceNight,   // 夜战节点：跳过追击选择，自动夜战突入
         nightAvailable: () => prep.result.mySide.some(s => s.alive) && prep.result.enemySide.some(s => s.alive),
         doNight: () => { Sortie.continueNight(prep); },
         finish: () => {
@@ -1105,6 +1122,15 @@ const SortieUI = (() => {
       showResult();
     };
     const finalize = () => {
+      /* 夜战节点：不做追击选择，自动夜战突入 */
+      if (opts.autoNight && !nightChosen && opts.doNight && opts.nightAvailable && opts.nightAvailable()) {
+        decided = true;
+        nightChosen = true;
+        opts.doNight();
+        skipped = false;
+        step();
+        return;
+      }
       if (opts.splitNight && !nightChosen && opts.nightAvailable && opts.nightAvailable()) {
         const html = `
           <span class="modal-close" data-close>×</span>

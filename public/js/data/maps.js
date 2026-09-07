@@ -57,6 +57,8 @@ const DEEP_TEMPLATES = {
   eB8:  { name: '深海潜水栖姬', type: 'SS', stats: [70, 5, 60, 0, 8, 40, 0, 5, 20], boss: true },
   /* 三期高阶模板（wiki 二期/三期：潜水ヨ級、軽巡ツ級、戦艦レ級、空母ヲ級flagship、軽母ヌ級flagship、駆逐ニ級後期型、輸送ワ級flagship） */
   ess3: { name: '深海军潜水舰Yo级', type: 'SS', stats: [20, 8, 34, 0, 7, 30, 16, 5, 6] },
+  ess4: { name: '深海军潜水舰Le级', type: 'SS', stats: [30, 4, 68, 0, 16, 38, 0, 12, 8] },
+  ess4f: { name: '深海军潜水棲姬随舰', type: 'SS', stats: [42, 6, 88, 0, 20, 42, 0, 14, 10] },
   ess3e:{ name: '深海军潜水舰Yo级(精锐)', type: 'SS', stats: [26, 10, 44, 0, 9, 36, 19, 5, 8] },
   ess3f:{ name: '深海军潜水舰Yo级(旗舰)', type: 'SS', stats: [34, 12, 56, 0, 11, 42, 22, 5, 10] },
   ecl3: { name: '深海军轻巡洋舰Tsu级', type: 'CL', stats: [48, 38, 22, 16, 18, 30, 32, 8, 10] },
@@ -96,9 +98,10 @@ const ENEMY_FLEETS = {
   F16: { formation: '单纵阵', ships: ['ecl1e', 'edd2e', 'edd2e', 'edd2e'] },
   F17: { formation: '单纵阵', ships: ['eca1e', 'edd2e', 'edd2e', 'ecl1e'] },
   /* ---- 2-2 铁底湾海峡（wiki 2-2 巴士岛近海：潜水栖姬，反潜海域） ---- */
-  F18: { formation: '梯形阵', ships: ['ess1e', 'ess1e', 'edd2e'] },
+  F18: { formation: '梯形阵', ships: ['ess4f', 'ess4', 'edd2e'] },
   F19: { formation: '单纵阵', ships: ['eclt1e', 'edd2e', 'edd2e', 'ecl1e'] },
   F20: { formation: '单纵阵', ships: ['eca1e', 'edd3', 'edd2', 'ecl1e'] },
+  F20b: { formation: '梯形阵', ships: ['ess4', 'ess3', 'eca1e', 'edd2e'] },   // 2-2 C点：精锐潜艇+重巡混合伏击
   F21: { formation: '梯形阵', ships: ['eB8', 'ess1', 'ess1', 'edd2e'] },
   /* ---- 2-3 圣克鲁斯海域（wiki 2-3 东部奥廖尔海：长航路哨戒，战列舰Ru级flagship BOSS） ---- */
   F22: { formation: '单纵阵', ships: ['ecl1e', 'edd2', 'edd2', 'edd2'] },
@@ -254,6 +257,7 @@ const MAPS = [
   },
   {
     id: '1-4', name: '欧胡岛防卫线', desc: '深海军夜袭部队反扑近海！驱逐栖姬率领的水雷战队逼近欧胡岛！', stars: 6,
+    brief: '昼间防空战报：敌夜袭部队预计 2200 时抵近欧胡岛外海。\n本海域设夜战节点。舰队将失去航空掩护，夜战火力（驱逐舰、轻巡洋舰）将决定胜负。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 50, boss: 500 },     // 提督经验（wiki 1-4: 道中+50 / BOSS+500）
     nodes: {
@@ -263,7 +267,7 @@ const MAPS = [
     defs: {
       S: { type: 'start' },
       A: { type: 'resource', reward: ['steel'] },
-      B: { type: 'battle', enemy: 'F13' },
+      B: { type: 'battle', enemy: 'F13', mode: 'night' },   // 夜战点：跳过昼战直接夜战
       C: { type: 'battle', enemy: 'F14' },
       D: { type: 'boss', enemy: 'F15' }
     },
@@ -291,6 +295,7 @@ const MAPS = [
   },
   {
     id: '2-2', name: '铁底湾海峡', desc: '深海潜水栖姬潜伏的海峡！反潜装备与夜战火力缺一不可！', stars: 7,
+    brief: '铁底湾。沉船和火炮构成了它的另一个名字——"铁底"。\n声呐监听确认：深海潜艇部队在此活动。舰队须编入反潜舰艇（驱逐舰、轻巡洋舰天生具备对潜能力，深水炸弹可强化输出）。\n注意：低速舰艇（21 节标准战列等）是潜艇最理想的猎物，高速新锐舰更易规避雷击。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 70, boss: 820 },     // 提督经验（wiki 2-2: 道中+70 / BOSS+820）
     nodes: {
@@ -299,9 +304,9 @@ const MAPS = [
     edges: [['S', 'A'], ['S', 'B'], ['A', 'C'], ['C', 'D'], ['B', 'D']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F18' },   // 对潜警戒（梯形阵潜水舰队）
+      A: { type: 'battle', enemy: 'F18', mode: 'sub' },   // 潜艇点：潜水舰队伏击（梯形阵）
       B: { type: 'battle', enemy: 'F19' },
-      C: { type: 'battle', enemy: 'F20' },
+      C: { type: 'battle', enemy: 'F20b', mode: 'sub' },  // 潜艇点：潜艇+重巡混合伏击
       D: { type: 'boss', enemy: 'F21' }
     },
     branch: { at: 'S', if: { dd: 3 }, to: ['B'] },   // 驱逐舰≥3 直取水雷线（2战到BOSS）；否则绕反潜点（3战）
@@ -352,13 +357,15 @@ const MAPS = [
   /* ==================== 3.阿留申群岛海域 ==================== */
   {
     id: '3-1', name: '北大平洋哨戒', desc: '舰队挺进北大平洋！深海战列舰精锐组成的侵攻舰队逼近！', stars: 9,
+    brief: '阿留申。雾是这里唯一的常驻居民。\n海图标注了异常洋流（漩涡）：舰队可能损失部分燃料——电探（雷达）可降低导航误差，损失减半。',
     start: 'S', boss: 'G', gauge: 5,
     admExp: { node: 90, boss: 1450 },    // 提督经验（wiki 3-1: 道中+90 / BOSS+1450）
     nodes: {
       S: { x: 0, y: 260 }, A: { x: 240, y: 260 }, B: { x: 480, y: 120 }, C: { x: 480, y: 400 },
-      D: { x: 720, y: 120 }, F: { x: 720, y: 400 }, G: { x: 940, y: 260 }
+      D: { x: 720, y: 120 }, F: { x: 720, y: 400 }, G: { x: 940, y: 260 },
+      W: { x: 600, y: 210 }
     },
-    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D'], ['C', 'F'], ['D', 'F'], ['F', 'G']],
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'W'], ['W', 'D'], ['C', 'D'], ['C', 'F'], ['D', 'F'], ['F', 'G']],
     defs: {
       S: { type: 'start' },
       A: { type: 'resource', reward: ['ammo'] },
@@ -366,7 +373,8 @@ const MAPS = [
       C: { type: 'battle', enemy: 'F32' },
       D: { type: 'battle', enemy: 'F33' },   // 空母机动支援部队
       F: { type: 'battle', enemy: 'F34' },
-      G: { type: 'boss', enemy: 'F35' }
+      G: { type: 'boss', enemy: 'F35' },
+      W: { type: 'whirlpool', lossBase: 200 }   // 漩涡：阿留申异常洋流，只扣燃料，电探减半
     },
     branch: [
       { at: 'A', if: { los: 55 }, to: ['C'] },   // 索敌≥55 走通商破坏水雷线；否则走哨戒舰队线

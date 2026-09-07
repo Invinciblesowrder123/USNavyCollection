@@ -143,6 +143,23 @@ const Sortie = (() => {
       return { ok: true, type: 'supply', advance: true };
     }
 
+    /* ---- 漩涡（穿越风暴/洋流区域，油耗增加）：只扣燃料，双封顶，电探减半 ---- */
+    if (def.type === 'whirlpool') {
+      const lossBase = def.lossBase || 200;
+      const hasRadar = fleet.some(uid => {
+        const s = st.ships[uid];
+        return s && (s.equipped || []).some(eu => {
+          const inst = st.equipment[eu];
+          const ed = inst && EquipmentData[inst.id];
+          return ed && ed.slot === SLOT.RADAR;
+        });
+      });
+      let loss = Math.min(lossBase, Math.floor(st.resources.fuel * 0.1));
+      if (hasRadar) loss = Math.floor(loss / 2);
+      if (loss > 0) G.gain({ fuel: -loss });
+      return { ok: true, type: 'whirlpool', res: 'fuel', amount: loss, radar: hasRadar, advance: true };
+    }
+
     /* ---- 战斗（分两段流程：昼战 → 追击选择 → 夜战；UI 可走 prepareBattle→continueNight→settleBattle） ---- */
     const prep = prepareBattle(formation);
     if (!prep.ok) return prep;
@@ -187,7 +204,9 @@ const Sortie = (() => {
     const enemyFleet = ENEMY_FLEETS[enemyKey];
     const isBoss = def.type === 'boss';
     const result = Battle.battle(fleet, enemyFleet.ships, formation, enemyFleet.formation, {
-      allowNight: false, fleetIdx: so.fleetIdx
+      allowNight: false, fleetIdx: so.fleetIdx,
+      sub: def.mode === 'sub',            // 潜艇点：敌潜艇速力打击修正 + 60% 耐久封顶
+      nightOnly: def.mode === 'night'     // 夜战点：跳过昼战直接夜战
     });
     if (oilerUsed) result.log.unshift('「洋上补给」发动！舰队油弹恢复到100%。');
     return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, doomed };
@@ -308,6 +327,23 @@ const Sortie = (() => {
     if (result.victory) st.stats.win++;
     if (result.rank === 'S') st.stats.sWin++;
     st.stats.sink += result.enemyKilled;
+
+    /* 特殊节点失败归因（用户要求：失败结算要说清原因并指出改进路径） */
+    if (!result.victory || result.rank === 'D') {
+      if (def.mode === 'sub') {
+        const noAsw = !fleet.some(uid => {
+          const s = st.ships[uid];
+          if (!s) return false;
+          const ty = ShipData[s.id] && ShipData[s.id].type;
+          return ty === 'DD' || ty === 'CL' || ty === 'DE';
+        });
+        result.log.push(noAsw
+          ? '舰队缺乏对潜攻击手段，无法打击深海潜艇。（驱逐舰与轻巡洋舰具备对潜能力）'
+          : '反潜战斗失利。深水炸弹与对潜声呐可强化驱逐舰的反潜输出。');
+      } else if (def.mode === 'night') {
+        result.log.push('夜战不利。驱逐舰与轻巡洋舰的鱼雷与夜战装备是夜战的王牌。');
+      }
+    }
 
     return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true, admExp: admGain };
   }

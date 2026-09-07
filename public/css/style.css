@@ -874,7 +874,21 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .map-node.res-baux { border-color: #98d8c8; background: linear-gradient(180deg, #24493c, #122820); color: #9fe0cf; }
 .map-node.resource .node-icon { font-size: 15px; font-weight: bold; }
 .map-node.supply { border-color: #5aa8e8; background: linear-gradient(180deg, #1e3a5e, #12243c); color: #8fd0ff; }
+.map-node.whirlpool { border-color: #9a7fe0; background: linear-gradient(180deg, #342a52, #1d1730); color: #c4aeff; }
+.map-node.whirlpool .node-icon { animation: whirlSpin 2.2s linear infinite; display: inline-block; }
+@keyframes whirlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .map-node.empty { border-color: #4a5a75; background: #1a2333; color: #8fa3c4; }
+
+/* 作战简报（海域出击前的编成引导，军事简报体） */
+.map-brief {
+  margin-top: 10px; padding: 10px 12px;
+  background: rgba(232, 194, 74, 0.06);
+  border: 1px solid rgba(232, 194, 74, 0.35);
+  border-left: 3px solid var(--gold);
+  border-radius: 6px;
+  font-size: 12px; line-height: 1.75; color: var(--text);
+}
+.map-brief b { color: var(--gold); letter-spacing: 2px; }
 
 /* 当前节点：金色脉冲 + 舰队标记 */
 .map-node.current { border-color: var(--gold); animation: nodePulse 1.5s ease-out infinite; }

@@ -91,6 +91,7 @@ const Battle = (() => {
       lookout: eqObjs.some(e => e && e.id === 'lookout'),
       illuminator: eqObjs.some(e => e && e.id === 'star_mk9'),
       torpBelt: eqObjs.some(e => e && (e.id === 'bulge_m' || e.id === 'bulge_l')),
+      speed: shipSpeed(def),
       alive: stats.hp > 0, hp: stats.hp, dealt: 0
     };
   }
@@ -150,6 +151,7 @@ const Battle = (() => {
       hasSeaplane: false, hasTorpedo: tpl.type === 'DD' || tpl.type === 'CL' || tpl.type === 'SS',
       hasASW: false, sonar: false, dc: false, aaCI: false, searchlight: false,
       dcTeam: false, rations: false, lookout: false, illuminator: false, torpBelt: false,
+      speed: 'fast',
       alive: st[0] > 0, hp: st[0], dealt: 0
     };
   }
@@ -251,6 +253,31 @@ const Battle = (() => {
     if (nonSub.length) return Util.pick(nonSub);
     return Util.pick(alive);
   }
+
+  /* ============ 潜艇点（mode:'sub'）：潜艇雷击的速力打击修正 ============
+   * 潜艇优先猎杀低速大目标；驱逐/轻巡灵活机动且反潜威胁大，难以被命中。
+   * 修正只作用于敌方潜艇的雷击（开幕雷击 + 雷击战），不影响水面舰炮战。 */
+  const SUB_SLOW_HIT = 1.2, SUB_SLOW_DMG = 1.3;    // 低速 BB/CV·CVE：大而慢，理想靶子
+  const SUB_ESCORT_HIT = 0.7, SUB_ESCORT_DMG = 0.6; // DD/CL/DE：灵活+反潜压制
+  const SUB_MID_HIT = 0.9, SUB_MID_DMG = 0.9;       // CA 等中间地带
+  function subAttackMod(t) {
+    const ty = t.type;
+    if (ty === 'DD' || ty === 'CL' || ty === 'DE') return { hit: SUB_ESCORT_HIT, dmg: SUB_ESCORT_DMG };
+    if (ty === 'BB' || ty === 'CV' || ty === 'CVB' || ty === 'CVL' || ty === 'CVE' || ty === 'AV')
+      return t.speed === 'slow' ? { hit: SUB_SLOW_HIT, dmg: SUB_SLOW_DMG } : { hit: 1, dmg: 1 };
+    return { hit: SUB_MID_HIT, dmg: SUB_MID_DMG };
+  }
+  /* 潜艇目标选择：低速舰权重 ×2（主动寻找大慢靶）；优先水面舰 */
+  function pickSubTarget(side) {
+    const alive = side.filter(t => t.alive && !isSub(t));
+    if (!alive.length) return pickTarget(side, null);
+    const w = {};
+    alive.forEach((t, i) => { w[i] = (t.speed === 'slow' && (t.type === 'BB' || t.type === 'CV' || t.type === 'CVB' || t.type === 'CVL' || t.type === 'CVE')) ? 2 : 1; });
+    return alive[+Util.weighted(w)];
+  }
+  /* 潜艇雷击伤害封顶：单次不超过目标耐久上限 60%（进点即大破的保底） */
+  const SUB_DMG_CAP = 0.6;
+  const capSubDmg = (dmg, t) => Math.min(dmg, Math.floor(t.stats.hpMax * SUB_DMG_CAP));
 
   /* ============ 对潜 / 空母系攻击力（wiki公式） ============ */
   const eqAsw = s => (s.equipped || []).reduce((sum, e) => sum + (e && e.stat && e.stat.asw ? e.stat.asw : 0), 0);
@@ -737,6 +764,16 @@ const Battle = (() => {
 
     L(`敌军阵型：${formationB}。我军选择：${formationA}。`);
 
+    /* ---- 夜战节点（opts.nightOnly）：跳过昼战全阶段，直接夜战 ----
+     * 返回带 forceNight 标记的结果：game 层 advance 自动追加 battleNight，
+     * UI 层追击选择自动夜战突入（不再询问）。 */
+    if (opts.nightOnly) {
+      L('—— 夜战节点！能见度极低，舰队在黑暗中接敌 ——');
+      const r0 = settle(log, sideA, sideB, false, formAName, formBName);
+      r0.forceNight = true;
+      return r0;
+    }
+
     /* ---- 索敌判定（wiki：阵型选择后首先进行索敌；索敌失败则无法参加航空战） ----
      * 四结果：成功/失败 × (索敌机未归还/正常归还)；深海不会索敌失败
      * 索敌成功 → 「命中・回避力UP」；失败 → 「対空・回避力DOWN」（效果微弱，wiki：实际验证区别不大）
@@ -839,21 +876,26 @@ const Battle = (() => {
       }
     }
 
-    /* ---- 开幕雷击（wiki：Lv10以上潜水舰；深海精锐潜水舰；中破/大破不影响发动但伤害受损伤补正） ---- */
+    /* ---- 开幕雷击（wiki：Lv10以上潜水舰；深海精锐潜水舰；中破/大破不影响发动但伤害受损伤补正）
+     * 潜艇点（opts.sub）：敌方全部潜水舰发动开幕雷击，命中/伤害按速力修正并施加 60% 耐久封顶 ---- */
     const openTorp = (s, targetSide, defForm) => {
-      const t = pickTarget(targetSide, s);
+      const subAmbush = opts.sub && !s.isPlayer;
+      const t = subAmbush ? pickSubTarget(targetSide) : pickTarget(targetSide, s);
       if (!t) return;
-      const ch = hitChance(s, t, formAName, formBName, 1, true);
+      let ch = hitChance(s, t, formAName, formBName, 1, true);
+      let subMod = null;
+      if (subAmbush) { subMod = subAttackMod(t); ch = Math.min(0.95, ch * subMod.hit); }
       if (Math.random() > ch) { L(`开幕雷击！${s.name} 的鱼雷未命中。`); ev('open_torp', s, t, false, 0, null, false); return; }
       const ap = threshold((s.stats.tp + 5) * dmgMult(s, 'torp'), THRESHOLD.TORP);
-      const dmg = Math.max(0, Math.round(calcDamage(ap, t.stats.arm, critChance(ch)) * ammoBonus(s)));
+      let dmg = Math.max(0, Math.round(calcDamage(ap, t.stats.arm, critChance(ch)) * ammoBonus(s)));
+      if (subAmbush) dmg = capSubDmg(dmg, t);
       const wasAlive = t.alive;
         applyDamage(log, s, t, dmg, '开幕雷击！', '', targetSide, defForm, false, true);
       ev('open_torp', s, t, true, dmg, null, wasAlive && !t.alive);
       pushSnap();
     };
     for (const s of sideA) if (s.alive && s.type === 'SS' && s.lv >= 10) openTorp(s, sideB, formBName);
-    for (const s of sideB) if (s.alive && s.type === 'SS' && (s.name.includes('精锐') || s.boss)) openTorp(s, sideA, formAName);
+    for (const s of sideB) if (s.alive && s.type === 'SS' && (opts.sub || s.name.includes('精锐') || s.boss)) openTorp(s, sideA, formAName);
 
     L(`交战形态：${ENGAGEMENT[eng]}！`);
 
@@ -979,12 +1021,16 @@ const Battle = (() => {
       if (!myT.length && !enT.length) return;
       L('—— 雷击战 ——');
       const doTorp = (s, defSide, defForm, isMy) => {
-        const t = pickTarget(defSide, s);
+        const subAmbush = opts.sub && !s.isPlayer;
+        const t = subAmbush ? pickSubTarget(defSide) : pickTarget(defSide, s);
         if (!t) return;
-        const ch = hitChance(s, t, formAName, formBName, engMod, true);
+        let ch = hitChance(s, t, formAName, formBName, engMod, true);
+        let subMod = null;
+        if (subAmbush) { subMod = subAttackMod(t); ch = Math.min(0.95, ch * subMod.hit); }
         if (Math.random() > ch) { L(`雷击战！${s.name} 的鱼雷未命中。`); ev('torp', s, t, false, 0, null, false); return; }
         const ap = threshold((s.stats.tp + 5) * (isMy ? fA.tp : fB.tp) * engMod * dmgMult(s, 'torp'), THRESHOLD.TORP);
-        const dmg = Math.max(0, Math.round(calcDamage(ap, t.stats.arm, critChance(ch)) * ammoBonus(s)));
+        let dmg = Math.max(0, Math.round(calcDamage(ap, t.stats.arm, critChance(ch)) * ammoBonus(s)));
+        if (subAmbush) dmg = capSubDmg(dmg, t);
         const wasAlive = t.alive;
         applyDamage(log, s, t, dmg, '雷击战！', '', defSide, defForm, false, true);
         ev('torp', s, t, true, dmg, null, wasAlive && !t.alive);

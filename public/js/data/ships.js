@@ -593,6 +593,17 @@ const RARITY_W = { 1: 49, 2: 25, 3: 14, 4: 8, 5: 3 };
 /* 初始赠送舰 */
 const STARTER_IDS = ['mahan', 'benson'];
 
+/* ---------- 速力（高速/低速，潜艇点打击修正依据；kcwiki 速力数据） ----------
+ * 美军低速舰：21 节"标准战列舰"（纽约/内华达/宾夕法尼亚/新墨西哥/田纳西/科罗拉多级）
+ * 与低速航母（兰利 15 节）；未来扩展 CVE。其余舰种默认高速（含北卡/南达/爱荷华级、
+ * 列克星敦/约克城/埃塞克斯级等 27-33 节新锐）。单舰可用 def.speed 覆盖舰级默认值。 */
+const SLOW_CLASSES = ['纽约级', '宾夕法尼亚级', '内华达级', '新墨西哥级', '田纳西级', '科罗拉多级', '兰利级'];
+function shipSpeed(def) {
+  if (!def) return 'fast';
+  if (def.speed) return def.speed;
+  return SLOW_CLASSES.includes(def.cls) ? 'slow' : 'fast';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { SHIPS, ShipData, SHIP_TYPE_ZH, remodelChain, buildPool, RARITY_W, STARTER_IDS };
+  module.exports = { SHIPS, ShipData, SHIP_TYPE_ZH, remodelChain, buildPool, RARITY_W, STARTER_IDS, SLOW_CLASSES, shipSpeed };
 }

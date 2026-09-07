@@ -47,6 +47,12 @@
         UI.go(s[0], s[1]);
         R(document.querySelector('#screen').innerHTML.length > 50, 'screen:' + s.join('/'));
       }
+      /* P1批A：特殊节点与速力 */
+      R(typeof shipSpeed === 'function' && shipSpeed(ShipData['newyork']) === 'slow' && shipSpeed(ShipData['iowa']) === 'fast', 'p1:speed');
+      R(MAPS.find(m => m.id === '1-4').defs.B.mode === 'night', 'p1:night-node');
+      R(MAPS.find(m => m.id === '2-2').defs.A.mode === 'sub' && MAPS.find(m => m.id === '2-2').defs.C.mode === 'sub', 'p1:sub-node');
+      R(MAPS.find(m => m.id === '3-1').defs.W.type === 'whirlpool' && (MAPS.find(m => m.id === '3-1').defs.W.lossBase || 0) > 0, 'p1:whirlpool-node');
+      R(['1-4','2-2','3-1'].every(id => (MAPS.find(m => m.id === id).brief || '').length > 20), 'p1:brief');
 
       /* 1.5 舰娘详情弹窗（母港点击舰艇 → 属性/立绘/装备槽；装备选择器为次级浮窗，关闭不影响详情页） */
       UI.go('home');

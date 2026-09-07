@@ -24,7 +24,8 @@ const shipsMod = require('../public/js/data/ships.js');
 Object.assign(global, {
   SHIP_TYPE_ZH: shipsMod.SHIP_TYPE_ZH, SHIPS: shipsMod.SHIPS, ShipData: shipsMod.ShipData,
   remodelChain: shipsMod.remodelChain, buildPool: shipsMod.buildPool,
-  RARITY_W: shipsMod.RARITY_W, STARTER_IDS: shipsMod.STARTER_IDS
+  RARITY_W: shipsMod.RARITY_W, STARTER_IDS: shipsMod.STARTER_IDS,
+  SLOW_CLASSES: shipsMod.SLOW_CLASSES, shipSpeed: shipsMod.shipSpeed
 });
 const mapsMod = require('../public/js/data/maps.js');
 Object.assign(global, {
@@ -153,6 +154,79 @@ for (const m of MAPS) {
     assert(`${m.id} BOSS海域带解锁条件`, m.need === `${area}-4`, 'need=' + m.need);
   }
 }
+/* ============ P1批A：特殊节点（夜战/潜艇/漩涡）与速力机制 ============ */
+section('速力字段完整性');
+assert('shipSpeed 函数存在', typeof shipSpeed === 'function');
+assert('104舰速力全部可解析', SHIPS.every(d => shipSpeed(d) === 'slow' || shipSpeed(d) === 'fast'));
+const bigTypesArr = ['BB', 'CV', 'CVB', 'CVL', 'CVE'];
+const slowBigs = SHIPS.filter(d => bigTypesArr.includes(d.type) && shipSpeed(d) === 'slow');
+assert('低速主力舰=11艘（10低速BB + 兰利）', slowBigs.length === 11, slowBigs.map(d => d.id).join(','));
+assert('新锐舰不被标低速', slowBigs.every(d => !['iowa','missouri','newjersey','wisconsin','northcarolina','washington','essex','enterprise','yorktown','hornet','lexington','saratoga','wasp','ranger'].includes(d.id)),
+  slowBigs.filter(d => ['iowa','missouri','newjersey','wisconsin','northcarolina','washington','essex','enterprise'].includes(d.id)).map(d => d.id).join(','));
+assert('纽约=低速', shipSpeed(ShipData['newyork']) === 'slow');
+assert('科罗拉多级=低速', SHIPS.filter(d => d.cls === '科罗拉多级').every(d => shipSpeed(d) === 'slow'));
+assert('爱荷华/企业=高速', shipSpeed(ShipData['iowa']) === 'fast' && shipSpeed(ShipData['enterprise']) === 'fast');
+assert('兰利=低速', shipSpeed(ShipData['langley']) === 'slow');
+
+section('特殊节点数据完整性');
+let subNodeN = 0, nightNodeN = 0, whirlNodeN = 0;
+for (const m of MAPS) for (const [nid, def] of Object.entries(m.defs)) {
+  if (def.mode === 'sub') {
+    subNodeN++;
+    assert(`${m.id}-${nid} 潜艇点敌编成含潜水舰`, ENEMY_FLEETS[def.enemy].ships.some(k => DEEP_TEMPLATES[k].type === 'SS'), def.enemy);
+  }
+  if (def.mode === 'night') nightNodeN++;
+  if (def.type === 'whirlpool') { whirlNodeN++; assert(`${m.id}-${nid} 漩涡lossBase>0`, (def.lossBase || 0) > 0); }
+}
+assert('夜战节点已落1-4 B点', MAPS.find(m => m.id === '1-4').defs.B.mode === 'night', 'n=' + nightNodeN);
+assert('潜艇节点=2处且都在2-2', subNodeN === 2, 'n=' + subNodeN);
+assert('漩涡节点=1处且在3-1 W', whirlNodeN === 1 && !!MAPS.find(m => m.id === '3-1').defs.W);
+for (const bid of ['1-4', '2-2', '3-1']) {
+  const mm = MAPS.find(x => x.id === bid);
+  assert(`${bid} 作战简报已配置`, typeof mm.brief === 'string' && mm.brief.length > 20);
+}
+
+section('潜艇打击修正（低速BB队 vs DD队 ×120）');
+/* 同经济强度两支舰队打 2-2 A点（F18：双潜艇+驱逐）：
+ * 速力修正应使低速舰队承受的潜艇雷击总伤害显著高于驱逐舰队 */
+const mkFleet = ids => ids.map(id => { const s = Game.createShip(id, 50); Game.equipDefaults(s.uid); s.hp = Game.shipStats(s.uid).hpMax; return s.uid; });
+const slowIds = SHIPS.filter(d => d.type === 'BB' && shipSpeed(d) === 'slow').slice(0, 6).map(d => d.id);
+const ddIds = SHIPS.filter(d => d.type === 'DD').slice(0, 6).map(d => d.id);
+const slowFleetP1 = mkFleet(slowIds), ddFleetP1 = mkFleet(ddIds);
+const F18SHIPS = ENEMY_FLEETS.F18.ships, F18FORM = ENEMY_FLEETS.F18.formation;
+const fleetSubDmg = (fleet, n) => {
+  let subOnly = 0, maxSingle = 0;
+  for (let i = 0; i < n; i++) {
+    const r = Battle.battle(fleet, F18SHIPS, '单纵阵', F18FORM, { allowNight: false, fleetIdx: 1, sub: true });
+    for (const entry of r.log) {
+      if (entry && entry.event && (entry.event.kind === 'open_torp' || entry.event.kind === 'torp') && entry.event.hit && entry.event.atkS === 'B') {
+        const atker = r.enemySide[entry.event.atkI];
+        if (atker && atker.type === 'SS') {
+          subOnly += entry.event.dmg;
+          const tgt = r.mySide[entry.event.tgtI];
+          if (tgt) maxSingle = Math.max(maxSingle, entry.event.dmg / Math.max(1, tgt.stats.hpMax));
+        }
+      }
+    }
+  }
+  return { subOnly, maxSingleRatio: maxSingle };
+};
+const slowStat = fleetSubDmg(slowFleetP1, 120);
+const ddStat = fleetSubDmg(ddFleetP1, 120);
+console.log(`  潜艇对低速BB队雷击伤害: ${Math.round(slowStat.subOnly)} | 对DD队: ${Math.round(ddStat.subOnly)}`);
+assert('潜艇对低速舰队雷击伤害显著更高(>1.3×)', slowStat.subOnly > ddStat.subOnly * 1.3, `slow=${Math.round(slowStat.subOnly)} dd=${Math.round(ddStat.subOnly)}`);
+assert('潜艇单次雷击伤害≤目标耐久60%', slowStat.maxSingleRatio <= 0.6 + 1e-9, `max=${slowStat.maxSingleRatio.toFixed(3)}`);
+
+section('夜战节点（直接夜战）');
+{
+  const nightPrep = Battle.battle(ddFleetP1, ENEMY_FLEETS.F13.ships, '单纵阵', ENEMY_FLEETS.F13.formation, { allowNight: false, fleetIdx: 1, nightOnly: true });
+  assert('夜战节点：跳过昼战（无炮击战日志）', !nightPrep.log.some(l => typeof l === 'string' && l.includes('炮击战')));
+  assert('夜战节点：无航空战日志', !nightPrep.log.some(l => typeof l === 'string' && l.includes('航空战')));
+  assert('夜战节点：标记 forceNight', nightPrep.forceNight === true);
+  const nightFull = Battle.battleNight(nightPrep);
+  assert('夜战节点：可正常追加夜战结算', typeof nightFull.rank === 'string' && nightFull.nightUsed === true, `rank=${nightFull.rank}`);
+}
+
 /* 难度梯度：区域内星级单调不减；BOSS海域（-5）星级与BOSS舰队规模高于区域内普通图；终局BOSS强度翻倍 */
 const bossHp = m => ENEMY_FLEETS[m.defs[m.boss].enemy].ships.reduce((s, k) => s + DEEP_TEMPLATES[k].stats[0], 0);
 const byArea = {};
