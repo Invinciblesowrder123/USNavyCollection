@@ -367,15 +367,26 @@ const SortieUI = (() => {
               const names = daPo.map(u => UI.esc(Game.shipDef(Game.state.ships[u]).zh)).join('、');
               if (!confirm(`警告：${names} 处于大破状态！大破进击将可能导致轰沉！确定进击？`)) return;
             }
-            openFormationSelect(formation => {
+            /* 固定阵型：直接使用，不再每次询问（取消固定按钮见 nodeAction） */
+            const fixedForm = localStorage.getItem('usnc_form_fixed');
+            const startWith = formation => {
+              localStorage.setItem('usnc_form_last', formation);
               const prep = Sortie.prepareBattle(formation);
               if (!prep.ok) { UI.toast(prep.msg); return; }
               doBattle(prep);
-            });
+            };
+            if (fixedForm) startWith(fixedForm);
+            else openFormationSelect(startWith);
           }
           else doAdvance();
         });
       }
+      const unfixBtn = root.querySelector('[data-act="unfixform"]');
+      if (unfixBtn) unfixBtn.addEventListener('click', () => {
+        localStorage.removeItem('usnc_form_fixed');
+        UI.toast('已取消固定阵型，进击时将重新询问');
+        renderNode();
+      });
     }
 
     function nodeAction() {
@@ -385,8 +396,11 @@ const SortieUI = (() => {
       }
       if (def.type === 'resource') return `<div class="hint">资源点。点击前进收集资源。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">收集资源并前进</button></div>`;
       if (def.type === 'supply') return `<div class="hint">补给点。恢复一半油弹。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">补给并前进</button></div>`;
-      if (def.type === 'battle') return `<div class="btn-row"><button class="btn btn-gold" data-act="advance">迎击敌军！（选择阵型）</button></div>`;
-      if (def.type === 'boss') return `<div class="btn-row"><button class="btn btn-gold" data-act="advance">决战！BOSS！（选择阵型）</button></div>`;
+      const fixedForm = localStorage.getItem('usnc_form_fixed');
+      if (def.type === 'battle') return `<div class="btn-row"><button class="btn btn-gold" data-act="advance">迎击敌军！${fixedForm ? `（固定阵型：${fixedForm}）` : '（选择阵型）'}</button>
+        ${fixedForm ? `<button class="btn btn-sm" data-act="unfixform">取消固定</button>` : ''}</div>`;
+      if (def.type === 'boss') return `<div class="btn-row"><button class="btn btn-gold" data-act="advance">决战！BOSS！${fixedForm ? `（固定阵型：${fixedForm}）` : '（选择阵型）'}</button>
+        ${fixedForm ? `<button class="btn btn-sm" data-act="unfixform">取消固定</button>` : ''}</div>`;
       return `<div class="btn-row"><button class="btn btn-gold" data-act="advance">前进</button></div>`;
     }
 
@@ -436,20 +450,27 @@ const SortieUI = (() => {
     renderNode();
   }
 
-  /* 阵型选择 */
+  /* 阵型选择（高亮上次使用；可勾选固定，之后出击不再询问） */
   function openFormationSelect(onPick) {
+    const last = localStorage.getItem('usnc_form_last') || '';
     const html = `
       <span class="modal-close" data-close>×</span>
       <h3>选择阵型</h3>
       <div class="flex">
         ${Object.keys(FORM_INFO).map(f => `
-          <div class="eq-slot" style="padding:10px 14px" data-f="${f}">
-            <b>${f}</b><br><span class="dim" style="font-size:11px">${FORM_INFO[f]}</span>
+          <div class="eq-slot" style="padding:10px 14px;${f === last ? 'border-color:var(--gold)' : ''}" data-f="${f}">
+            <b>${f}</b>${f === last ? '<span class="state-badge morale">上次</span>' : ''}<br><span class="dim" style="font-size:11px">${FORM_INFO[f]}</span>
           </div>`).join('')}
-      </div>`;
+      </div>
+      <label class="dim" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;margin-top:8px"><input type="checkbox" id="fixForm">固定所选阵型（之后出击不再询问，可随时取消）</label>`;
     const m = UI.modal(html);
     m.root.querySelectorAll('[data-f]').forEach(el => {
-      el.addEventListener('click', () => { m.close(); onPick(el.dataset.f); });
+      el.addEventListener('click', () => {
+        const f = el.dataset.f;
+        const fix = m.root.querySelector('#fixForm');
+        if (fix && fix.checked) { localStorage.setItem('usnc_form_fixed', f); UI.toast(`已固定阵型：${f}（取消固定请点击进击按钮旁的"取消固定"）`); }
+        m.close(); onPick(f);
+      });
     });
   }
 
@@ -1100,6 +1121,7 @@ const SortieUI = (() => {
         ? `<button class="btn btn-gold" data-next>继续前进</button><button class="btn" data-back>返回母港</button>`
         : `<button class="btn btn-gold" data-back>${r.cleared ? '凯旋！返回母港' : '返回母港'}</button>`;
       root.querySelector('#battleLog').appendChild(nav);
+      logEl.scrollTop = logEl.scrollHeight;   // 结算行与按钮跟随流式输出，免去手动滚动
       const nextBtn = nav.querySelector('[data-next]');
       if (nextBtn) nextBtn.addEventListener('click', () => { onDone(); });
       nav.querySelector('[data-back]').addEventListener('click', () => {

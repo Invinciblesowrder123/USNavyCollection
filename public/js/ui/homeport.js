@@ -121,6 +121,7 @@ const Homeport = (() => {
         if (!r.ok) { UI.toast(r.msg); return; }
         UI.toast(`${Game.shipDef(s).zh} 改造完成！`);
         Game.save(); refresh();
+        if (UI.current && UI.current.name !== 'factory') UI.go(UI.current.name, UI.current.arg);
       });
       m.root.querySelector('[data-act="scrap"]').addEventListener('click', () => {
         if (s.locked) { UI.toast('该舰艇已上锁（首个舰艇/稀有舰艇自动上锁），请先解锁再解体。'); return; }
@@ -129,6 +130,7 @@ const Homeport = (() => {
         Game.save();
         UI.toast(`${Game.shipDef(s).zh} 已解体`);
         m.close();
+        if (UI.current && UI.current.name !== 'factory') UI.go(UI.current.name, UI.current.arg);
       });
       const modBtn = m.root.querySelector('[data-act="modernize"]');
       if (modBtn) modBtn.addEventListener('click', () => openModernize(uid, refresh));
@@ -322,6 +324,8 @@ const Homeport = (() => {
         UI.toast(`近代化改修完成！${desc ? '上升：' + desc : '（偏斜）'}`);
         Game.save();
         m.close(); onDone();
+        /* 刷新底层页面列表（宿舍等），被吃掉的素材舰即时消失（工厂页由调用方局部刷新） */
+        if (UI.current && UI.current.name !== 'factory') UI.go(UI.current.name, UI.current.arg);
       });
     }
     render();

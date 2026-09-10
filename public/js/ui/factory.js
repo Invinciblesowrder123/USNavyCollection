@@ -104,18 +104,24 @@ const FactoryUI = (() => {
 
     function buildPanel() {
       const st = Game.state;
+      /* 记住上次配方（大建免重复输入）；勾选框状态也持久化 */
+      let savedRecipe = null;
+      try { savedRecipe = JSON.parse(localStorage.getItem('usnc_build_recipe') || 'null'); } catch (e) { /* 忽略坏数据 */ }
+      const remember = localStorage.getItem('usnc_build_remember') !== '0';
+      const v = (remember && Array.isArray(savedRecipe) && savedRecipe.length === 4) ? savedRecipe : [30, 30, 30, 10];
       return `<div class="panel">
         <h3>舰娘建造 <span class="dim">（可同时进行2项，建造完成后点击领取）</span></h3>
         <div class="resource-formula">
           ${['燃料', '弹药', '钢材', '铝土'].map((n, i) => {
-            const v = [30, 30, 30, 10];
             return `<div><label>${n}</label><input type="number" min="0" max="9999" id="bf${i}" value="${v[i]}"></div>`;
           }).join('')}
         </div>
         <div class="btn-row">
           ${BUILD_PRESETS.map(p => `<span class="preset-recipe" data-p="${p.v.join(',')}">${p.name}</span>`).join('')}
         </div>
-        <div class="btn-row"><button class="btn btn-gold" data-act="build">开始建造</button></div>
+        <div class="btn-row"><button class="btn btn-gold" data-act="build">开始建造</button>
+          <label class="dim" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="bdRemember" ${remember ? 'checked' : ''}>记住本次配方（大建免重复输入）</label>
+        </div>
         <div class="section-title">建造队列</div>
         <div id="buildQueue">
           ${st.construction.map((c, i) => {
@@ -377,6 +383,11 @@ const FactoryUI = (() => {
       if (buildBtn) buildBtn.addEventListener('click', () => {
         const rv = readRecipe('bf');
         const recipe = { fuel: rv[0].v, ammo: rv[1].v, steel: rv[2].v, baux: rv[3].v };
+        /* 记住配方：勾选时保存，供下次打开建造面板自动填充 */
+        const rememberBox = document.getElementById('bdRemember');
+        const remember = rememberBox ? rememberBox.checked : true;
+        localStorage.setItem('usnc_build_remember', remember ? '1' : '0');
+        if (remember) localStorage.setItem('usnc_build_recipe', JSON.stringify([recipe.fuel, recipe.ammo, recipe.steel, recipe.baux]));
         const r = Factory.startBuild(recipe);
         if (!r.ok) { UI.toast(r.msg); return; }
         UI.toast(`建造开始！预计 ${Util.fmtTime(r.job.end - Date.now())}`);

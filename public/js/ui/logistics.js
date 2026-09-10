@@ -6,16 +6,16 @@
 const LogisticsUI = (() => {
 
   function logistics(root, arg) {
-    let tab = arg || 'expedition';
+    let tab = arg || 'dock';
     let exFleet = 2;   // 远征页当前选中的舰队（2/3/4，仅已解锁）
     render();
 
     function render() {
       root.innerHTML = `
         <div class="tabs">
-          <button class="${tab === 'expedition' ? 'active' : ''}" data-t="expedition">远征</button>
           <button class="${tab === 'dock' ? 'active' : ''}" data-t="dock">入渠修理</button>
           <button class="${tab === 'supply' ? 'active' : ''}" data-t="supply">补给</button>
+          <button class="${tab === 'expedition' ? 'active' : ''}" data-t="expedition">远征</button>
           <button class="${tab === 'practice' ? 'active' : ''}" data-t="practice">演习</button>
         </div>`;
       root.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.t; render(); }));
@@ -51,7 +51,8 @@ const LogisticsUI = (() => {
       const exFleets = Game.unlockedFleets().filter(f => f !== 1);
       if (!exFleets.includes(exFleet)) exFleet = exFleets[0] || 2;
       root.insertAdjacentHTML('beforeend', `<div class="panel">
-        <h3>远征 <span class="dim">（派出舰队远征，出发后舰队锁定）</span></h3>
+        <h3>远征 <span class="dim">（派出舰队远征，出发后舰队锁定）</span>
+          <label class="dim" style="float:right;display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12px"><input type="checkbox" id="exLoop" ${localStorage.getItem('usnc_exloop_f' + exFleet) === '1' ? 'checked' : ''}>自动循环（领取后自动再派遣同一远征）</label></h3>
         <div class="tabs">
           ${exFleets.map(f => `<button class="${exFleet === f ? 'active' : ''}" data-exf="${f}">第${['', '一', '二', '三', '四'][f]}舰队</button>`).join('')}
         </div>
@@ -81,6 +82,11 @@ const LogisticsUI = (() => {
       root.querySelectorAll('[data-exf]').forEach(b => {
         b.addEventListener('click', () => { exFleet = parseInt(b.dataset.exf, 10); render(); });
       });
+      const loopBox = root.querySelector('#exLoop');
+      if (loopBox) loopBox.addEventListener('change', () => {
+        localStorage.setItem('usnc_exloop_f' + exFleet, loopBox.checked ? '1' : '0');
+        UI.toast(loopBox.checked ? `第${['', '一', '二', '三', '四'][exFleet]}舰队已开启远征自动循环` : '已关闭远征自动循环');
+      });
       root.querySelectorAll('[data-ex]').forEach(b => {
         b.addEventListener('click', () => {
           const r = Logistics.startExpedition(exFleet, b.dataset.ex);
@@ -95,7 +101,14 @@ const LogisticsUI = (() => {
         if (!r.ok) { UI.toast(r.msg); return; }
         const rw = Object.entries(r.reward).map(([k, v]) => `${({ fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土', devMats: '开发资材' })[k]}+${v}`).join(' ');
         UI.toast(`远征「${r.ex.name}」${r.great ? '大成功！' : '成功！'}获得 ${rw}`);
-        Game.save(); render();
+        Game.save();
+        /* 自动循环：领取成功后自动再派遣同一远征（条件不满足时提示原因） */
+        if (localStorage.getItem('usnc_exloop_f' + exFleet) === '1' && r.ex && r.ex.id) {
+          const again = Logistics.startExpedition(exFleet, r.ex.id);
+          if (again.ok) UI.toast(`已自动再派遣「${again.ex.name}」`);
+          else UI.toast(`自动再派遣失败：${again.msg}`);
+        }
+        render();
       });
     }
 
