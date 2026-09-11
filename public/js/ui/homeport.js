@@ -393,6 +393,10 @@ const Homeport = (() => {
     const exActive = Game.unlockedFleets().map(f => st.expeditions[f]).filter(Boolean);
     const repCount = st.repairs.filter(r => r).length;
     const repairInfo = st.repairs.map((r, i) => r ? `船坞${i + 1}:${Game.shipDef(st.ships[r.ship]).zh}` : `船坞${i + 1}:空`).join(' · ');
+    /* 第一舰队士气档位（方向三）：统计与档位判定都走引擎，UI 只排版 */
+    const morale = Sortie.fleetMorale(1);
+    const moraleAvg = morale.avg;
+    const moraleRed = morale.hasRed;
 
     root.className = 'home-screen';
     root.innerHTML = `
@@ -441,6 +445,7 @@ const Homeport = (() => {
           <div class="stat-item"><div class="label">👑 提督等级</div><div class="value num">Lv.${st.admiral.level}</div></div>
           <div class="stat-item"><div class="label">🎖 提督头衔</div><div class="value num" style="color:var(--gold)">${Game.admiralTitle(st.admiral.level)}</div></div>
           <div class="stat-item"><div class="label">🔭 舰队索敌</div><div class="value num">${Game.fleetLos(1)}</div></div>
+          <div class="stat-item"><div class="label">🔥 第一舰队士气</div><div class="value num" style="color:${moraleRed ? 'var(--red)' : (moraleAvg >= 50 ? 'var(--gold)' : 'inherit')}">${moraleAvg}<span style="font-size:11px;color:var(--dim)">（闪 ${morale.counts.flash} / 偏低 ${morale.counts.low} / 红脸 ${morale.counts.red}）</span></div></div>
           <div class="stat-item"><div class="label">⚔ 总出击</div><div class="value num">${st.stats.sortie}</div></div>
           <div class="stat-item"><div class="label">🏆 总胜利</div><div class="value num">${st.stats.win}</div></div>
           <div class="stat-item"><div class="label">💥 击沉敌舰</div><div class="value num">${st.stats.sink}</div></div>
@@ -527,6 +532,12 @@ const Homeport = (() => {
         .filter(t => allShips.some(s => Game.shipDef(s).type === t));
       const los = Game.fleetLos(fleetIdx);
       const types = fleet.map(uid => SHIP_TYPE_ZH[Game.shipDef(st.ships[uid]).type]).join('、') || '无';
+      /* 士气档位摘要（方向三）：编成界面必须能看到，否则玩家只能靠猜 */
+      const mr = Sortie.fleetMorale(fleetIdx);
+      const moraleTxt = mr.count
+        ? `士气 平均${mr.avg}（<span style="color:var(--gold)">闪 ${mr.counts.flash}</span> / 偏低 ${mr.counts.low} / <span style="color:var(--red)">红脸 ${mr.counts.red}</span>）`
+        : '士气 —';
+      const advice = Sortie.moraleAdvice(fleetIdx);
       const sortOpts = [
         ['lv:-1', '等级 高→低'], ['lv:1', '等级 低→高'],
         ['time:-1', '入手 新→旧'], ['time:1', '入手 旧→新']
@@ -539,7 +550,8 @@ const Homeport = (() => {
           `).join('')}
         </div>
         <div class="panel">
-          <h3>编成 第${fleetIdx}舰队 <span class="dim">索敌 ${los} ｜ 舰种：${UI.esc(types)}</span></h3>
+          <h3>编成 第${fleetIdx}舰队 <span class="dim">索敌 ${los} ｜ ${moraleTxt} ｜ 舰种：${UI.esc(types)}</span></h3>
+          ${advice ? `<div class="md-morale ${advice.level}">⚠ ${UI.esc(advice.text)}</div>` : ''}
           <div class="flex" style="gap:8px">
             ${Array.from({ length: MAX }, (_, i) => {
               const uid = fleet[i];

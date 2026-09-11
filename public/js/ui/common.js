@@ -230,7 +230,14 @@ const UI = (() => {
     if (inRepair) out.push('<span class="state-badge repair">入渠</span>');
     if (exFleet) out.push('<span class="state-badge expedition">远征</span>');
     if (s.hp > 0 && hpRatio(uid) <= 0.25) out.push('<span class="state-badge broken">大破</span>');
-    if (s.morale >= 50) out.push('<span class="state-badge morale">闪</span>');
+    /* 士气档位徽记（方向三）：文字带具体修正数值，不靠颜色表达；「正常」档不显示。
+     * 档位与系数来自 Game.moraleTier/moraleBadge（与 battle.js 同源），UI 不硬编码。 */
+    const tier = Game.moraleTier(s.morale);
+    const text = Game.moraleBadge(s.morale);
+    if (tier && text) {
+      const m = Game.moraleMods(s.morale);
+      out.push(`<span class="state-badge morale-${tier.key}" title="${Util.esc(tier.name)}：命中×${m.hit} 回避×${m.evd}">${Util.esc(text)}</span>`);
+    }
     return out.join('');
   }
 

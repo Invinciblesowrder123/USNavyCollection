@@ -70,8 +70,10 @@ const Sortie = (() => {
     const warn = (minFuel < 0.5 || minAmmo < 0.5)
       ? `舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！弹药<50%伤害减半，0%无法炮击，建议先在后勤补给！`
       : null;
+    /* 士气轮换提醒（方向三）：只提示不拦截（P0-2），随出击结果一并返回给 UI */
+    const advice = moraleAdvice(fleetIdx);
     st.sortie = { mapId, fleetIdx, node: map.start, path: [map.start], finished: false, nightDisabled: false };
-    return { ok: true, warn };
+    return { ok: true, warn, advice };
   }
 
   /* 当前舰队中处于大破状态的僚舰（非旗舰） */
@@ -225,6 +227,52 @@ const Sortie = (() => {
     return prep;
   }
 
+  /* 舰队士气摘要（编成 / 出击 / 母港共用同一份统计，避免三处各写一套） */
+  function fleetMorale(fleetIdx) {
+    const st = GameRef().state;
+    const B = BattleRef();
+    const uids = st.fleet[fleetIdx] || [];
+    const counts = { flash: 0, normal: 0, low: 0, red: 0 };
+    const byTier = { flash: [], normal: [], low: [], red: [] };
+    let sum = 0, n = 0;
+    for (const uid of uids) {
+      const s = st.ships[uid];
+      if (!s) continue;
+      const t = B ? B.moraleTier(s.morale) : { key: 'normal', name: '正常' };
+      counts[t.key] = (counts[t.key] || 0) + 1;
+      (byTier[t.key] = byTier[t.key] || []).push(s);
+      sum += s.morale || 0;
+      n++;
+    }
+    const fmt = list => list.map(s => (ShipData[s.id] && ShipData[s.id].zh) || s.id);
+    return {
+      count: n,
+      avg: n ? Math.round(sum / n) : 0,
+      counts,
+      tiers: B ? B.MORALE_TIERS : [],
+      flashNames: fmt(byTier.flash || []),
+      lowNames: fmt(byTier.low || []),
+      redNames: fmt(byTier.red || []),
+      hasRed: (counts.red || 0) > 0,
+      hasLow: (counts.low || 0) > 0
+    };
+  }
+
+  /* 出击前轮换提醒（P0-2：必须把真实出路写清楚 —— 母港静置士气每 tick +3，到 53 即为「闪」）
+   * 触发条件：任一舰红脸（<30，命中 −50%）或平均士气 <40（偏低区间，再打一场即跌入红脸） */
+  function moraleAdvice(fleetIdx) {
+    const m = fleetMorale(fleetIdx);
+    if (!m.count) return null;
+    if (!m.hasRed && m.avg >= 40) return null;
+    const cause = m.hasRed
+      ? `当前编队 ${m.counts.red} 艘处于红脸（${m.redNames.join('、')}），命中 −50%`
+      : `舰队平均士气 ${m.avg} 已进入偏低区间，再出击一场将跌入红脸`;
+    return {
+      level: m.hasRed ? 'red' : 'low',
+      text: `${cause}。建议轮换另一支舰队，或回港休整片刻——母港静置时士气每 30 秒 +3，恢复到 53 即为「闪」（命中 ×1.2 / 回避 ×1.8）。`
+    };
+  }
+
   /* ============ 失败归因（P0-5：结算要说清主要失败来源 + 一个可执行改进方向） ============
    * 纯函数：输入 结算结果 / 节点定义 / 参战舰队 / 存档，输出归因行数组；不接触 DOM，便于自动化断言。
    * 只在败局时输出；每条归因必须对应真实发生过的失败原因（防误报）。 */
@@ -257,6 +305,18 @@ const Sortie = (() => {
     if (result.recon === false) {
       out.push('索敌失败：舰队无法参加航空战，命中与回避下降。'
         + '改进方向：提高舰队索敌值（水侦、电探、舰载机均可提升索敌）。');
+    }
+    /* 4) 士气：参战舰中有红脸（命中减半）——只在真的有红脸舰时输出（防误报） */
+    {
+      const B = BattleRef();
+      const red = ships
+        .map(uid => st.ships[uid])
+        .filter(s => s && B && B.moraleTier(s.morale).key === 'red');
+      if (red.length) {
+        const names = red.map(s => (ShipData[s.id] && ShipData[s.id].zh) || s.id).join('、');
+        out.push(`本场 ${red.length} 艘处于红脸（${names}），命中减半是失败原因之一。`
+          + '改进方向：轮换另一支舰队，或回母港休整（静置时士气每 30 秒 +3）到「闪」后再战。');
+      }
     }
     return out;
   }
@@ -466,6 +526,14 @@ const Sortie = (() => {
       }
     }
     const airSup = B.hasAirSuperiority(stats.air, enemyAir);
+    const morale = fleetMorale(fleetIdx);
+    /* 航向侦察（方向五）：只说明玩家可见的两个条件，不承诺结果 */
+    const reconGuide = {
+      carried: !!stats.reconPlane,
+      detail: stats.reconPlane
+        ? '已携带舰侦：索敌成功时「T字不利」概率由 10% 降至 5%'
+        : '未携带舰侦：「T字不利」概率 10%。舰侦（SBD VS-2，开发·空母系）在索敌成功时可把它降到 5%（占用舰战槽）'
+    };
     return {
       mapId: map.id,
       stats: {
@@ -473,6 +541,9 @@ const Sortie = (() => {
         night: stats.night, speed
       },
       enemyAir, airSup,
+      morale,
+      moraleAdvice: moraleAdvice(fleetIdx),
+      reconGuide,
       threats: threatCheck(fleetIdx, map, stats),
       specials: B.specialAttackReport(fleetIdx, { airSup, myAir: stats.air, enAir: enemyAir })
     };
@@ -541,7 +612,9 @@ const Sortie = (() => {
     atBoss, retreat, returnHome, nodeDef, sortieConsumption, daPoShips, flagshipDaPo,
     /* 出击前情报室（方向一）+ 失败归因 */
     intel, threatCheck, requiredLos, fleetHasRadar, fleetHasAswShip, attributionLines,
-    THREAT_INFO, THREAT_KEYS
+    THREAT_INFO, THREAT_KEYS,
+    /* 士气（方向三） */
+    fleetMorale, moraleAdvice
   };
 })();
 

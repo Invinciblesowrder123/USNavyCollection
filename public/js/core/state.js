@@ -387,6 +387,10 @@ const Game = (() => {
     if (!s) return { allFast: false, hasSlow: false, slowCount: 0, slowNames: [] };
     return { allFast: s.allFast, hasSlow: s.hasSlow, slowCount: s.slowCount, slowNames: s.slowNames };
   }
+  /* 士气档位（委托 battle.js 的 MORALE_TIERS；UI 徽记与文案读这里，禁止硬编码系数） */
+  function moraleTier(morale) { const B = BattleRef(); return B ? B.moraleTier(morale) : null; }
+  function moraleMods(morale) { const B = BattleRef(); return B ? B.moraleMods(morale) : { hit: 1, evd: 1 }; }
+  function moraleBadge(morale) { const B = BattleRef(); return B ? B.moraleBadge(morale) : ''; }
 
   /* ============ 初始化 ============ */
   function newGame() {
@@ -669,6 +673,7 @@ const Game = (() => {
     shouldAutoLockShip, shouldAutoLockEquip,
     shipDef, shipStats, fleetLos, fleetHasName, addAdmiralExp, resourceCap,
     fleetAir, fleetAsw, fleetNight, fleetSpeed, battleFleetStats,
+    moraleTier, moraleMods, moraleBadge,
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
     setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets,
     migrateSave, normalizeSave, CURRENT_SAVE_VERSION,

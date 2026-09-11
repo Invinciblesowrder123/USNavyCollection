@@ -1184,6 +1184,123 @@ assert('威胁说明不含未声明维度的表述（防文案漂移）', ANNOTA
   return Object.keys(DIM_WORDS).every(k => declared.includes(k) || !note.includes(DIM_WORDS[k]));
 }));
 
+section('方向三·士气可见化（任务2.1–2.3）');
+/* 档位映射：边界值 0 / 29 / 30 / 49 / 50 / 100 */
+const tierOf = m => Battle.moraleTier(m).key;
+assert('士气档位边界正确（0/29→红脸，30/39→偏低，40/49→正常，50/100→闪）',
+  tierOf(0) === 'red' && tierOf(29) === 'red' && tierOf(30) === 'low' && tierOf(39) === 'low' &&
+  tierOf(40) === 'normal' && tierOf(49) === 'normal' && tierOf(50) === 'flash' && tierOf(100) === 'flash',
+  [0, 29, 30, 39, 40, 49, 50, 100].map(m => m + ':' + tierOf(m)).join(' '));
+/* 修正系数与战斗实际使用同源：UI 读取的就是 MORALE_TIERS，battle.js 的 hitChance 也读它 */
+assert('士气修正系数与档位表同源（闪 1.2/1.8，红脸 0.5/1.0）',
+  Battle.moraleMods(60).hit === 1.2 && Battle.moraleMods(60).evd === 1.8 &&
+  Battle.moraleMods(10).hit === 0.5 && Battle.moraleMods(10).evd === 1.0 &&
+  Battle.moraleMods(45).hit === 1 && Battle.moraleMods(45).evd === 1,
+  JSON.stringify([Battle.moraleMods(60), Battle.moraleMods(10), Battle.moraleMods(45)]));
+assert('档位表即 battle.js 使用的表（Game.moraleTier 与 Battle.moraleTier 同一对象）',
+  Game.moraleTier(60) === Battle.moraleTier(60) && Game.moraleMods(10).hit === Battle.moraleMods(10).hit);
+/* 四种档位的文字标识必须可区分（重要状态不能只靠颜色） */
+const badgeTexts = [60, 45, 35, 10].map(m => Game.moraleBadge(m));
+assert('四档徽记文字可区分且带修正数值',
+  badgeTexts[0].includes('闪') && badgeTexts[0].includes('1.2') && badgeTexts[0].includes('1.8') &&
+  badgeTexts[1] === '' && badgeTexts[2] === '偏低' && badgeTexts[3].includes('红脸') && badgeTexts[3].includes('0.5'),
+  JSON.stringify(badgeTexts));
+assert('未定义士气按「正常」处理（不施加修正、不误标红脸）',
+  tierOf(undefined) === 'normal' && Game.moraleMods(undefined).hit === 1, 'tier=' + tierOf(undefined));
+/* 舰队士气摘要与出击前轮换提醒 */
+Game.state.fleet[1] = [iowaUid, cvUid, ddUid2];
+for (const uid of Game.state.fleet[1]) Game.state.ships[uid].morale = 55;
+assert('舰队士气摘要：全闪编队不触发提醒',
+  Sortie.fleetMorale(1).counts.flash === 3 && Sortie.moraleAdvice(1) === null, JSON.stringify(Sortie.fleetMorale(1).counts));
+for (const uid of Game.state.fleet[1]) Game.state.ships[uid].morale = 20;
+const adviceRed = Sortie.moraleAdvice(1);
+assert('红脸编队：提醒含「轮换」或「休整」', !!adviceRed && /轮换|休整/.test(adviceRed.text), adviceRed && adviceRed.text);
+assert('红脸编队：提醒写明真实出路（回港静置恢复）', !!adviceRed && adviceRed.text.includes('母港静置'), adviceRed && adviceRed.text);
+const stRed = Sortie.start('2-2', 1);
+assert('红脸编队仍可出击（不拦截，P0-2）', stRed.ok === true);
+assert('出击入口回传士气提醒',
+  stRed.ok === true && !!stRed.advice && /轮换|休整/.test(stRed.advice.text),
+  JSON.stringify(stRed.advice && stRed.advice.text));
+Sortie.returnHome();
+/* 平均士气 <30 的编成（断言 4 的原始表述） */
+for (const uid of Game.state.fleet[1]) Game.state.ships[uid].morale = 25;
+const stLow = Sortie.start('2-2', 1);
+assert('平均士气<30：出击前提示含关键字且 ok=true',
+  stLow.ok === true && !!stLow.advice && /轮换|休整/.test(stLow.advice.text),
+  JSON.stringify(stLow.advice && stLow.advice.text));
+Sortie.returnHome();
+/* 士气归因（任务 2.3）：红脸舰队败局必须有；非红脸不得有 */
+const mkResult = () => ({ victory: false, rank: 'D', myAir: 0, enAir: 0, airSup: false, recon: true });
+for (const uid of Game.state.fleet[1]) Game.state.ships[uid].morale = 20;
+const attrMoraleRed = Sortie.attributionLines({ result: mkResult(), nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state });
+assert('士气归因：红脸舰队败局含「红脸」归因行', attrMoraleRed.some(l => l.includes('红脸') && l.includes('命中减半')), attrMoraleRed.join(' | '));
+for (const uid of Game.state.fleet[1]) Game.state.ships[uid].morale = 55;
+const attrMoraleOk = Sortie.attributionLines({ result: mkResult(), nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state });
+assert('士气归因：非红脸舰队败局不含该行（防误报）', !attrMoraleOk.some(l => l.includes('红脸')), attrMoraleOk.join(' | '));
+assert('士气归因：胜局不产生归因', Sortie.attributionLines({ result: { victory: true, rank: 'S' }, nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state }).length === 0);
+for (const uid of Game.state.fleet[1]) Game.state.ships[uid].morale = 49;
+
+section('方向五·侦察引导航向（任务2.4 纸面验证 + 2.5 实现）');
+const W = Battle.ENG_WEIGHTS;
+assert('基础权重仍为 wiki 原值（45/30/15/10）',
+  W.base.PARALLEL === 45 && W.base.REVERSE === 30 && W.base.T_ADV === 15 && W.base.T_DIS === 10, JSON.stringify(W.base));
+assert('偏移权重只在 T_ADV/T_DIS 上移动（其余类别不变）',
+  W.recon.PARALLEL === W.base.PARALLEL && W.recon.REVERSE === W.base.REVERSE &&
+  W.recon.T_ADV > W.base.T_ADV && W.recon.T_DIS < W.base.T_DIS, JSON.stringify(W.recon));
+assert('偏移不消灭 T 不利（概率仍 >0）', W.recon.T_DIS > 0, 'T_DIS=' + W.recon.T_DIS);
+const wsum = o => Object.values(o).reduce((a, b) => a + b, 0);
+assert('两组权重总和一致（不额外制造概率）', wsum(W.base) === wsum(W.recon), wsum(W.base) + ' vs ' + wsum(W.recon));
+/* 触发条件只依赖两个玩家可见条件；向后兼容 */
+assert('向后兼容：未携带舰侦 → 基础权重（行为与改动前一致）',
+  JSON.stringify(Battle.engagementWeights(true, false)) === JSON.stringify(W.base));
+assert('索敌失败 → 即使携带舰侦也用基础权重（不触发）',
+  JSON.stringify(Battle.engagementWeights(false, true)) === JSON.stringify(W.base));
+assert('索敌成功 + 携带舰侦 → 偏移权重',
+  JSON.stringify(Battle.engagementWeights(true, true)) === JSON.stringify(W.recon));
+/* 统计对照：同编队，仅第 4 槽位 舰战×4 → 舰战×3+舰侦（对无航空敌军，两者制空状态同为「确保」） */
+const cvReconUid = intelEquipShip('enterprise', 99, 1, ['f6f5', 'f6f5', 'f6f5', 'sbdvs2']);
+Game.state.fleet[1] = [iowaUid, cvUid, ddUid2];
+const fleetNoRecon = [iowaUid, cvUid, ddUid2];
+const fleetRecon = [iowaUid, cvReconUid, ddUid2];
+function engStats(fleet, enemyKey, n) {
+  const out = { tot: 0, reconOk: 0, dis: 0, guide: 0, dmg: {}, cnt: {} };
+  for (let i = 0; i < n; i++) {
+    const r = Battle.battle(fleet, ENEMY_FLEETS[enemyKey].ships, '单纵阵', ENEMY_FLEETS[enemyKey].formation, { allowNight: false, fleetIdx: 1 });
+    const e = r.engagement || 'PARALLEL';
+    out.tot++;
+    if (r.recon !== false) out.reconOk++;
+    if (e === 'T_DIS') out.dis++;
+    if (r.log.some(l => typeof l === 'string' && l.includes('舰侦侦察引导'))) out.guide++;
+    out.dmg[e] = (out.dmg[e] || 0) + r.mySide.reduce((a, s) => a + s.dealt, 0);
+    out.cnt[e] = (out.cnt[e] || 0) + 1;
+  }
+  return out;
+}
+/* 样本量：T 不利的理论差为 5 个百分点；4000 场时该频率的标准误约 0.35 个百分点，
+ * 断言阈值取 2.5 个百分点（约 7σ），既要求方向正确也要求差值显著，同时避免偶发噪声导致假失败。 */
+const EN = 4000;
+const sNo = engStats(fleetNoRecon, 'F02', EN);
+const sRe = engStats(fleetRecon, 'F02', EN);
+const rateNo = sNo.dis / Math.max(1, sNo.reconOk);
+const rateRe = sRe.dis / Math.max(1, sRe.reconOk);
+assert('带舰侦编成的 T 不利频率显著低于不带（方向正确 + 差值显著）',
+  rateNo - rateRe >= 0.025, `无舰侦=${(rateNo * 100).toFixed(2)}% 带舰侦=${(rateRe * 100).toFixed(2)}%`);
+assert('不带舰侦时 T 不利频率仍为基线 10% 左右', Math.abs(rateNo - 0.10) <= 0.025, `${(rateNo * 100).toFixed(2)}%`);
+assert('带舰侦时 T 不利不被消灭（频率仍 ≥2%）', rateRe >= 0.02, `${(rateRe * 100).toFixed(2)}%`);
+assert('战报说明：携带舰侦且索敌成功时追加「舰侦侦察引导」', sRe.guide === sRe.reconOk && sRe.guide > 0, `guide=${sRe.guide} reconOk=${sRe.reconOk}`);
+assert('战报说明：未携带舰侦时绝不出现该行', sNo.guide === 0, 'guide=' + sNo.guide);
+/* 只改航向：同一交战形态下的输出分布无系统性差异（带动随机未被触碰） */
+let maxDelta = 0, worstEng = '';
+for (const e of ['PARALLEL', 'REVERSE', 'T_ADV', 'T_DIS']) {
+  if ((sNo.cnt[e] || 0) < 50 || (sRe.cnt[e] || 0) < 50) continue;
+  const a = sNo.dmg[e] / sNo.cnt[e], b = sRe.dmg[e] / sRe.cnt[e];
+  const d = Math.abs(a - b) / Math.max(1, a);
+  if (d > maxDelta) { maxDelta = d; worstEng = e; }
+}
+assert('只改航向：同一交战形态下输出无系统性差异（命中/伤害/暴击随机未改动）',
+  maxDelta < 0.15, `maxΔ=${(maxDelta * 100).toFixed(1)}% @${worstEng}`);
+Game.state.fleet[1] = [iowaUid, cvUid, ddUid2];
+
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed ? 1 : 0);

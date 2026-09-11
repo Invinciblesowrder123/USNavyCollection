@@ -301,6 +301,10 @@ body.unauth #topbar, body.unauth #navbar { display: none; }
 .state-badge.expedition { color: var(--orange); border: 1px solid var(--orange); }
 .state-badge.broken { color: var(--red); border: 1px solid var(--red); }
 .state-badge.morale { color: #7fe07f; }
+/* 士气档位徽记（方向三）：颜色是辅助，文字必须表达档位与修正数值 */
+.state-badge.morale-flash { color: var(--gold); border: 1px solid rgba(255,215,0,.55); }
+.state-badge.morale-low { color: var(--orange); border: 1px solid rgba(240,160,80,.5); }
+.state-badge.morale-red { color: var(--red); border: 1px solid var(--red); }
 .state-badge.danger { color: var(--red); border: 1px solid var(--red); }
 
 /* ---------- 稀有度差异化（参照舰C wiki：名字配色 + 卡片金★ + 立绘边框） ---------- */
@@ -1106,6 +1110,11 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .md-threat { color: var(--dim); font-size: 11.5px; line-height: 1.7; margin-top: 4px; border-left: 2px solid var(--gold); padding-left: 8px; }
 .md-intel-sep { border-top: 1px dashed var(--line); margin: 6px 0; }
 .md-special { line-height: 1.9; }
+/* 出击前轮换提醒（方向三）：红脸/偏低时出现在编成自检面板顶部 */
+.md-morale { font-size: 11.5px; line-height: 1.7; border-radius: 4px; padding: 5px 8px; margin-top: 4px; }
+.md-morale.red { color: #ffb0b0; border-left: 2px solid var(--red); background: rgba(224,85,85,.10); }
+.md-morale.low { color: #ffd6a8; border-left: 2px solid var(--orange); background: rgba(240,160,80,.10); }
+.morale-row { font-size: 11.5px; line-height: 1.9; }
 .md-btn { margin-top: auto; font-size: 15px; padding: 9px 0; }
 
 

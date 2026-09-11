@@ -88,7 +88,15 @@ USNavyCollection/
 - 舰队级能力接口（**唯一来源，UI 禁止另写一套**）：`Battle.fleetStats(fleetIdx)` / `enemyAirPower(key)` / `hasAirSuperiority(my,en)` / `specialAttackReport(fleetIdx,{airSup})`；
   `Game.fleetAir/fleetAsw/fleetNight/fleetSpeed/battleFleetStats` 是薄包装。「存档实例→战斗对象→聚合」链路只在 `battle.js` 内实现一次。
 - 特殊攻击判定表：`battle.js` 的 `DAY_SPECIALS`（5 项）/ `NIGHT_SPECIALS`（3 项）+ `attackProfile()`；`resolveDayAttack`/`resolveNightAttack` 与出击前清单**共用同一张表**，改倍率只改一处。
-- 失败归因：`game/sortie.js::attributionLines()` 是**纯函数**（输入 result/nodeDef/fleet/state → 输出归因行）；覆盖 sub / night / 制空不足 / 索敌失败，只在败局输出。结算结果里 `recon`/`myAir`/`enAir`/`airSup` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。
+- 士气档位（**唯一来源 `battle.js` 的 `MORALE_TIERS`**）：闪 ≥50（命中×1.2 / 回避×1.8）/ 正常 40–49 / 偏低 30–39（无惩罚，预警档）/ 红脸 <30（命中×0.5，无回避惩罚）。
+  `hitChance` 直接读该表；UI 用 `Game.moraleTier/moraleMods/moraleBadge`（徽记文字必须带修正数值，不靠颜色）。
+  舰队摘要 `Sortie.fleetMorale(idx)`、轮换提醒 `Sortie.moraleAdvice(idx)`（提醒必须写明「回港静置每 30 秒 +3，到 53 即为闪」这条真实退路）。
+  `Sortie.start()` 返回 `{ok, warn, advice}`——**advice 只提示不拦截**。
+- 交战形态权重（**方向五**）：`battle.js` 的 `ENG_WEIGHTS = { base:45/30/15/10, recon:45/30/20/5 }`，由 `engagementWeights(reconOk, hasReconPlane)` 选择。
+  **只有「索敌成功 且 舰队携带舰侦（`cat==='舰侦'`）」才用 recon 表**；不消灭 T 不利（仍 5%）。未携带舰侦时行为与改动前逐位一致。
+  纸面验证见 `../design/方向五_纸面验证结论.md`、脚本 `scripts/recon_eng_paper.js`：带舰侦**不是无脑更强**（1-3 +11.25pp、3-1 −5.85pp）。
+- 失败归因：`game/sortie.js::attributionLines()` 是**纯函数**（输入 result/nodeDef/fleet/state → 输出归因行）；覆盖 sub / night / 制空不足 / 索敌失败 / 红脸。
+  只在败局输出。结算结果里 `recon`/`myAir`/`enAir`/`airSup` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。
 
 ## 当前进度状态
 
@@ -126,6 +134,10 @@ USNavyCollection/
 顺手修复：① 2 项既有失败断言（弗莱彻改造经验不足）；② E2E 因 09-11 立绘改动缺 `<script>` 而整轮失败（`SecretaryL2D is not defined`）。
 **新增工具 `scripts/drift_check.js`**（固定种子 LCG → 9 组战斗场景 → 评价串/伤害/日志指纹）：改 `battle.js` 前后用
 `node scripts/drift_check.js --against scripts/battle_digest.baseline.txt` 证明零数值漂移（本次 780+ 场逐位一致）。**此后动战斗代码必跑**。
+
+**开发任务书 · 批次2（2026-09-11）**：方向三「士气可见化」（4 档 + 修正数值同源 + 编成/出击/母港三处可见 + 出击前轮换提醒 + 红脸归因）
+与方向五「侦察引导航向」（先纸面验证达标 → 索敌成功+携舰侦时交战形态权重 45/30/15/10 → 45/30/20/5，不消灭 T 不利；战报加引导说明；情报室加「航向侦察」行）。
+sim 1413 / 迁移 18 / E2E 123 全过，0 JS 错误；引擎逐位对拍仍零漂移。顺手修复 `test_flow.html` 的 1-1 攻略循环偶发假失败（3 轮 → 最多 6 轮）。
 
 见 `HEARTBEAT.md` 最新条目（本文件只保留决策，心跳文件记录流水）。
 

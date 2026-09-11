@@ -112,6 +112,8 @@ const SortieUI = (() => {
       minFuel = Math.min(minFuel, s.supply.fuel);
       minAmmo = Math.min(minAmmo, s.supply.ammo);
     }
+    /* 士气档位（方向三）：出击中可见，决定「继续进击 / 撤退休整」 */
+    const mr = Sortie.fleetMorale(so.fleetIdx);
     return `<div class="map-topbar">
       <div class="map-gauge">
         <div class="gauge-head"><span>海域血条</span><b>${mp.cleared ? '★ 已攻略' : `${mp.kills} / ${total} 次击破`}</b></div>
@@ -119,6 +121,7 @@ const SortieUI = (() => {
       </div>
       <div class="map-stat">索敌 <b>${Game.fleetLos(so.fleetIdx)}</b></div>
       <div class="map-stat">油 <b class="${minFuel < 0.5 ? 'red' : ''}">${Math.round(minFuel * 100)}%</b> ｜ 弹 <b class="${minAmmo < 0.5 ? 'red' : ''}">${Math.round(minAmmo * 100)}%</b></div>
+      <div class="map-stat">士气 <b class="${mr.counts.red ? 'red' : ''}">${mr.avg}</b> <span class="dim">（闪 ${mr.counts.flash} ｜ 偏低 ${mr.counts.low} ｜ 红脸 ${mr.counts.red}）</span></div>
     </div>`;
   }
 
@@ -216,17 +219,36 @@ const SortieUI = (() => {
     const speedTxt = s.speed.slowCount > 0
       ? `<span class="red">含低速舰 ${s.speed.slowCount} 艘（${Util.esc(s.speed.slowNames.join('、'))}）</span>`
       : '<span class="ok">全队高速</span>';
-    let html = `<div class="md-intel-sep"></div>
-      <div><b>舰队能力</b>：制空 <b>${s.air}</b> ｜ 索敌 <b>${s.los}</b> ｜ 对潜 <b>${s.asw}</b> ｜ 速力 ${speedTxt} ｜ 夜战火力 <b>${s.night}</b></div>`;
+    let html = `<div class="md-intel-sep"></div>`;
+    /* 出击前轮换提醒（方向三）：置顶，因为它决定「现在打还是先休整」 */
+    if (it.moraleAdvice) html += `<div class="md-morale ${it.moraleAdvice.level}">⚠ ${Util.esc(it.moraleAdvice.text)}</div>`;
+    html += `<div><b>舰队能力</b>：制空 <b>${s.air}</b> ｜ 索敌 <b>${s.los}</b> ｜ 对潜 <b>${s.asw}</b> ｜ 速力 ${speedTxt} ｜ 夜战火力 <b>${s.night}</b></div>`;
+    /* 士气档位（方向三）：修正数值由 battle.js 的档位表给出，UI 不硬编码 */
+    const mr = it.morale;
+    if (mr && mr.count) {
+      const seg = [];
+      if (mr.counts.flash) seg.push(`<span class="ok">闪 ${mr.counts.flash}</span>`);
+      if (mr.counts.normal) seg.push(`正常 ${mr.counts.normal}`);
+      if (mr.counts.low) seg.push(`<span style="color:var(--orange)">偏低 ${mr.counts.low}</span>`);
+      if (mr.counts.red) seg.push(`<span class="red">红脸 ${mr.counts.red}</span>`);
+      const mods = mr.tiers.filter(t => t.hit !== 1 || t.evd !== 1).map(t => `${t.name}：${t.desc}`).join('；');
+      html += `<div class="morale-row"><b>舰队士气</b>：平均 <b>${mr.avg}</b>（${seg.join(' ｜ ')}）<span class="dim">｜ ${Util.esc(mods)}</span></div>`;
+    }
     if (it.threats.length) {
       const t = it.threats.map(x => x.ok
         ? `<span class="ok">✓ ${x.name}</span>`
         : `<span class="red">✗ ${x.name}：${Util.esc(x.detail)}</span>`).join(' ｜ ');
       html += `<div><b>威胁对位</b>：${t}</div>`;
     }
+    /* 航向侦察（方向五）：把「原本完全不可干预的随机项」变成一个可准备的选择 */
+    if (it.reconGuide) {
+      html += `<div class="morale-row"><b>航向侦察</b>：${it.reconGuide.carried
+        ? `<span class="ok">${Util.esc(it.reconGuide.detail)}</span>`
+        : Util.esc(it.reconGuide.detail)}</div>`;
+    }
     html += specialsHtml(it.specials, it.airSup);
     if (m.threatNote) html += `<div class="md-threat"><b>威胁评估</b>：${Util.esc(m.threatNote)}</div>`;
-    html += `<div class="dim">自检只作提示，不阻止出击。对位不满足仍可出击，失败后可按归因调整编成。</div>`;
+    html += `<div class="dim">自检只作提示，不阻止出击。对位不满足、士气偏低仍可出击，失败后可按归因调整编成。</div>`;
     return html;
   }
 
@@ -350,7 +372,9 @@ const SortieUI = (() => {
           }
           const r = Sortie.start(selMap, selFleet);
           if (!r.ok) { UI.toast(r.msg); return; }
-          if (r.warn) UI.toast(r.warn);
+          /* 油弹警告 + 士气轮换提醒（均为提示，不拦截出击） */
+          const notes = [r.warn, r.advice && r.advice.text].filter(Boolean);
+          if (notes.length) UI.toast(notes.join('\n'), 5200);
           const daPo = Sortie.daPoShips();
           if (daPo.length) UI.toast(`警告：${daPo.map(u => UI.esc(Game.shipDef(Game.state.ships[u]).zh)).join('、')} 大破出击，进击有轰沉风险！`);
           Game.save();
@@ -379,8 +403,7 @@ const SortieUI = (() => {
           ${mapTopbar(map, so)}
           <div class="map-board-wrap">${mapBoard(map, so)}</div>
           <div class="map-nodeinfo">
-            <b>当前节点 ${so.node}</b>：${def.mode ? NODE_MODE_ZH[def.mode] : (NODE_TYPE_ZH[def.type] || def.type)}
-            ${def.mode === 'night'
+            <b>当前节点 ${so.node}</b>：${def.mode ? NODE_MODE_ZH[def.mode] : (NODE_TYPE_ZH[def.type] || def.type)}            ${def.mode === 'night'
               ? `<span class="dim">｜ 无昼战，直接夜战：驱逐/轻巡的夜战火力是关键</span>`
               : def.mode === 'sub'
                 ? `<span class="dim">｜ 潜艇伏击：需对潜舰艇（DD/CL）；低速大目标更易被雷击</span>`

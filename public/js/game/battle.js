@@ -22,6 +22,20 @@ const Battle = (() => {
 
   const ENGAGEMENT = { PARALLEL: '同航战', REVERSE: '反航战', T_ADV: 'T字有利', T_DIS: 'T字不利' };
   const ENG_MOD = { PARALLEL: 1.0, REVERSE: 0.8, T_ADV: 1.2, T_DIS: 0.6 };
+  /* ============ 交战形态权重表（方向五：侦察引导航向） ============
+   * base  = wiki 原值 45/30/15/10（**改这里等于改全局手感**，非必要不动）
+   * recon = 索敌成功且舰队携带舰侦时使用的偏移权重：
+   *         单级效果、只把 5 个百分点从「T字不利」挪到「T字有利」、
+   *         **不消灭 T 不利**（仍有 5%）、不引入失败惩罚。
+   * 依据：纸面验证（`../design/方向五_纸面验证结论.md`）——对中等强度编队 S 胜率影响 +1.9~+2.8 个百分点。 */
+  const ENG_WEIGHTS = {
+    base: { PARALLEL: 45, REVERSE: 30, T_ADV: 15, T_DIS: 10 },
+    recon: { PARALLEL: 45, REVERSE: 30, T_ADV: 20, T_DIS: 5 }
+  };
+  /* 交战形态权重选择：只依赖「索敌成功」与「舰队携带舰侦」两个玩家可见条件 */
+  function engagementWeights(reconOk, hasReconPlane) {
+    return (reconOk && hasReconPlane) ? ENG_WEIGHTS.recon : ENG_WEIGHTS.base;
+  }
 
   /* 阵型补正（wiki：炮击/雷击/对潜/夜战/对空（舰队防空值）） */
   const FORMATIONS = {
@@ -91,6 +105,7 @@ const Battle = (() => {
       lookout: eqObjs.some(e => e && e.id === 'lookout'),
       illuminator: eqObjs.some(e => e && e.id === 'star_mk9'),
       torpBelt: eqObjs.some(e => e && (e.id === 'bulge_m' || e.id === 'bulge_l')),
+      reconPlane: eqObjs.some(e => e && e.cat === '舰侦'),   // 舰侦（侦察飞行队）：索敌成功后引导航向
       speed: shipSpeed(def),
       alive: stats.hp > 0, hp: stats.hp, dealt: 0
     };
@@ -213,14 +228,47 @@ const Battle = (() => {
     return Math.max(1, Math.floor(dmg));
   }
 
+  /* ============ 士气档位与战斗修正（唯一来源，UI 不得硬编码系数） ============
+   * 4 档：闪 ≥50 / 正常 40–49 / 偏低 30–39 / 红脸 <30
+   *   闪   ：命中 ×1.2、回避 ×1.8（wiki）
+   *   红脸 ：命中 ×0.5（无回避惩罚，wiki）
+   *   偏低 ：**没有战斗惩罚**，是预警档——出击结算 −15，30–39 的舰再打一场就会掉进红脸。
+   * 母港静置恢复：每 tick +3 至 49；49~52 直接跳到 53（即「歇一会儿就自动到闪」，state.js regen）。 */
+  const MORALE_TIERS = [
+    { key: 'flash', name: '闪', min: 50, hit: 1.2, evd: 1.8, desc: '命中 ×1.2 / 回避 ×1.8' },
+    { key: 'normal', name: '正常', min: 40, hit: 1.0, evd: 1.0, desc: '无修正' },
+    { key: 'low', name: '偏低', min: 30, hit: 1.0, evd: 1.0, desc: '无修正（再出击一场将跌入红脸）' },
+    { key: 'red', name: '红脸', min: 0, hit: 0.5, evd: 1.0, desc: '命中 ×0.5' }
+  ];
+  function moraleTier(morale) {
+    const m = Number(morale);
+    if (!isFinite(m)) return MORALE_TIERS[1];          // 未定义士气按「正常」显示（不施加修正）
+    for (const t of MORALE_TIERS) if (m >= t.min) return t;
+    return MORALE_TIERS[MORALE_TIERS.length - 1];
+  }
+  /* 战斗修正系数（hitChance 读这张表；改档位只改这里） */
+  function moraleMods(morale) {
+    const m = Number(morale);
+    if (!isFinite(m)) return { hit: 1, evd: 1 };
+    const t = moraleTier(m);
+    return { hit: t.hit, evd: t.evd };
+  }
+  /* 徽记文案：必须带具体修正数值（规范 Gate 3：重要状态不能只依赖颜色）；「正常」档不显示 */
+  function moraleBadge(morale) {
+    const t = moraleTier(morale);
+    if (t.key === 'normal') return '';
+    const parts = [];
+    if (t.hit !== 1) parts.push('命中×' + t.hit);
+    if (t.evd !== 1) parts.push('回避×' + t.evd);
+    return parts.length ? `${t.name}·${parts.join('/')}` : t.name;
+  }
+
   /* ============ 命中推定（wiki推定式） ============ */
   function hitChance(atk, def, formAName, formBName, engMult, isTorpedo) {
     const lvT = Math.sqrt(Math.max(0, atk.lv - 1)) / 50;
     const luckT = 0.15 * (atk.stats.lck || 0) / 100;
     const eqHit = (atk.equipped || []).reduce((s, e) => s + (e && e.stat && e.stat.hit ? e.stat.hit : 0), 0) / 100;
-    let moraleA = 1;
-    if (atk.morale >= 50) moraleA = 1.2;         // 闪
-    else if (atk.morale < 30) moraleA = 0.5;     // 红脸
+    const moraleA = moraleMods(atk.morale).hit;   // 闪 ×1.2 / 红脸 ×0.5（同源自 MORALE_TIERS）
     /* 阵型命中补正：复纵/单横/梯形攻击方×1.2（复纵vs单横、梯形vs单纵除外） */
     let formAcc = 1;
     if ((formAName === '复纵阵' || formAName === '单横阵' || formAName === '梯形阵') &&
@@ -230,7 +278,8 @@ const Battle = (() => {
     /* 回避项 */
     let evd = def.stats.evd;
     if (formBName === '单横阵' || formBName === '梯形阵' || formBName === '轮形阵') evd *= 1.2;
-    if (def.morale >= 50) evd *= 1.8;            // 闪回避×1.8
+    const defMorale = moraleMods(def.morale).evd;  // 闪 回避×1.8（红脸无回避惩罚）
+    if (defMorale !== 1) evd *= defMorale;
     evd *= (def._reconEvd || 1);                 // 索敌成功回避UP / 失败回避DOWN（wiki：效果甚微）
     let eva = 0.03 + (evd <= 40 ? evd / 80 : evd / (evd + 40));
     /* 残余燃料<80% 被弹率上升 */
@@ -821,6 +870,7 @@ const Battle = (() => {
       asw: ships.reduce((a, s) => a + (s.stats.asw || 0), 0),
       aswCapable: ships.filter(canOpeningASW).length,
       night: fleetNightPower(ships),
+      reconPlane: ships.some(s => s.alive && s.reconPlane),   // 舰队是否携带舰侦（方向五）
       allFast: ships.length > 0 && slowNames.length === 0,
       hasSlow: slowNames.length > 0,
       slowCount: slowNames.length,
@@ -921,8 +971,10 @@ const Battle = (() => {
     log.push({ event: { kind: 'recon', ok: reconOk, lost: planeLost > 0, myLos: Math.round(recon.myLos), enLos: Math.round(recon.enLos) } });
     let airSup = false;
 
-    /* ---- 交战形态（45/30/15/10，wiki：彩云可100%回避T不利，未实装） ---- */
-    const eng = Util.weighted({ PARALLEL: 45, REVERSE: 30, T_ADV: 15, T_DIS: 10 });
+    /* ---- 交战形态（wiki 45/30/15/10；索敌成功且携带舰侦 → 权重向有利方向偏移一档，见 ENG_WEIGHTS） ---- */
+    const hasReconPlane = sideA.some(s => s.alive && s.reconPlane);
+    const reconGuide = reconOk && hasReconPlane;
+    const eng = Util.weighted(engagementWeights(reconOk, hasReconPlane));
     const engMod = ENG_MOD[eng];
 
     /* ---- 航空战（索敌失败则无法参加航空战） ---- */
@@ -1027,6 +1079,10 @@ const Battle = (() => {
     for (const s of sideB) if (s.alive && s.type === 'SS' && (opts.sub || s.name.includes('精锐') || s.boss)) openTorp(s, sideA, formAName);
 
     L(`交战形态：${ENGAGEMENT[eng]}！`);
+    /* 战报显式说明：携带舰侦且索敌成功时，追加一句原因（玩家要能归因到自己的准备） */
+    if (reconGuide) {
+      L('（舰侦侦察引导：已提前确认敌舰队航向，T字不利概率由 10% 降至 5%）');
+    }
 
     /* ---- 炮击战 ---- */
     const shellingTargets = s => (s.isPlayer ? sideB : sideA).filter(t => t.alive);
@@ -1214,7 +1270,11 @@ const Battle = (() => {
     battle, battleNight, FORMATIONS, ENGAGEMENT, airState, makeEnemyShip, isDaPo, ammoBonus,
     /* 出击前情报室共用接口（禁止在 UI 另写一套算法） */
     buildCombatShip, airPower, fleetStats, enemyAirPower, hasAirSuperiority, specialAttackReport,
-    DAY_SPECIALS, NIGHT_SPECIALS
+    DAY_SPECIALS, NIGHT_SPECIALS,
+    /* 士气档位（UI 徽记与文案读同一张表） */
+    MORALE_TIERS, moraleTier, moraleMods, moraleBadge,
+    /* 交战形态权重（方向五：侦察引导航向） */
+    ENG_WEIGHTS, engagementWeights
   };
 })();
 

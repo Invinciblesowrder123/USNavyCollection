@@ -83,7 +83,10 @@ const Dormitory = (() => {
         idle: ships.filter(s => !fleetOf(s.uid)).length,
         repair: st().repairs.filter(r => r && st().ships[r.ship]).length,
         broken: ships.filter(s => s.hp > 0 && s.hp / Game.shipStats(s.uid).hpMax <= 0.25).length,
-        sparkle: ships.filter(s => s.morale >= 50).length
+        /* 士气档位（方向三）：档位判定走 Game.moraleTier（与 battle.js 同源），不在此硬编码阈值 */
+        sparkle: ships.filter(s => Game.moraleTier(s.morale).key === 'flash').length,
+        low: ships.filter(s => Game.moraleTier(s.morale).key === 'low').length,
+        red: ships.filter(s => Game.moraleTier(s.morale).key === 'red').length
       };
 
       root.className = '';
@@ -97,6 +100,8 @@ const Dormitory = (() => {
             <span class="dorm-chip">🔧 入渠 <b>${stats.repair}</b></span>
             <span class="dorm-chip danger">💥 大破 <b>${stats.broken}</b></span>
             <span class="dorm-chip">✨ 闪 <b>${stats.sparkle}</b></span>
+            <span class="dorm-chip">🟠 士气偏低 <b>${stats.low}</b></span>
+            <span class="dorm-chip danger">😵 红脸 <b>${stats.red}</b></span>
           </div>
         </div>
         <div class="panel">
