@@ -52,6 +52,10 @@ function runBrowser(browser, url) {
   return new Promise((resolve, reject) => {
     const args = [
       '--headless=new', '--disable-gpu', '--no-sandbox',
+      /* 固定视口宽度：布局类断言（如「地图不被右列拉伸」）依赖真实排版，默认 800x600 会退化。
+       * 取 1080 是因为这正是用户报告该 bug 时的窗口宽度；同时它使地图高度落在
+       * aspect-ratio 区间内（不会被 min/max-height 钳制）。改这里需同步复核 test_flow.html 的布局断言。 */
+      '--window-size=1080,1400',
       '--virtual-time-budget=20000', '--dump-dom', url
     ];
     const child = spawn(browser, args, { stdio: ['ignore', 'pipe', 'ignore'] });

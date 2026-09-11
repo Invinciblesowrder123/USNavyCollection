@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>UI Flow Test</title></head>
+<head><meta charset="UTF-8"><title>UI Flow Test</title>
+<link rel="stylesheet" href="css/style.css"></head>
 <body>
 <div id="result">RUNNING</div>
 <header id="topbar"><div class="top-left"><span id="admiralInfo"></span></div><div id="resBar"></div></header>
@@ -103,9 +104,14 @@
       Game.state.fleet[1] = fleet;
       Game.state.fleet[2] = [fleet.pop(), fleet.pop()];
 
-      /* 3. 完整出击 1-1（血条=3次击破，循环最多 6 次：评价为 C/D 时不减血条，3 次不保证够，避免偶发假失败） */
+      /* 3. 完整出击 1-1（血条=3次击破，循环最多 6 次：评价为 C/D 时不减血条，3 次不保证够，避免偶发假失败）
+       * 每轮出击前必须补满油弹/耐久：1-1 每轮过 2 个战斗点 = 油耗弹耗各 40%，3 格血条要 3 次击破
+       * → 3 轮正好消耗 120%，不补给则第 4 轮被「补给为零」拦下，任何一轮打出 C/D 就必然失败
+       * （此前 145~153 项偶发挂 10 项就是这个原因）。这里复现的是玩家回港补给后再出击的真实流程。 */
       let cleared = false;
       for (let run = 0; run < 6 && !cleared; run++) {
+        Logistics.supplyFleet(1);
+        for (const u of Game.state.fleet[1]) Game.state.ships[u].hp = Game.shipStats(u).hpMax;
         const st1 = Sortie.start('1-1', 1);
         R(st1.ok, 'sortie:start', JSON.stringify(st1));
         let guard = 0, battles = 0, bossFought = false;
@@ -316,6 +322,36 @@
       document.querySelector('#screen [data-map="1-1"]').click();
       const iHtml2 = document.querySelector('#screen').innerHTML;
       R(!iHtml2.includes('威胁对位') && iHtml2.includes('舰队能力'), 'intel:noThreatBlock');
+
+      /* ===== 海域选择页布局 =====
+       * 事故：右列详情文案变长 → 左列地图被拉伸变形（2-1 正常、2-2 被拉长）。
+       * 根因是 flex 行 align-items:stretch + 地图无固定高度。以下断言守住修复。
+       * 作战简报（原在右列内）改为地图下方的独立框。 */
+      const goArea = (a, mid) => {
+        document.querySelector('#screen [data-area="' + a + '"]').click();
+        document.querySelector('#screen [data-map="' + mid + '"]').click();
+      };
+      const rectOf = sel => document.querySelector('#screen ' + sel).getBoundingClientRect();
+      const aspect = r => r.width / r.height;
+      goArea('1', '1-1');
+      const box11 = rectOf('.area-map');
+      goArea('2', '2-2');
+      const box22 = rectOf('.area-map');
+      /* 地图高度必须只由「自身宽度 × 5/4」决定，与右列详情文本长度无关。
+       * 修复前：1-1 ≈ 743px、2-2 ≈ 946px（右列文案变长 → 地图被纵向拉伸）。 */
+      R(Math.abs(aspect(box11) - aspect(box22)) <= 0.02, 'layout:mapNotStretched',
+        '1-1 ' + Math.round(box11.width) + 'x' + Math.round(box11.height)
+        + ' / 2-2 ' + Math.round(box22.width) + 'x' + Math.round(box22.height));
+      R(Math.abs(aspect(box22) - 5 / 4) <= 0.05, 'layout:mapAspectRatio',
+        'aspect=' + aspect(box22).toFixed(3));
+      R(rectOf('.map-detail').left > rectOf('.area-map').right, 'layout:detailRightOfMap');
+      R(Math.abs(box22.top - rectOf('.map-detail').top) <= 1, 'layout:columnsTopAligned');
+      const briefEl = document.querySelector('#screen .sortie-brief');
+      R(!!briefEl && !!document.querySelector('#screen .sortie-mapside > .sortie-brief'), 'layout:briefBelowMap');
+      R(!!briefEl && !document.querySelector('#screen .map-detail .sortie-brief'), 'layout:briefNotInDetailColumn');
+      R(briefEl.getBoundingClientRect().top >= box22.bottom - 1, 'layout:briefAfterMap');
+      goArea('1', '1-1');
+      R(!document.querySelector('#screen .sortie-brief'), 'layout:noBriefBoxWhenMapHasNone');
       /* 失败归因（制空/索敌）与防误报 */
       const attrBad = Sortie.attributionLines({ result: { victory: false, rank: 'D', myAir: 100, enAir: 400, airSup: false, recon: false }, nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state });
       const attrOk = Sortie.attributionLines({ result: { victory: false, rank: 'D', myAir: 400, enAir: 100, airSup: true, recon: true }, nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state });

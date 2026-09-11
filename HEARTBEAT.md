@@ -893,3 +893,65 @@ README 已同步更新，明确当前功能状态与测试基线。
 - 目标只配 6 张图（任务书要求 6–8），1-1/1-3/1-5/2-1/2-3/2-5/3-3/3-4/3-5 与 4-x/5-x 未配。
 - `sRank` 类目标对"编成"的强制力弱于 `typeLimit`（任务书把它列为可用类型，我保留了但只配在 3 张图）。
 - `noHeavy` 的"全程"依赖 `sortie.daPoSeen`，它随 `state.sortie` 一起进存档；中途刷新页面后继续打完，口径仍然正确（这是刻意的）。
+
+## 2026-09-12 海域选择页布局修复（用户反馈 UI bug）
+
+**反馈：** 选 2-1 正常，选 2-2 时右侧详情文案变长 → 左侧地图被纵向拉长变形；另要求「攻略提示」不要放在右列里，改到地图下方新建一个 box。
+
+### 根因
+
+`.sortie-mapview { display:flex; align-items: stretch }` + `.area-map { flex:1.35; min-height:420px }`（无固定高度）
+→ 左列地图的高度由**右列内容高度**决定。右列文案越长，地图越高；节点是按百分比定位的，于是被纵向拉伸。
+用户给的 2-1 vs 2-2 差异就是这么来的（实测：旧版 1-1 地图 674×810、2-2 659×892，宽高比 0.83 / 0.74，已经变成竖图）。
+
+### 改动
+
+| 文件 | 改了什么 |
+|---|---|
+| `public/css/style.css` | ① `.sortie-mapview` 改 `align-items:flex-start`（两列各自定高）；② 新增 `.sortie-mapside`（左列容器：地图 + 简报框）；③ `.area-map` 改 `flex:0 0 auto; width:100%; aspect-ratio:5/4; min-height:420px; max-height:640px` —— 高度只由自身宽度决定；④ 新增 `.sortie-brief`（地图下方的独立简报框，沿用金色提示框视觉） |
+| `public/js/ui/sortie.js` | ① 新增 `briefBox(m)`；② `mapDetailPanel` 里删掉 `.map-brief`（不再放右列）；③ 海域选择页把 `areaMapPanel` + `briefBox` 一起放进 `.sortie-mapside` |
+| `public/test_flow.html` | ① 新增 `<link>` 引 style.css（**此前 E2E 页面根本没加载样式**，任何布局断言都是空转）；② 新增 8 条布局断言 |
+| `scripts/e2e.js` | 无头浏览器固定 `--window-size=1080,1400`（默认 800×600 会让宽高比断言退化到 min-height 分支；1080 也正是用户报 bug 的窗口宽度） |
+| `public/index.html` | 缓存版本号刷为 `20260912b5`（CSS 也改了，必须一起刷） |
+
+### 新增的 8 条布局断言（E2E）
+
+`layout:mapNotStretched`（1-1 与 2-2 的地图宽高比必须相等）/ `layout:mapAspectRatio`（≈5/4）/
+`layout:detailRightOfMap`（右列确实在地图右侧，没换行）/ `layout:columnsTopAligned` /
+`layout:briefBelowMap`（简报在 `.sortie-mapside` 里）/ `layout:briefNotInDetailColumn`（不在 `.map-detail` 内）/
+`layout:briefAfterMap`（简报 top ≥ 地图 bottom）/ `layout:noBriefBoxWhenMapHasNone`（1-1 无简报不渲染空框）。
+
+**做了反向验证（负向对照）**：临时把旧 CSS 注入回来（`align-items:stretch` + `aspect-ratio:auto; flex:1 1 auto`），
+E2E 立刻报 `FAIL layout:mapNotStretched :: 1-1 674x810 / 2-2 659x892` 与 `FAIL layout:mapAspectRatio :: aspect=0.738`，
+确认断言真的能抓住这个 bug，不是「怎么改都绿」。验证完已把注入删掉（`grep TEMP_NEGATIVE_CONTROL` 为 0）。
+
+### 顺手修复：E2E 1-1 攻略循环的供给枯竭（**既有缺陷，与本批无关但会卡住验证**）
+
+`sortie:1-1cleared` 偶发挂 10 项（`sortie:start/battles/bossFought/1-1cleared`）。
+根因不是随机评价，而是**油弹**：1-1 是 S→A(战斗)→B(BOSS) 两个战斗点 = 每轮消耗油弹各 40%，
+而血条 3 格需要 3 次击破 → 三轮正好消耗 120%，第 4 轮必被「舰队中有舰娘补给为零」拦下。
+只要任何一轮打出 C/D（不减血条），就必然失败（约 4 成的概率）。
+此前把循环从 3 轮放宽到 6 轮只是延后了失败，没解决枯竭。
+**修法**：每轮出击前 `Logistics.supplyFleet(1)` + 补满耐久 —— 这正是玩家回港补给后再出击的真实流程。
+修完连跑 3 次均 153 项全过。
+
+### 测试
+
+| 层 | 结果 |
+|---|---|
+| `npm run sim` | 1466 项通过 / 0 失败 |
+| `npm run test:migration` | 32 项通过 |
+| `npm run test:e2e` | **153 项通过 / 0 JS 错误**（本批 +8 布局断言；连跑 3 次稳定） |
+| 引擎逐位对拍 | 9 组场景逐位一致（本批未碰战斗代码） |
+
+### 浏览器实测
+
+`../backup/2026-09-12_布局修复/`（1080px）：`final_2-1.png`、`final_2-2.png`、`final_3-1.png` ——
+三张图里地图都是 674×539（5:4，完全一致），右列文案长度各不相同（2-1 最短、3-1 最长）但地图毫无变化；
+2-2 与 3-1 的作战简报显示在地图下方的独立框里，1-1（无简报）不渲染空框。
+
+### 已知问题 / 未纳入范围
+
+- 地图固定比例后，左列（地图+简报）通常比右列短，左下会留出空白。这是「不拉伸」的必然代价；
+  若希望填满，可改为让简报框吃掉剩余高度，但会让简报框高度随海域变化，反而更乱。当前选择保留空白。
+- 只改了海域选择页；出击中的节点页（`sortieActive`）仍把作战简报放在面板内联位置，那里是整宽布局，不存在拉伸问题。

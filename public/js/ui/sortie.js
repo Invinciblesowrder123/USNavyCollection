@@ -271,6 +271,17 @@ const SortieUI = (() => {
     return html;
   }
 
+  /* 作战简报：放在地图下方的独立提示框。
+   * 刻意不放进右侧详情列——长文案会把右列撑高，连带把左侧地图拉伸（用户反馈的布局 bug）。
+   * 左列由「地图（固定比例）+ 简报框」组成，右列高度不再影响地图高度。 */
+  function briefBox(m) {
+    if (!m.brief) return '';
+    return `<div class="sortie-brief">
+      <div class="sb-head">作战简报</div>
+      <div class="sb-body">${m.brief.replace(/\n/g, '<br>')}</div>
+    </div>`;
+  }
+
   /* 地图详情面板：迷你海图预览 + 血条 + 出击（BOSS海域锁定态提示）；fleetIdx 用于跟随所选舰队的索敌/出击判断 */
   function mapDetailPanel(m, fleetIdx) {
     const st = Game.state;
@@ -295,7 +306,6 @@ const SortieUI = (() => {
         <div class="gauge-bar"><div class="gauge-fill${mp.cleared ? ' full' : ''}" style="width:${pct}%"></div></div>
       </div>
       <div class="md-desc">${m.desc}</div>
-      ${m.brief ? `<div class="map-brief"><b>作战简报</b><br>${m.brief.replace(/\n/g, '<br>')}</div>` : ''}
       <div class="md-rows">
         ${items.length ? `<div><b>出现物品</b>：${items.join('、')}</div>` : ''}
         ${losNeed ? `<div><b>分支索敌</b>：≥${losNeed}<span class="${los >= losNeed ? '' : 'red'}">（当前 ${los}${los >= losNeed ? '，满足' : '，不足' }）</span></div>` : ''}
@@ -348,7 +358,10 @@ const SortieUI = (() => {
           ${nos.map(no => `<button class="${no === selArea ? 'active' : ''}" data-area="${no}"><b>${no}</b> ${AREA_ZH[no]}</button>`).join('')}
         </div>
         <div class="sortie-mapview">
-          ${areaMapPanel(selArea, sel.id)}
+          <div class="sortie-mapside">
+            ${areaMapPanel(selArea, sel.id)}
+            ${briefBox(sel)}
+          </div>
           ${mapDetailPanel(sel, selFleet)}
         </div>
         <div class="hint">消耗规则（wiki）：每个战斗点消耗燃料20%、弹药20%（进入夜战弹药改为30%）；资源点/补给点不消耗油弹。弹药&lt;50%时伤害按残弹率/50减半，0%时无法炮击。</div>

@@ -951,6 +951,19 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 }
 .map-brief b { color: var(--gold); letter-spacing: 2px; }
 
+/* 作战简报：海域选择页放在「地图下方」的独立框（不再塞进右侧详情列，避免撑高右列） */
+.sortie-brief {
+  padding: 10px 12px;
+  background: rgba(232, 194, 74, 0.06);
+  border: 1px solid rgba(232, 194, 74, 0.35);
+  border-left: 3px solid var(--gold);
+  border-radius: 6px;
+  font-size: 12px; line-height: 1.75; color: var(--text);
+}
+.sortie-brief .sb-head {
+  color: var(--gold); font-weight: bold; letter-spacing: 2px; margin-bottom: 3px;
+}
+
 /* 当前节点：金色脉冲 + 舰队标记 */
 .map-node.current { border-color: var(--gold); animation: nodePulse 1.5s ease-out infinite; }
 @keyframes nodePulse {
@@ -1009,11 +1022,16 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 }
 .area-tabs button.active b { color: #1a1404; }
 
-.sortie-mapview { display: flex; gap: 12px; align-items: stretch; }
+/* 两列各自按自身内容定高，互不拉伸（否则右侧详情文案一长，左侧地图就被拉长） */
+.sortie-mapview { display: flex; gap: 12px; align-items: flex-start; }
+/* 左列：地图 + 地图下方的作战简报框 */
+.sortie-mapside { flex: 1.35; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 
-/* 海图面板（区域世界地图）：经纬网格 + 区域标题 + 地图位置标记 */
+/* 海图面板（区域世界地图）：经纬网格 + 区域标题 + 地图位置标记
+ * 高度由 aspect-ratio 决定，与右列内容无关 → 地图永远不会被拉长 */
 .area-map {
-  position: relative; flex: 1.35; min-width: 0; min-height: 420px;
+  position: relative; flex: 0 0 auto; width: 100%; aspect-ratio: 5 / 4;
+  min-height: 420px; max-height: 640px;
   border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
   background-image:
     repeating-linear-gradient(0deg, rgba(120, 170, 230, .05) 0 1px, transparent 1px 42px),
@@ -1210,3 +1228,4 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .lib-eq { color: var(--orange); font-weight: bold; font-size: 13px; }
 .lib-name { font-size: 12px; line-height: 1.35; word-break: break-all; }
 .lib-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
