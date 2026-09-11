@@ -591,7 +591,7 @@ function buildPool(recipe) {
 const RARITY_W = { 1: 49, 2: 25, 3: 14, 4: 8, 5: 3 };
 
 /* 初始赠送舰 */
-const STARTER_IDS = ['mahan', 'benson'];
+const STARTER_IDS = ['fletcher', 'benson'];
 
 /* ---------- 速力（高速/低速，潜艇点打击修正依据；kcwiki 速力数据） ----------
  * 美军低速舰：21 节"标准战列舰"（纽约/内华达/宾夕法尼亚/新墨西哥/田纳西/科罗拉多级）

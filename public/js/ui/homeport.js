@@ -331,6 +331,56 @@ const Homeport = (() => {
     render();
   }
 
+  /* ============ 秘书舰触碰交互 ============ */
+  /* 点击立绘不同部位给不同反应（参照碧蓝航线的触摸交互）。
+     台词按舰种分池，未列出的舰种走 default。 */
+  const POKE_LINES = {
+    DD: {
+      head: ['……提督，帽子会歪的。', '摸头不会让炮击更准，司令。', '这个动作，有战术意义吗？',
+             '……（默默把帽子扶正）', '头发会乱的。'],
+      body: ['什么事，司令？', '编成有问题的话，直接说。', '补给确认完毕，随时能出击。',
+             '弗莱彻级，待命中。', '有事说事，我听着。'],
+      legs: ['……手，请放规矩点。', '那里不是装甲带。', '司令，海图在那边。'],
+    },
+    CV: {
+      head: ['舰载机正在整备，别乱动。', '……指挥官，甲板不是游乐场。', '发饰会掉的。'],
+      body: ['出击命令？', '航空队随时可以起飞。', '风向确认过了吗？'],
+      legs: ['……请去指挥塔。', '这里没有你需要的东西。'],
+    },
+    BB: {
+      head: ['……有事？', '主炮不会因为你摸头而瞄得更准。', '嗯。'],
+      body: ['说吧。', '装甲再厚也怕内鬼，司令。', '要出击吗？'],
+      legs: ['……自重。', '站远一点。'],
+    },
+    default: {
+      head: ['……怎么了吗？', '嗯？', '司令？'],
+      body: ['司令，有什么吩咐？', '在。', '随时待命。'],
+      legs: ['……唔。', '……请住手。'],
+    },
+  };
+
+  /* 绑定秘书舰立绘的点击交互：按点击位置的相对高度分 头/身/腿 三区 */
+  function bindSecretaryPoke(root, secDef) {
+    const frame = root.querySelector('.sec-frame');
+    // 单张 AI 立绘、或分层立绘（.l2d-wrap）都启用；退回舰种占位符时不启用
+    if (!frame || !(frame.querySelector('.sec-portrait') || frame.querySelector('.l2d-wrap'))) return;
+    const pool = POKE_LINES[secDef.type] || POKE_LINES.default;
+    const lineEl = root.querySelector('.secretary-line');
+    frame.classList.add('poke-able');
+    frame.addEventListener('click', ev => {
+      const r = frame.getBoundingClientRect();
+      const rel = r.height ? (ev.clientY - r.top) / r.height : 0.5;
+      const zone = rel < 0.34 ? 'head' : rel < 0.72 ? 'body' : 'legs';
+      const arr = pool[zone] || pool.body;
+      const line = arr[Math.floor(Math.random() * arr.length)];
+      if (lineEl) lineEl.textContent = '\u201c' + line + '\u201d';
+      frame.classList.remove('poke-hit');
+      void frame.offsetWidth;          // 强制重排，让动画可重复触发
+      frame.classList.add('poke-hit');
+      setTimeout(() => frame.classList.remove('poke-hit'), 460);
+    });
+  }
+
   /* ============ 母港（秘书舰 + 舰队 + 状态） ============ */
   function home(root) {
     const st = Game.state;
@@ -338,6 +388,7 @@ const Homeport = (() => {
     const secUid = fleet[0];
     const sec = secUid ? st.ships[secUid] : null;
     const secDef = sec ? Game.shipDef(sec) : null;
+    const secAi = secDef ? UI.aiPortraitSrc(secDef.id, sec.kai) : null;
     const claimable = QUESTS.filter(q => Progression.canClaim(q.id)).length;
     const exActive = Game.unlockedFleets().map(f => st.expeditions[f]).filter(Boolean);
     const repCount = st.repairs.filter(r => r).length;
@@ -347,8 +398,12 @@ const Homeport = (() => {
     root.innerHTML = `
       ${secDef ? `
       <div class="panel panel-deco secretary-panel">
-        <div class="sec-frame">
-          ${UI.shipIcon(sec.uid, 'tall')}
+        <div class="sec-frame" data-sec-id="${secDef.id}">
+          ${SecretaryL2D.has(secDef.id)
+            ? SecretaryL2D.html(secDef.id)
+            : secAi
+              ? `<img class="sec-portrait" src="${secAi}" alt="${Util.esc(secDef.en)}" onerror="this.remove()">`
+              : UI.shipIcon(sec.uid, 'tall')}
           <div class="sec-type-badge">${SHIP_TYPE_ZH[secDef.type]}</div>
         </div>
         <div class="secretary-info">
@@ -418,6 +473,8 @@ const Homeport = (() => {
     root.querySelectorAll('[data-go]').forEach(b => {
       b.addEventListener('click', () => UI.go(b.dataset.go));
     });
+    if (secDef) bindSecretaryPoke(root, secDef);
+    if (secDef) SecretaryL2D.bind(root.querySelector('.sec-frame'), secDef.id);
     UI.setTick(() => {
       root.querySelectorAll('[data-until]').forEach(el => {
         const end = parseInt(el.dataset.until, 10) || 0;

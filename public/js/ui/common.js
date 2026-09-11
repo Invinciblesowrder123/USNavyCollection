@@ -127,7 +127,7 @@ const UI = (() => {
 
   /* ---------- 立绘资源：AI 图(art/ai) → SVG(art/portraits) → 舰种占位符 ---------- */
   const ArtManifest = { loaded: false, map: {} };
-  fetch('art/ai/index.json').then(r => r.ok ? r.json() : null).then(m => {
+  fetch('art/ai/index.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(m => {
     if (m) { ArtManifest.map = m; ArtManifest.loaded = true; }
   }).catch(() => {});
 
@@ -161,6 +161,14 @@ const UI = (() => {
     const q = JSON.stringify(phHtml).replace(/"/g, '&quot;');
     return `<img class="portrait ${cls} portrait-r${r}" ${extra} loading="lazy" alt="${Util.esc(def.en)}"
       src="${src}" data-ph="${q}"${svgAttr} onerror="USNC.portraitFallback(this)">`;
+  }
+
+  /* AI 立绘（art/ai）是否可用；无则返回 null，由调用方决定回退方式 */
+  function aiPortraitSrc(shipId, kai = 0) {
+    if (!ArtManifest.loaded) return null;
+    const key = shipId + (kai === 1 ? '_kai' : kai >= 2 ? '_kai2' : '');
+    const f = ArtManifest.map[key];
+    return f ? `art/ai/${f}` : null;
   }
 
   /* 舰名（含改造后缀） */
@@ -296,7 +304,7 @@ const UI = (() => {
     return `<span class="countdown">${Util.fmtTime(ms)}</span>`;
   }
 
-  return { go, Screens, toast, modal, subModal, esc, portraitImg, shipCard, shipIcon, shipIconDef, shipTitle, shipNameHtml, rarityStars, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml, eqNameHtml, eqRarityTag, eqRarityCls };
+  return { go, Screens, toast, modal, subModal, esc, portraitImg, aiPortraitSrc, shipCard, shipIcon, shipIconDef, shipTitle, shipNameHtml, rarityStars, stateBadges, resHtml, refreshTop, setTick, tick, countdown, hpRatio, $, screenRoot, current, starHtml, eqNameHtml, eqRarityTag, eqRarityCls };
 })();
 
 window.UI = UI;

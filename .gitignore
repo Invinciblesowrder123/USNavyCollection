@@ -3,5 +3,8 @@ npm-debug.log*
 *.log
 .DS_Store
 Thumbs.db
-data/
+# 只忽略「仓库根」的运行时数据目录。
+# 注意不能写成 `data/` —— 那会连 public/js/data/（正式源码目录）一起忽略掉。
+/data/
+archive/*/public/js/data/
 .e2e-dump.html
