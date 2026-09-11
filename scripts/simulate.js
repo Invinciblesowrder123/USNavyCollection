@@ -490,7 +490,8 @@ assert('远征完成领取', e4.ok && e4.reward.fuel > 0, JSON.stringify(e4));
 section('养成');
 const ddUid = Game.state.fleet[1][0];
 const s0 = Game.state.ships[ddUid];
-Progression.addShipExp(ddUid, 50000);
+/* 弗莱彻改造需 Lv.40（累计经验 78,000）；此处给足 80,000，避免因经验表调整导致用例失效 */
+Progression.addShipExp(ddUid, 80000);
 assert('升级成功', s0.lv > 1, `lv=${s0.lv}`);
 assert('改造解锁', Progression.remodelInfo(ddUid) !== null);
 const rm = Progression.remodel(ddUid);
@@ -980,6 +981,208 @@ Game.newGame();
 Game.state.admiral = { name: '提督', level: 1, exp: 100 };
 Game.loadData(Game.serialize());
 assert('旧档 Lv1 不迁移', Game.state.admiral.level === 1, 'lv=' + Game.state.admiral.level);
+
+/* ============================================================
+ * 方向一：出击前情报室
+ * 1.1 舰队能力公共接口（与 battle.js 同源）
+ * 1.2 海域威胁维度声明（数据一致性双向校验）
+ * 1.3 编成自检（不拦截出击 + 特殊攻击原因）
+ * 1.4 失败归因扩展（制空/索敌 + 防误报）
+ * 1.5 文案可得性（P0-3）
+ * ============================================================ */
+section('方向一·舰队能力接口与战斗同源（任务1.1）');
+Game.newGame();
+Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+/* 构造情报室测试舰队：战列(2主炮+穿甲弹+水侦) + 空母(舰战×4) + 驱逐 */
+function intelEquipShip(shipId, lv, kai, eqIds) {
+  const s = Game.createShip(shipId, lv);
+  s.kai = kai || 0;
+  s.equipped = eqIds.map(id => Game.createEquip(id).uid);
+  s.hp = Game.shipStats(s.uid).hpMax;
+  s.supply = { fuel: 1, ammo: 1 };
+  return s.uid;
+}
+const iowaUid = intelEquipShip('iowa', 99, 1, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']);
+const cvUid = intelEquipShip('enterprise', 99, 1, ['f6f5', 'f6f5', 'f6f5', 'f6f5']);
+const ddUid2 = intelEquipShip('fletcher', 80, 0, ['gun5in_38', 'torp_mk15', 'torp_mk15', 'torp_mk15']);
+Game.state.fleet[1] = [iowaUid, cvUid, ddUid2];
+const intelFs = Game.battleFleetStats(1);
+assert('fleetStats 可用（公共接口已导出）', !!intelFs && Array.isArray(intelFs.ships) && intelFs.ships.length === 3);
+const airBattle = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F05.ships, '单纵阵', ENEMY_FLEETS.F05.formation, { allowNight: false, fleetIdx: 1 });
+const airLine = airBattle.log.find(x => typeof x === 'string' && x.includes('我军制空'));
+assert('fleetAir 与实战首回合「我军制空」一致（同源验证）',
+  !!airLine && Number(airLine.match(/我军制空\s*(\d+)/)[1]) === Game.fleetAir(1),
+  'fleetAir=' + Game.fleetAir(1) + ' log=' + airLine);
+assert('fleetAir = airPower(战斗对象)（同一函数）', Game.fleetAir(1) === Battle.airPower(intelFs.ships), 'air=' + Game.fleetAir(1));
+assert('fleetStats.los 与既有 fleetLos 一致', intelFs.los === Game.fleetLos(1), intelFs.los + ' vs ' + Game.fleetLos(1));
+assert('fleetAsw = 舰队对潜合计且 >0', Game.fleetAsw(1) === intelFs.ships.reduce((a, s) => a + s.stats.asw, 0) && Game.fleetAsw(1) > 0, 'asw=' + Game.fleetAsw(1));
+assert('fleetNight >0 且不含空母的火力', Game.fleetNight(1) > 0 && Game.fleetNight(1) === intelFs.night, 'night=' + Game.fleetNight(1));
+assert('fleetSpeed 全队高速判定', Game.fleetSpeed(1).allFast === true && Game.fleetSpeed(1).hasSlow === false, JSON.stringify(Game.fleetSpeed(1)));
+Game.state.fleet[2] = [intelEquipShip('newyork', 60, 0, ['gun14in_3', 'gun14in_3', 'sec5in_1'])];
+assert('fleetSpeed 含低速舰判定（含舰名）',
+  Game.fleetSpeed(2).hasSlow === true && Game.fleetSpeed(2).slowCount === 1 && Game.fleetSpeed(2).allFast === false,
+  JSON.stringify(Game.fleetSpeed(2)));
+assert('fleetSpeed 空舰队不误报全高速', Game.fleetSpeed(3).allFast === false && Game.fleetSpeed(3).slowCount === 0);
+assert('能力接口在无 Battle 场景不抛异常（边界）', typeof Game.fleetAir(4) === 'number' && Game.fleetAir(4) === 0);
+
+section('方向一·海域威胁维度声明（任务1.2，双向数据一致性）');
+const mapHasSub = m => Object.values(m.defs).some(d => d.mode === 'sub');
+const mapHasNight = m => Object.values(m.defs).some(d => d.mode === 'night');
+const mapHasWhirl = m => Object.values(m.defs).some(d => d.type === 'whirlpool');
+const mapHasLos = m => { const b = m.branch ? (Array.isArray(m.branch) ? m.branch : [m.branch]) : []; return b.some(x => x.if && x.if.los); };
+const mapHasAir = m => Object.values(m.defs).some(d => (d.type === 'battle' || d.type === 'boss') && d.enemy && Battle.enemyAirPower(d.enemy) > 0);
+const THREAT_RULES = [['asw', mapHasSub], ['night', mapHasNight], ['radar', mapHasWhirl], ['los', mapHasLos], ['air', mapHasAir]];
+const ANNOTATED = ['1-2', '1-4', '2-2', '3-1'];
+const vocabBad = [], exactBad = [], forwardBad = [];
+let annotatedCount = 0;
+for (const m of MAPS) {
+  const dec = Array.isArray(m.threat) ? m.threat : [];
+  if (dec.length) annotatedCount++;
+  for (const k of dec) if (!THREAT_RULES.some(r => r[0] === k)) vocabBad.push(m.id + ':' + k);
+  const derived = THREAT_RULES.filter(r => r[1](m)).map(r => r[0]);
+  if (dec.length && !derived.every(k => dec.includes(k))) forwardBad.push(`${m.id} 缺少必需维度 ${derived.filter(k => !dec.includes(k)).join('/')}`);
+  if (ANNOTATED.includes(m.id) && JSON.stringify(dec.slice().sort()) !== JSON.stringify(derived.slice().sort())) {
+    exactBad.push(`${m.id} declared=${dec} derived=${derived}`);
+  }
+}
+assert('威胁维度全部来自允许词表', vocabBad.length === 0, vocabBad.join('、'));
+assert('已声明维度的海域：必需维度无遗漏（防剖面漂移）', forwardBad.length === 0, forwardBad.join('、'));
+assert('4 张声明海域的维度与节点类型逐项一致（双向）', exactBad.length === 0, exactBad.join('、'));
+assert('首版只声明 4 张图', annotatedCount === 4, 'n=' + annotatedCount);
+assert('4 张图均有威胁说明文案', ANNOTATED.every(id => {
+  const m = MAPS.find(x => x.id === id);
+  return (m.threat || []).length > 0 && (m.threatNote || '').length > 20;
+}));
+assert('未声明维度的海域：对位结果为空且不报错',
+  Sortie.threatCheck(1, MAPS.find(m => m.id === '1-3')).length === 0 &&
+  Sortie.threatCheck(1, MAPS.find(m => m.id === '1-3')) instanceof Array);
+assert('声明海域的对位维度键合法', Sortie.intel(1, '3-1').threats.every(t => Sortie.THREAT_KEYS.includes(t.key)));
+
+section('方向一·编成自检与特殊攻击清单（任务1.3）');
+/* 不满足对位（2-2 需要对潜，此处舰队无反潜舰）仍可出击（P0-2） */
+Game.state.fleet[1] = [iowaUid, cvUid];
+const threat22 = Sortie.intel(1, '2-2').threats;
+assert('2-2 对位判定为不满足（无对潜舰）', threat22.length === 1 && threat22[0].key === 'asw' && threat22[0].ok === false, JSON.stringify(threat22));
+assert('对位不满足仍可出击（不拦截）', Sortie.start('2-2', 1).ok === true);
+Sortie.returnHome();
+/* 缺穿甲弹 */
+const noApUid = intelEquipShip('iowa', 99, 1, ['gun16in_50', 'gun16in_50', 'radar_sk', 'os2u']);
+Game.state.fleet[1] = [noApUid, cvUid];
+const repNoAp = Battle.specialAttackReport(1, { airSup: true });
+assert('缺穿甲弹：主炮Cut-in 标注「缺穿甲弹」',
+  repNoAp.day.find(d => d.id === 'day_ci_main').ok === false && repNoAp.day.find(d => d.id === 'day_ci_main').reason === '缺穿甲弹',
+  JSON.stringify(repNoAp.day.find(d => d.id === 'day_ci_main')));
+/* 制空不足 */
+const repNoAir = Battle.specialAttackReport(1, { airSup: false });
+assert('制空不足：昼战特殊攻击项标注「制空不足」',
+  repNoAir.day.every(d => d.ok === false && d.reason.includes('制空不足')), JSON.stringify(repNoAir.day[0]));
+/* 同源：清单「可发动」与实战实际发动一致（穿甲弹轴） */
+function countSpec(fleetUids, enemyKey, needle) {
+  let n = 0;
+  for (let i = 0; i < 120; i++) {
+    const r = Battle.battle(fleetUids, ENEMY_FLEETS[enemyKey].ships, '单纵阵', ENEMY_FLEETS[enemyKey].formation, { allowNight: false, fleetIdx: 1 });
+    for (const e of r.log) if (typeof e === 'string' && e.includes(needle)) n++;
+  }
+  return n;
+}
+Game.state.fleet[1] = [iowaUid, cvUid];
+const repAp = Battle.specialAttackReport(1, { airSup: true });
+const apOk = repAp.day.find(d => d.id === 'day_ci_main').ok;
+const apReal = countSpec(Game.state.fleet[1], 'F05', '主炮Cut-in');
+Game.state.fleet[1] = [noApUid, cvUid];
+const noApReal = countSpec(Game.state.fleet[1], 'F05', '主炮Cut-in');
+assert('同源：清单报「可发动」的实战确实发动', apOk === true && apReal > 0, 'ok=' + apOk + ' real=' + apReal);
+assert('同源：清单报「缺穿甲弹」的实战零发动', repNoAp.day.find(d => d.id === 'day_ci_main').ok === false && noApReal === 0, 'real=' + noApReal);
+/* 夜战清单同源（2 鱼雷 → 鱼雷Cut-in） */
+Game.state.fleet[1] = [iowaUid, cvUid, ddUid2];
+const repNight = Battle.specialAttackReport(1, { airSup: true });
+assert('夜战清单：2 鱼雷标注可发动鱼雷Cut-in',
+  repNight.night.find(d => d.id === 'night_torp_ci').ok === true, JSON.stringify(repNight.night.find(d => d.id === 'night_torp_ci')));
+let nightTorpCi = 0;
+for (let i = 0; i < 120; i++) {
+  /* 夜战节点的实战路径：battle(nightOnly) 跳过昼战 → battleNight 追加夜战（与 game 层 continueNight 一致） */
+  const day0 = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F05.ships, '单纵阵', ENEMY_FLEETS.F05.formation,
+    { allowNight: false, nightOnly: true, fleetIdx: 1 });
+  const nr = Battle.battleNight(day0);
+  for (const e of nr.log) if (typeof e === 'string' && e.includes('鱼雷Cut-in')) nightTorpCi++;
+}
+assert('同源：夜战清单可发动 → 实战确实发动鱼雷Cut-in', nightTorpCi > 0, 'n=' + nightTorpCi);
+
+section('方向一·失败归因扩展（任务1.4）');
+const stRef = Game.state;
+const attribFleet = [iowaUid, cvUid];
+const attrBoth = Sortie.attributionLines({
+  result: { victory: false, rank: 'D', myAir: 120, enAir: 300, airSup: false, recon: false },
+  nodeDef: { type: 'battle' }, fleet: attribFleet, st: stRef
+});
+assert('制空丧失败局：归因含「制空」', attrBoth.some(l => l.includes('制空')), attrBoth.join(' | '));
+assert('索敌失败败局：归因含「索敌」', attrBoth.some(l => l.includes('索敌')), attrBoth.join(' | '));
+assert('归因每条都给出可执行改进方向', attrBoth.every(l => l.includes('改进方向')), attrBoth.join(' | '));
+const attrClean = Sortie.attributionLines({
+  result: { victory: false, rank: 'D', myAir: 300, enAir: 100, airSup: true, recon: true },
+  nodeDef: { type: 'battle' }, fleet: attribFleet, st: stRef
+});
+assert('防误报：制空充足+索敌成功的败局不含这两条', !attrClean.some(l => l.includes('制空') || l.includes('索敌')), attrClean.join(' | '));
+assert('胜局不产生任何归因', Sortie.attributionLines({
+  result: { victory: true, rank: 'S', myAir: 0, enAir: 0, airSup: false, recon: false },
+  nodeDef: {}, fleet: [], st: stRef
+}).length === 0);
+assert('回归：潜艇点归因仍生效', Sortie.attributionLines({
+  result: { victory: false, rank: 'D', myAir: 0, enAir: 0, airSup: false, recon: true },
+  nodeDef: { type: 'battle', mode: 'sub' }, fleet: attribFleet, st: stRef
+}).some(l => l.includes('对潜')));
+assert('回归：夜战点归因仍生效', Sortie.attributionLines({
+  result: { victory: false, rank: 'D', myAir: 0, enAir: 0, airSup: false, recon: null },
+  nodeDef: { type: 'battle', mode: 'night' }, fleet: attribFleet, st: stRef
+}).some(l => l.includes('夜战')));
+assert('夜战节点（无索敌阶段）不误报索敌', !Sortie.attributionLines({
+  result: { victory: false, rank: 'D', myAir: 0, enAir: 0, airSup: false, recon: null },
+  nodeDef: { type: 'battle', mode: 'night' }, fleet: attribFleet, st: stRef
+}).some(l => l.includes('索敌')));
+assert('实战结算结果携带 recon/airSup/myAir/enAir',
+  typeof airBattle.recon === 'boolean' && typeof airBattle.airSup === 'boolean' && airBattle.myAir > 0 && airBattle.enAir > 0,
+  `recon=${airBattle.recon} airSup=${airBattle.airSup} my=${airBattle.myAir} en=${airBattle.enAir}`);
+
+section('方向一·文案可得性（任务1.5，P0-3 数据驱动）');
+const TYPE_WORDS = { '驱逐舰': ['DD'], '轻巡洋舰': ['CL'], '重巡洋舰': ['CA'], '战列舰': ['BB', 'BBV'], '空母': ['CV', 'CVL', 'CVB'], '潜水舰': ['SS', 'SSV'], '潜艇': ['SS', 'SSV'], '海防舰': ['DE'] };
+const CAT_WORDS = { '深水炸弹': ['爆雷', '爆雷投射机'], '爆雷': ['爆雷', '爆雷投射机'], '声呐': ['声呐'], '电探': ['对空电探', '对水电探', '两用电探'], '雷达': ['对空电探', '对水电探', '两用电探'], '舰战': ['舰战', '夜间舰战', '喷式舰战'], '穿甲弹': ['穿甲弹'], '水侦': ['水侦'], '鱼雷': ['鱼雷'] };
+const DIM_WORDS = { air: '制空', los: '索敌', asw: '对潜', night: '夜战', radar: '电探' };
+function typesBefore(idx) {
+  const t = new Set();
+  for (const id of STARTER_IDS) t.add(ShipData[id].type);
+  for (const s of SHIPS) if (s.buildable !== false) t.add(s.type);      // 建造自始解锁
+  for (let i = 0; i < idx; i++) for (const id of MAPS[i].drops.concat(MAPS[i].bossDrops)) if (ShipData[id]) t.add(ShipData[id].type);
+  return t;
+}
+function catsBefore(idx) {
+  const c = new Set();
+  for (const e of Object.values(EquipmentData)) if (e.buildable) c.add(e.cat);   // 开发自始解锁
+  for (let i = 0; i < idx; i++) for (const id of MAPS[i].drops.concat(MAPS[i].bossDrops)) {
+    const d = ShipData[id]; if (!d) continue;
+    for (const eid of (d.equip || [])) if (EquipmentData[eid]) c.add(EquipmentData[eid].cat);
+  }
+  return c;
+}
+const textFindings = [];
+for (const id of ANNOTATED) {
+  const m = MAPS.find(x => x.id === id);
+  const idx = MAPS.findIndex(x => x.id === id);
+  const text = [m.brief || '', m.threatNote || ''].join('\n');
+  const ty = typesBefore(idx), ca = catsBefore(idx);
+  for (const w in TYPE_WORDS) if (text.includes(w) && !TYPE_WORDS[w].some(x => ty.has(x))) textFindings.push(`${id}·舰种「${w}」`);
+  for (const w in CAT_WORDS) if (text.includes(w) && !CAT_WORDS[w].some(x => ca.has(x))) textFindings.push(`${id}·装备「${w}」`);
+}
+assert('文案提到的舰种/装备在到达该图前均可获得（P0-3）', textFindings.length === 0, textFindings.join('、'));
+assert('威胁说明逐项覆盖已声明维度（文案与机制同步）', ANNOTATED.every(id => {
+  const m = MAPS.find(x => x.id === id);
+  return (m.threat || []).every(k => (m.threatNote || '').includes(DIM_WORDS[k]));
+}));
+assert('威胁说明不含未声明维度的表述（防文案漂移）', ANNOTATED.every(id => {
+  const m = MAPS.find(x => x.id === id);
+  const note = m.threatNote || '';
+  const declared = m.threat || [];
+  return Object.keys(DIM_WORDS).every(k => declared.includes(k) || !note.includes(DIM_WORDS[k]));
+}));
 
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);

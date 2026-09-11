@@ -427,16 +427,67 @@ const Battle = (() => {
     return { ev, evAir, evFlak, pushSnap };
   }
 
+  /* ============ 特殊攻击表（战斗判定与「出击前情报室」清单共用同一张表） ============
+   * 规则不写死在 UI（规范 P2-2）：编成自检清单直接读本表，保证「可发动/为什么不能发动」
+   * 与战斗中实际判定完全同源（禁止事项 6：UI 与机制不同步）。
+   * 顺序即优先级；ok 为可发动条件，miss 给出未发动原因。 */
+  function attackProfile(s) {
+    const eq = (s.equipped || []).map(e => e && EquipmentData[e.id]).filter(Boolean);
+    const count = t => eq.filter(e => e && e.slot === t).length;
+    return {
+      mg: s.mainGuns || 0,                    // 昼战：主炮数（buildCombatShip 结果）
+      sec: s.secondaries || 0,                // 昼战：副炮数
+      ap: !!s.apShell,
+      radar: !!s.radar,
+      seaplane: !!s.hasSeaplane,
+      guns: count(SLOT.SMALL_GUN) + count(SLOT.MED_GUN) + count(SLOT.BIG_GUN),  // 夜战：主炮数（按装备实计）
+      torps: count(SLOT.TORPEDO)
+    };
+  }
+  /* 昼战特殊攻击（wiki：制空优势/确保 + 水侦；主主1.5、主弹1.3、主电1.2、主副1.1、连击1.2×2） */
+  const DAY_SPECIALS = [
+    { id: 'day_ci_main', name: '主炮Cut-in', mult: 1.5, n: 1, req: '主炮×2 + 穿甲弹',
+      ok: c => c.mg >= 2 && c.ap,
+      miss: c => (c.mg < 2 ? `主炮不足 2 门（当前 ${c.mg}）` : '缺穿甲弹') },
+    { id: 'day_double', name: '昼战连击', mult: 1.2, n: 2, req: '主炮×2',
+      ok: c => c.mg >= 2,
+      miss: c => `主炮不足 2 门（当前 ${c.mg}）` },
+    { id: 'day_ci_main_ap', name: '主弹Cut-in', mult: 1.3, n: 1, req: '主炮 + 副炮 + 穿甲弹',
+      ok: c => c.mg >= 1 && c.sec >= 1 && c.ap,
+      miss: c => (c.mg < 1 ? '无主炮' : c.sec < 1 ? '无副炮' : '缺穿甲弹') },
+    { id: 'day_ci_main_radar', name: '主电Cut-in', mult: 1.2, n: 1, req: '主炮 + 副炮 + 电探',
+      ok: c => c.mg >= 1 && c.sec >= 1 && c.radar,
+      miss: c => (c.mg < 1 ? '无主炮' : c.sec < 1 ? '无副炮' : '缺电探') },
+    { id: 'day_ci_main_sec', name: '主副Cut-in', mult: 1.1, n: 1, req: '主炮 + 副炮',
+      ok: c => c.mg >= 1 && c.sec >= 1,
+      miss: c => (c.mg < 1 ? '无主炮' : '无副炮') }
+  ];
+  /* 夜战特殊攻击（wiki：鱼雷CI 1.5×2 / 主鱼1.3×2 / 连击1.2×2） */
+  const NIGHT_SPECIALS = [
+    { id: 'night_torp_ci', name: '鱼雷Cut-in', mult: 1.5, n: 2, req: '鱼雷×2',
+      ok: c => c.torps >= 2,
+      miss: c => `鱼雷不足 2 具（当前 ${c.torps}）` },
+    { id: 'night_gun_torp_ci', name: '主鱼Cut-in', mult: 1.3, n: 2, req: '主炮×1 + 鱼雷×1',
+      ok: c => c.guns >= 1 && c.torps >= 1,
+      miss: c => (c.guns < 1 ? '无主炮' : `鱼雷不足（当前 ${c.torps}）`) },
+    { id: 'night_double', name: '夜战连击', mult: 1.2, n: 2, req: '主炮×2',
+      ok: c => c.guns >= 2,
+      miss: c => `主炮不足 2 门（当前 ${c.guns}）` }
+  ];
+  /* 昼战特殊攻击的公共前置：制空优势以上 + 携带水侦/水爆 + 未大破（wiki） */
+  function dayAttackGate(s, airSup) {
+    if (!airSup) return '制空不足（需航空优势及以上）';
+    if (!s.hasSeaplane) return '未携带水侦/水爆';
+    if (isDaPo(s)) return '大破无法发动';
+    return null;
+  }
+
   /* ============ 昼战特殊攻击判定（wiki：制空优势/确保+水侦；主主1.5、主弹1.3、主电1.2、主副1.1、连击1.2×2） ============ */
   function resolveDayAttack(s, airSup) {
     if (s.stats.fp <= 0 || !s.alive) return null;
     if (airSup && s.hasSeaplane && !isDaPo(s)) {
-      const mg = s.mainGuns, sec = s.secondaries, ap = s.apShell, rd = s.radar;
-      if (mg >= 2 && ap) return { mult: 1.5, n: 1, name: '主炮Cut-in' };
-      if (mg >= 2) return { mult: 1.2, n: 2, name: '昼战连击' };
-      if (mg >= 1 && sec >= 1 && ap) return { mult: 1.3, n: 1, name: '主弹Cut-in' };
-      if (mg >= 1 && sec >= 1 && rd) return { mult: 1.2, n: 1, name: '主电Cut-in' };
-      if (mg >= 1 && sec >= 1) return { mult: 1.1, n: 1, name: '主副Cut-in' };
+      const c = attackProfile(s);
+      for (const a of DAY_SPECIALS) if (a.ok(c)) return { mult: a.mult, n: a.n, name: a.name };
     }
     return { mult: 1.0, n: 1, name: null };
   }
@@ -445,13 +496,9 @@ const Battle = (() => {
   function resolveNightAttack(s) {
     if (!s.alive || isDaPo(s)) return null;
     if (s.stats.fp + s.stats.tp <= 0) return null;
-    const eq = s.equipped.map(e => e && EquipmentData[e.id]).filter(Boolean);
-    const torps = eq.filter(e => e.slot === SLOT.TORPEDO).length;
-    const guns = eq.filter(e => e.slot === SLOT.SMALL_GUN || e.slot === SLOT.MED_GUN || e.slot === SLOT.BIG_GUN).length;
+    const c = attackProfile(s);
     let spec = null;
-    if (torps >= 2) spec = { mult: 1.5, n: 2, name: '鱼雷Cut-in' };
-    else if (guns >= 1 && torps >= 1) spec = { mult: 1.3, n: 2, name: '主鱼Cut-in' };
-    else if (guns >= 2) spec = { mult: 1.2, n: 2, name: '夜战连击' };
+    for (const a of NIGHT_SPECIALS) if (a.ok(c)) { spec = { mult: a.mult, n: a.n, name: a.name }; break; }
     if (!spec) return { mult: 1.0, n: 1, name: null };
     let rate = 0.5 + (s.stats.lck || 0) * 0.005;
     if (s.searchlight) rate += 0.1;               // 探照灯提高夜战CI率
@@ -743,6 +790,86 @@ const Battle = (() => {
     };
   }
 
+  /* ============ 舰队级能力聚合（出击前情报室与战斗引擎共用，禁止在 UI 另写一套） ============
+   * 编成界面只有存档实例，战斗只接受 buildCombatShip 产物；此处把
+   * 「存档实例 → 战斗对象 → 舰队聚合」抽成公共链路，保证 UI 展示的数值与战斗实际使用的数值同源
+   * （规范 P2-2 规则与表现分离 / 禁止事项 6 UI 与机制不同步）。 */
+  function playerShipsOf(fleetIdx) {
+    const G = GameRef();
+    const st = G.state;
+    const out = [];
+    for (const uid of (st.fleet[fleetIdx] || [])) if (st.ships[uid]) out.push(makePlayerShip(uid));
+    return out;
+  }
+  /* 舰队夜战火力：可参加夜战（存活、非大破、非空母）舰艇的 火力+雷装 之和 */
+  function fleetNightPower(ships) {
+    let sum = 0;
+    for (const s of ships) {
+      if (!s.alive || isDaPo(s) || isCV(s)) continue;
+      sum += (s.stats.fp || 0) + (s.stats.tp || 0);
+    }
+    return sum;
+  }
+  function fleetStats(fleetIdx) {
+    const ships = playerShipsOf(fleetIdx);
+    const slowNames = ships.filter(s => s.speed === 'slow').map(s => s.zh || s.name || s.uid);
+    return {
+      ships,
+      count: ships.length,
+      air: airPower(ships),
+      los: ships.reduce((a, s) => a + (s.stats.los || 0), 0),
+      asw: ships.reduce((a, s) => a + (s.stats.asw || 0), 0),
+      aswCapable: ships.filter(canOpeningASW).length,
+      night: fleetNightPower(ships),
+      allFast: ships.length > 0 && slowNames.length === 0,
+      hasSlow: slowNames.length > 0,
+      slowCount: slowNames.length,
+      slowNames
+    };
+  }
+  /* 敌军编成制空值（用于出击前情报室估算对手制空；与实际战斗 airPower 同源） */
+  function enemyAirPower(enemyKey) {
+    const fleet = (typeof ENEMY_FLEETS !== 'undefined' && ENEMY_FLEETS[enemyKey]) ? ENEMY_FLEETS[enemyKey].ships : null;
+    if (!fleet) return 0;
+    return airPower(fleet.map((k, i) => makeEnemyShip(k, i)).filter(Boolean));
+  }
+  /* 制空状态判定（airState 的对外包装：给定我方/敌方制空值，返回是否取得制空优势以上） */
+  function hasAirSuperiority(myAir, enAir) {
+    const st = airState(myAir, enAir);
+    return st.key === 'SUP' || st.key === 'SURE';
+  }
+  /* 出击前情报：特殊攻击可发动清单（与战斗判定同源；airSup 由调用方按目标海域敌制空给出）
+   * 返回 { day: [...], night: [...] }，每项 { id, name, mult, n, req, ok, reason, ships[] } */
+  function specialAttackReport(fleetIdx, opts = {}) {
+    const ships = playerShipsOf(fleetIdx);
+    const airSup = !!opts.airSup;
+    const hasPlane = ships.some(s => s.alive && s.hasSeaplane);
+    const gate = !airSup ? '制空不足（需航空优势及以上）'
+      : !hasPlane ? '未携带水侦/水爆' : null;
+    const day = DAY_SPECIALS.map(a => {
+      const able = ships.filter(s => s.alive && s.stats.fp > 0 && !dayAttackGate(s, airSup) && a.ok(attackProfile(s)));
+      let reason = null;
+      if (!able.length) {
+        if (gate) reason = gate;
+        else {
+          const c = ships.filter(s => s.alive && s.stats.fp > 0);
+          reason = c.length ? a.miss(attackProfile(c[0])) : '舰队无炮击能力';
+        }
+      }
+      return { id: a.id, name: a.name, mult: a.mult, n: a.n, req: a.req, ok: able.length > 0, reason, ships: able.map(s => s.zh || s.name) };
+    });
+    const night = NIGHT_SPECIALS.map(a => {
+      const able = ships.filter(s => s.alive && !isDaPo(s) && (s.stats.fp + s.stats.tp > 0) && a.ok(attackProfile(s)));
+      let reason = null;
+      if (!able.length) {
+        const c = ships.filter(s => s.alive && !isDaPo(s) && (s.stats.fp + s.stats.tp > 0));
+        reason = c.length ? a.miss(attackProfile(c[0])) : '舰队无夜战攻击能力';
+      }
+      return { id: a.id, name: a.name, mult: a.mult, n: a.n, req: a.req, ok: able.length > 0, reason, ships: able.map(s => s.zh || s.name) };
+    });
+    return { day, night };
+  }
+
   /* ============ 主战斗入口 ============ */
   /* fleetA: 玩家舰队uid数组, fleetB: 敌舰模板key数组 */
   function battle(fleetA, fleetB, formationA, formationB, opts = {}) {
@@ -771,6 +898,8 @@ const Battle = (() => {
       L('—— 夜战节点！能见度极低，舰队在黑暗中接敌 ——');
       const r0 = settle(log, sideA, sideB, false, formAName, formBName);
       r0.forceNight = true;
+      /* 夜战节点无索敌/航空阶段：显式标记 recon=null，避免归因误判为「索敌失败」 */
+      attachBattleContext(r0, { reconOk: null, myAir: 0, enAir: 0, airSup: false, eng: null });
       return r0;
     }
 
@@ -1050,7 +1179,19 @@ const Battle = (() => {
     }
 
     /* ---- 结算 ---- */
-    return settle(log, sideA, sideB, nightUsed, formAName, formBName);
+    const r = settle(log, sideA, sideB, nightUsed, formAName, formBName);
+    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng });
+    return r;
+  }
+
+  /* 把索敌/制空/交战形态结果挂到结算结果上（供 game 层失败归因使用；夜战追加后需重新挂载） */
+  function attachBattleContext(r, ctx) {
+    r.recon = ctx.reconOk === undefined ? null : ctx.reconOk;
+    r.myAir = ctx.myAir || 0;
+    r.enAir = ctx.enAir || 0;
+    r.airSup = !!ctx.airSup;
+    r.engagement = ctx.eng || null;
+    return r;
   }
 
   /* ============ 夜战突入（追击选择）：在昼战结果基础上追加夜战并重新结算
@@ -1062,10 +1203,19 @@ const Battle = (() => {
     const formAName = dayResult.formAName, formBName = dayResult.formBName;
     const { ev, pushSnap } = makeEventHelpers(log, sideA, sideB);
     const nightUsed = nightPhase(log, sideA, sideB, formAName, formBName, ev, pushSnap);
-    return settle(log, sideA, sideB, nightUsed, formAName, formBName);
+    const r = settle(log, sideA, sideB, nightUsed, formAName, formBName);
+    return attachBattleContext(r, {
+      reconOk: dayResult.recon, myAir: dayResult.myAir, enAir: dayResult.enAir,
+      airSup: dayResult.airSup, eng: dayResult.engagement
+    });
   }
 
-  return { battle, battleNight, FORMATIONS, ENGAGEMENT, airState, makeEnemyShip, isDaPo, ammoBonus };
+  return {
+    battle, battleNight, FORMATIONS, ENGAGEMENT, airState, makeEnemyShip, isDaPo, ammoBonus,
+    /* 出击前情报室共用接口（禁止在 UI 另写一套算法） */
+    buildCombatShip, airPower, fleetStats, enemyAirPower, hasAirSuperiority, specialAttackReport,
+    DAY_SPECIALS, NIGHT_SPECIALS
+  };
 })();
 
 if (typeof window !== 'undefined') window.Battle = Battle;

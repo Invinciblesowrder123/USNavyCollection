@@ -399,7 +399,7 @@ const Homeport = (() => {
       ${secDef ? `
       <div class="panel panel-deco secretary-panel">
         <div class="sec-frame" data-sec-id="${secDef.id}">
-          ${SecretaryL2D.has(secDef.id)
+          ${(typeof SecretaryL2D !== 'undefined' && SecretaryL2D.has(secDef.id))
             ? SecretaryL2D.html(secDef.id)
             : secAi
               ? `<img class="sec-portrait" src="${secAi}" alt="${Util.esc(secDef.en)}" onerror="this.remove()">`
@@ -474,7 +474,8 @@ const Homeport = (() => {
       b.addEventListener('click', () => UI.go(b.dataset.go));
     });
     if (secDef) bindSecretaryPoke(root, secDef);
-    if (secDef) SecretaryL2D.bind(root.querySelector('.sec-frame'), secDef.id);
+    /* 分层立绘驱动缺失时静默降级（回退链：分层 → AI 立绘 → 舰种占位符），不得整页报错 */
+    if (secDef && typeof SecretaryL2D !== 'undefined') SecretaryL2D.bind(root.querySelector('.sec-frame'), secDef.id);
     UI.setTick(() => {
       root.querySelectorAll('[data-until]').forEach(el => {
         const end = parseInt(el.dataset.until, 10) || 0;

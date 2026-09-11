@@ -362,6 +362,32 @@ const Game = (() => {
     return sum;
   }
 
+  /* ============ 舰队级能力（制空/对潜/速力/夜战火力） ============
+   * 全部委托给 battle.js 的公共聚合接口 fleetStats（存档实例→战斗对象→舰队聚合），
+   * 保证 UI 展示数值与战斗实际判定同源（规范 P2-2；禁止事项 6）。此处不得另写一套算法。 */
+  const BattleRef = () => {
+    if (typeof Battle !== 'undefined' && Battle) return Battle;                 // 浏览器全局经典脚本 / Node 测试注入
+    if (typeof window !== 'undefined' && window.Battle) return window.Battle;
+    if (typeof require === 'function') { try { return require('../game/battle.js').Battle; } catch (e) { /* ignore */ } }
+    return null;
+  };
+  function battleFleetStats(fleetIdx) {
+    const B = BattleRef();
+    return (B && typeof B.fleetStats === 'function') ? B.fleetStats(fleetIdx) : null;
+  }
+  /* 舰队总制空值（与战斗内 airPower 同源） */
+  function fleetAir(fleetIdx) { const s = battleFleetStats(fleetIdx); return s ? s.air : 0; }
+  /* 舰队总对潜值 */
+  function fleetAsw(fleetIdx) { const s = battleFleetStats(fleetIdx); return s ? s.asw : 0; }
+  /* 舰队夜战火力（可夜战舰艇的 火力+雷装 之和） */
+  function fleetNight(fleetIdx) { const s = battleFleetStats(fleetIdx); return s ? s.night : 0; }
+  /* 舰队速力判定：是否全队高速 / 是否含低速舰 */
+  function fleetSpeed(fleetIdx) {
+    const s = battleFleetStats(fleetIdx);
+    if (!s) return { allFast: false, hasSlow: false, slowCount: 0, slowNames: [] };
+    return { allFast: s.allFast, hasSlow: s.hasSlow, slowCount: s.slowCount, slowNames: s.slowNames };
+  }
+
   /* ============ 初始化 ============ */
   function newGame() {
     uidSeq = 1;
@@ -642,6 +668,7 @@ const Game = (() => {
     equipCount, equipIdleCount, equipCap, expandEquipCap, equipCapWouldExceed,
     shouldAutoLockShip, shouldAutoLockEquip,
     shipDef, shipStats, fleetLos, fleetHasName, addAdmiralExp, resourceCap,
+    fleetAir, fleetAsw, fleetNight, fleetSpeed, battleFleetStats,
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
     setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets,
     migrateSave, normalizeSave, CURRENT_SAVE_VERSION,

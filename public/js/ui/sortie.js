@@ -190,6 +190,46 @@ const SortieUI = (() => {
     </div>`;
   }
 
+  /* ============================================================
+   * 出击前情报室（方向一）——编成自检
+   * 数据全部来自引擎 Sortie.intel（与 battle.js 同源）；这里只负责排版与着色，
+   * 不重算任何能力值、不重写特殊攻击条件（规范 P2-2 / 禁止事项 6）。
+   * 只提示、不拦截出击（P0-2）。
+   * ============================================================ */
+  function specialsHtml(sp, airSup) {
+    const one = a => a.ok
+      ? `<span class="ok" title="${Util.esc(a.req)}">✓ ${a.name}</span>${a.ships.length ? `<span class="dim">（${Util.esc(a.ships.join('、'))}）</span>` : ''}`
+      : `<span class="red" title="${Util.esc(a.req)}">✗ ${a.name}：${Util.esc(a.reason || '条件不足')}</span>`;
+    /* 昼战项被同一前置原因整组阻断时折叠为一句，避免刷屏（引擎数据本身仍是完整的） */
+    const dayBlocked = sp.day.length > 0 && sp.day.every(a => !a.ok && a.reason === sp.day[0].reason);
+    const dayHtml = dayBlocked
+      ? `<span class="red">全部无法发动 —— ${Util.esc(sp.day[0].reason)}</span>`
+      : sp.day.map(one).join(' ｜ ');
+    return `<div class="md-special"><b>特殊攻击</b>（昼战）${dayHtml}</div>
+      <div class="md-special"><b>特殊攻击</b>（夜战）${sp.night.map(one).join(' ｜ ')}<span class="dim">（Cut-in 需通过发动率判定）</span></div>`;
+  }
+
+  function intelRows(m, fidx) {
+    const it = Sortie.intel(fidx, m.id);
+    if (!it) return '';
+    const s = it.stats;
+    const speedTxt = s.speed.slowCount > 0
+      ? `<span class="red">含低速舰 ${s.speed.slowCount} 艘（${Util.esc(s.speed.slowNames.join('、'))}）</span>`
+      : '<span class="ok">全队高速</span>';
+    let html = `<div class="md-intel-sep"></div>
+      <div><b>舰队能力</b>：制空 <b>${s.air}</b> ｜ 索敌 <b>${s.los}</b> ｜ 对潜 <b>${s.asw}</b> ｜ 速力 ${speedTxt} ｜ 夜战火力 <b>${s.night}</b></div>`;
+    if (it.threats.length) {
+      const t = it.threats.map(x => x.ok
+        ? `<span class="ok">✓ ${x.name}</span>`
+        : `<span class="red">✗ ${x.name}：${Util.esc(x.detail)}</span>`).join(' ｜ ');
+      html += `<div><b>威胁对位</b>：${t}</div>`;
+    }
+    html += specialsHtml(it.specials, it.airSup);
+    if (m.threatNote) html += `<div class="md-threat"><b>威胁评估</b>：${Util.esc(m.threatNote)}</div>`;
+    html += `<div class="dim">自检只作提示，不阻止出击。对位不满足仍可出击，失败后可按归因调整编成。</div>`;
+    return html;
+  }
+
   /* 地图详情面板：迷你海图预览 + 血条 + 出击（BOSS海域锁定态提示）；fleetIdx 用于跟随所选舰队的索敌/出击判断 */
   function mapDetailPanel(m, fleetIdx) {
     const st = Game.state;
@@ -221,6 +261,7 @@ const SortieUI = (() => {
         ${ddNeed ? `<div><b>分支驱逐</b>：≥${ddNeed} 艘</div>` : ''}
         <div><b>道中掉落</b>：${m.drops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
         <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
+        ${intelRows(m, fidx)}
       </div>
       ${locked
         ? `<div class="md-lock">🔒 未解锁！先击破 <b>${m.need}</b> 后开放此 BOSS 海域。</div>`

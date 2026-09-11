@@ -605,3 +605,76 @@ README 已同步更新，明确当前功能状态与测试基线。
 
 **工具沉淀（在 `../ArtPipeline/`）：** 分层质量三件套 —— `compare_composite.py`（0° 全图校验）、`who_visible.py`（逐像素定位谁在遮挡）、`render_rot.py`（转动接缝，离线渲染不用开浏览器）；加 `install_live2d.py`（换舰娘只需跑它）。
 
+## 2026-09-11 下一步方向研究（双 agent：提案 + 独立评审）
+
+**产出：** `../design/方向提案.md`（5 个方向，均不含新船/新装备/新海域）+ `../design/方向提案_评审.md`（独立评审，含逐条代码核实）
+
+**评审价值：** 核实提案的 12 条现状断言 —— 8 条成立、2 条有实质偏差、2 条不成立。
+引用的 6 个行号 6/6 精确，但**机制解读出错两处**：
+- 「交战形态是四分随机」→ 实为加权 45/30/15/10（`battle.js:796`），T 不利仅 10%，据此论证 P0-1 冲突不成立
+- 「演习恢复士气 +30」→ `progression.js::applyBattleResult` 无任何 morale 写入，该机制**不存在**
+
+评审排序（总分）：情报室 78 > 舰历 72 > 士气 70 > 侦察航向 62 > 海域目标 58，
+与提案排序的分歧在于把「海域作战目标」从第 4 位调到末位（核心选择不成立 + 红线风险最高 + 与舰历冗余）。
+评审建议：**只做方向 1，且砍到三件事**（制空/对潜/速力出击前展示 + 特殊攻击可触发清单 + 归因扩到制空/索敌），
+去掉 25 图威胁剖面这个数据工程与那条 200 局模拟断言。
+
+**顺手修正（重要）：** `MEMORY.md` 的士气条目长期失真，是提案事实错误的来源之一，已按代码改正 ——
+旧记「出击 -30 / 回港 +15 / 命中回避 ±10~20%」，
+实际「出击 -15（`sortie.js:241`）/ 回港静置每 tick +3 至 49、49~52 直接跳 53（`state.js:156-157`）/
+闪 命中×1.2 回避×1.8、红脸 命中×0.5（无回避惩罚）（`battle.js:222-233`）；演习不改士气」。
+
+**未决：** 采纳方向待定。本轮**未提交**（等方向拍板后随实现一起提交），当前工作区有 `MEMORY.md` 与 `HEARTBEAT.md` 两处未提交改动。
+
+
+## 2026-09-11 开发任务书 · 批次1：方向一「出击前情报室」
+
+**来源：** `../design/开发任务书.md` 批次1（含设计卡 `../design/设计卡_批次1_出击前情报室.md`）。四个批次按序推进，本条目只覆盖批次1。
+
+### 改动清单
+
+| 文件 | 改了什么 |
+|---|---|
+| `public/js/game/battle.js` | ① 抽出 `attackProfile()` + `DAY_SPECIALS`/`NIGHT_SPECIALS` 两张表，`resolveDayAttack`/`resolveNightAttack` 改为查表（**行为逐位不变**）；② 新增公共聚合 `playerShipsOf`/`fleetStats`/`enemyAirPower`/`hasAirSuperiority`/`specialAttackReport`；③ 导出 `buildCombatShip`/`airPower`；④ 结算结果挂 `recon`/`myAir`/`enAir`/`airSup`/`engagement`（夜战追加后由 `battleNight` 重新挂载） |
+| `public/js/core/state.js` | 新增并导出 `fleetAir` / `fleetAsw` / `fleetNight` / `fleetSpeed` / `battleFleetStats`，全部**委托** `battle.js` 的 `fleetStats`（存档实例→战斗对象→聚合），UI 不得另写一套 |
+| `public/js/data/maps.js` | 1-2 / 1-4 / 2-2 / 3-1 新增 `threat[]`（维度 key）与 `threatNote`（军事简报体威胁说明） |
+| `public/js/game/sortie.js` | ① 新增 `intel()` / `threatCheck()` / `requiredLos()` / `fleetHasRadar()` / `fleetHasAswShip()` / `THREAT_INFO`；② 失败归因抽成**纯函数** `attributionLines()` 并扩展「制空不足」「索敌失败」两条 |
+| `public/js/ui/sortie.js` | 海域详情 `md-rows` 内新增「编成自检」区块（舰队能力 / 威胁对位 / 特殊攻击清单 / 威胁评估），只提示不拦截 |
+| `public/css/style.css` | `.md-rows .ok`、`.md-threat`、`.md-intel-sep`、`.md-special` |
+| `scripts/simulate.js` | 新增 39 项断言；**修复 2 项既有失败断言**（弗莱彻改造需 Lv.40＝累计 78,000 经验，用例只喂了 50,000） |
+| `public/test_flow.html` | 新增 14 项 E2E；**补 2 个缺失的 `<script>`**（`data/live2d.js` / `ui/secretary-live2d.js`）——09-11 分层立绘实装后 E2E 一直因 `SecretaryL2D is not defined` 整轮失败，属既有回归 |
+| `public/js/ui/homeport.js` | `SecretaryL2D` 加存在性守卫（分层驱动缺失时静默降级，不整页报错） |
+| `scripts/drift_check.js` + `scripts/battle_digest.baseline.txt` | **新增**战斗引擎逐位对拍工具与基线（固定种子 LCG → 9 组场景 → 评价串/伤害/日志指纹） |
+| `public/index.html` | 缓存版本号统一刷为 `?v=20260911intel1` |
+
+### 关键设计取舍
+
+- **同源优先**：能力值、威胁判定、特殊攻击可发动清单全部由引擎算，UI 只排版着色（对齐规范 P2-2、禁止事项 6）。`fleetAir()` 与实战日志「我军制空」同值；`fleetStats.los` 与既有 `fleetLos` 同值。
+- **维度规则可推导**：`对潜⟺有 sub 节点`、`夜战火力⟺有 night 节点`、`电探·燃料⟺有 whirlpool`、`索敌⟺有 los 分支`、`制空⟺某战斗点敌军有舰载机`。首版只声明 4 图，**不做 25 图数据工程**；断言做成「已声明图的维度集与推导集双向相等」+「任何已声明图不得漏必需维度」，防日后改海域时剖面漂移。
+- **不拦截出击**（P0-2）：面板仅提示，按钮不禁用；未声明维度的海域整块不显示。
+- **失败归因纯函数化**：`attributionLines()` 不碰 DOM，可用合成 result 直接断言，避免"为了测归因去构造真实败局"。
+
+### 测试
+
+| 层 | 结果 |
+|---|---|
+| `npm run sim` | **1386 项通过 / 0 失败**（本批 +39，含修好的 2 项既有失败） |
+| `npm run test:migration` | 18 项通过（本批无存档结构改动） |
+| `npm run test:e2e` | **106 项通过 / 0 JS 错误**（本批 +14；修好既有的整轮失败） |
+| 引擎逐位对拍 | `node scripts/drift_check.js --against scripts/battle_digest.baseline.txt` → **9 组场景摘要逐位一致**（780+ 场战斗，含日志指纹），证明重构零数值漂移 |
+
+### 浏览器实测（Gate 4）
+
+1440px 截图 3 张（存档于 `../backup/2026-09-11_批次1/实测截图/`）：
+- `intel_3-1.png`：3-1 显示 ✓索敌 / ✓制空 / ✗电探·燃料（含红色原因文案）；昼战特殊攻击整组折叠为「全部无法发动 —— 制空不足」；夜战 ✓夜战连击（列出舰名）
+- `intel_2-2.png`：2-2 对潜 ✗（"对潜 4：该图有潜艇伏击点，建议编入驱逐舰或轻巡洋舰"）；缺穿甲弹/缺电探逐项标注
+- `intel_1-1.png`：未声明维度的海域**不显示**威胁对位与威胁评估，只显示舰队能力与特殊攻击
+
+长文案（威胁评估/AI 名称）在 350px 窄列内正常折行，无撑破、无重叠；控制台 0 错误。
+
+### 已知问题 / 未纳入范围
+
+- 威胁维度只填 4 张图（任务书明确要求），其余 21 张留待后续数据工程。
+- 「对潜」对位只判"舰队是否含 DD/CL/DE/AS"，未做数值门槛（任务书要求只给维度、不给达标数值）。
+- `daily/HEARTBEAT` 中此前记录的 E2E 93 项已被 09-11 立绘改动破坏，本批顺手修复，现为 106 项。
+- 战斗引擎的"统计输出逐位相同"用**固定种子对拍工具**实现：`Math.random` 未播种时逐位相同不可复现，故本批新增 `scripts/drift_check.js` 作为此后改战斗代码的标准验证手段（批次2的方向五必用）。

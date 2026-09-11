@@ -5,6 +5,13 @@
 
 const Sortie = (() => {
   const GameRef = () => (typeof window !== 'undefined') ? window.Game : require('../core/state.js').Game;
+  /* battle.js 参照（浏览器为全局经典脚本；Node 下由测试注入 global） */
+  const BattleRef = () => {
+    if (typeof Battle !== 'undefined' && Battle) return Battle;
+    if (typeof window !== 'undefined' && window.Battle) return window.Battle;
+    if (typeof require === 'function') { try { return require('./battle.js').Battle; } catch (e) { /* ignore */ } }
+    return null;
+  };
 
   /* 消耗指定id的装备（舰上装备中，取出并销毁） */
   function consumeEquip(st, uid, eqId) {
@@ -218,6 +225,42 @@ const Sortie = (() => {
     return prep;
   }
 
+  /* ============ 失败归因（P0-5：结算要说清主要失败来源 + 一个可执行改进方向） ============
+   * 纯函数：输入 结算结果 / 节点定义 / 参战舰队 / 存档，输出归因行数组；不接触 DOM，便于自动化断言。
+   * 只在败局时输出；每条归因必须对应真实发生过的失败原因（防误报）。 */
+  function attributionLines(ctx) {
+    const { result, nodeDef, fleet, st } = ctx;
+    const out = [];
+    if (!result || (result.victory && result.rank !== 'D')) return out;
+    const def = nodeDef || {};
+    const ships = fleet || [];
+    /* 1) 特殊节点（既有） */
+    if (def.mode === 'sub') {
+      const noAsw = !ships.some(uid => {
+        const s = st.ships[uid];
+        if (!s) return false;
+        const ty = ShipData[s.id] && ShipData[s.id].type;
+        return ty === 'DD' || ty === 'CL' || ty === 'DE';
+      });
+      out.push(noAsw
+        ? '舰队缺乏对潜攻击手段，无法打击深海潜艇。（驱逐舰与轻巡洋舰具备对潜能力）'
+        : '反潜战斗失利。深水炸弹与对潜声呐可强化驱逐舰的反潜输出。');
+    } else if (def.mode === 'night') {
+      out.push('夜战不利。驱逐舰与轻巡洋舰的鱼雷与夜战装备是夜战的王牌。');
+    }
+    /* 2) 制空丧失（我方有航空战力、敌方也有，但未取得航空优势） */
+    if (result.myAir > 0 && result.enAir > 0 && result.airSup === false) {
+      out.push(`制空不足：我军制空 ${result.myAir} 对敌 ${result.enAir}，未能取得航空优势，昼战特殊攻击全部无法发动。`
+        + '改进方向：编入更多舰战，或提高舰载机搭载。');
+    }
+    /* 3) 索敌失败（无法参加航空战、命中与回避下降）；夜战节点无索敌阶段，recon 为 null 不触发 */
+    if (result.recon === false) {
+      out.push('索敌失败：舰队无法参加航空战，命中与回避下降。'
+        + '改进方向：提高舰队索敌值（水侦、电探、舰载机均可提升索敌）。');
+    }
+    return out;
+  }
+
   /* 战斗结算：油弹/疲劳消耗、hp写回、大破进击轰沉、提督经验、掉落、血条、统计 */
   function settleBattle(prep) {
     const G = GameRef();
@@ -328,24 +371,111 @@ const Sortie = (() => {
     if (result.rank === 'S') st.stats.sWin++;
     st.stats.sink += result.enemyKilled;
 
-    /* 特殊节点失败归因（用户要求：失败结算要说清原因并指出改进路径） */
-    if (!result.victory || result.rank === 'D') {
-      if (def.mode === 'sub') {
-        const noAsw = !fleet.some(uid => {
-          const s = st.ships[uid];
-          if (!s) return false;
-          const ty = ShipData[s.id] && ShipData[s.id].type;
-          return ty === 'DD' || ty === 'CL' || ty === 'DE';
-        });
-        result.log.push(noAsw
-          ? '舰队缺乏对潜攻击手段，无法打击深海潜艇。（驱逐舰与轻巡洋舰具备对潜能力）'
-          : '反潜战斗失利。深水炸弹与对潜声呐可强化驱逐舰的反潜输出。');
-      } else if (def.mode === 'night') {
-        result.log.push('夜战不利。驱逐舰与轻巡洋舰的鱼雷与夜战装备是夜战的王牌。');
-      }
-    }
+    /* 失败归因（P0-5：失败结算要说清原因并指出改进路径；纯函数便于断言） */
+    for (const line of attributionLines({ result, nodeDef: def, fleet, st })) result.log.push(line);
 
     return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true, admExp: admGain };
+  }
+
+  /* ============ 出击前情报室（方向一） ============
+   * 把「编成能力 / 海域威胁维度 / 特殊攻击可发动清单」集中在这里算，UI 只负责渲染（规范 P2-2）。
+   * 所有能力值一律来自 Battle.fleetStats 与 Battle.specialAttackReport —— 与战斗实际判定同源，
+   * UI 里不得再写第二套算法（禁止事项 6）。 */
+  const THREAT_INFO = {
+    air: { name: '制空' },
+    los: { name: '索敌' },
+    asw: { name: '对潜' },
+    night: { name: '夜战火力' },
+    radar: { name: '电探·燃料' }
+  };
+  const THREAT_KEYS = Object.keys(THREAT_INFO);
+
+  /* 海域分支索敌需求（无索敌分支返回 0） */
+  function requiredLos(map) {
+    const brs = map.branch ? (Array.isArray(map.branch) ? map.branch : [map.branch]) : [];
+    return brs.reduce((mx, b) => Math.max(mx, ((b && b.if) || {}).los || 0), 0);
+  }
+  /* 舰队是否装备电探（SLOT.RADAR） */
+  function fleetHasRadar(fleetIdx) {
+    const st = GameRef().state;
+    return (st.fleet[fleetIdx] || []).some(uid => {
+      const s = st.ships[uid];
+      if (!s) return false;
+      return (s.equipped || []).some(eu => {
+        const inst = st.equipment[eu];
+        const ed = inst && EquipmentData[inst.id];
+        return ed && ed.slot === SLOT.RADAR;
+      });
+    });
+  }
+  /* 舰队是否含对潜舰种（驱逐/轻巡/海防/潜艇母舰） */
+  function fleetHasAswShip(fleetIdx) {
+    const st = GameRef().state;
+    return (st.fleet[fleetIdx] || []).some(uid => {
+      const s = st.ships[uid];
+      if (!s) return false;
+      const ty = ShipData[s.id] && ShipData[s.id].type;
+      return ty === 'DD' || ty === 'CL' || ty === 'DE' || ty === 'AS';
+    });
+  }
+
+  /* 海域威胁维度对位判定：只对该图声明的维度返回结果（未声明维度的海域返回空数组，UI 不显示该区块） */
+  function threatCheck(fleetIdx, map, stats) {
+    const dims = (Array.isArray(map.threat) ? map.threat : []).filter(k => THREAT_INFO[k]);
+    if (!dims.length) return [];
+    const G = GameRef();
+    const s = stats || BattleRef().fleetStats(fleetIdx);
+    const los = G.fleetLos(fleetIdx);
+    const losNeed = requiredLos(map);
+    const hasRadar = fleetHasRadar(fleetIdx);
+    const out = [];
+    for (const k of dims) {
+      if (k === 'air') {
+        out.push({ key: k, name: THREAT_INFO[k].name, ok: s.air > 0,
+          detail: s.air > 0 ? `制空 ${s.air}` : '制空 0：舰队没有舰载战斗机，该图敌军有航空战力，将丧失制空权（建议编入舰战）' });
+      } else if (k === 'los') {
+        out.push({ key: k, name: THREAT_INFO[k].name, ok: losNeed === 0 || los >= losNeed,
+          detail: losNeed ? `需求 ≥${losNeed}（当前 ${los}）` : `当前 ${los}` });
+      } else if (k === 'asw') {
+        out.push({ key: k, name: THREAT_INFO[k].name, ok: fleetHasAswShip(fleetIdx),
+          detail: `对潜 ${s.asw}：该图有潜艇伏击点，建议编入驱逐舰或轻巡洋舰` });
+      } else if (k === 'night') {
+        out.push({ key: k, name: THREAT_INFO[k].name, ok: s.night > 0,
+          detail: `夜战火力 ${s.night}：该图有夜战节点，需要火力+雷装的舰艇` });
+      } else if (k === 'radar') {
+        out.push({ key: k, name: THREAT_INFO[k].name, ok: hasRadar,
+          detail: hasRadar ? '已装备电探：异常洋流燃料损失减半' : '未装备电探：该图有异常洋流，燃料损失不会减半（建议编入电探）' });
+      }
+    }
+    return out;
+  }
+
+  /* 出击前情报汇总：舰队能力 + 威胁对位 + 特殊攻击清单 */
+  function intel(fleetIdx, mapId) {
+    const G = GameRef();
+    const B = BattleRef();
+    const map = MAPS.find(m => m.id === mapId);
+    if (!map || !B) return null;
+    const stats = B.fleetStats(fleetIdx);
+    const speed = G.fleetSpeed(fleetIdx);
+    /* 对手制空：取该图所有战斗/BOSS节点中最高的敌制空（保守估计，用于判断能否取得航空优势） */
+    let enemyAir = 0;
+    for (const d of Object.values(map.defs || {})) {
+      if ((d.type === 'battle' || d.type === 'boss') && d.enemy) {
+        enemyAir = Math.max(enemyAir, B.enemyAirPower(d.enemy));
+      }
+    }
+    const airSup = B.hasAirSuperiority(stats.air, enemyAir);
+    return {
+      mapId: map.id,
+      stats: {
+        air: stats.air, los: G.fleetLos(fleetIdx), asw: stats.asw, aswCapable: stats.aswCapable,
+        night: stats.night, speed
+      },
+      enemyAir, airSup,
+      threats: threatCheck(fleetIdx, map, stats),
+      specials: B.specialAttackReport(fleetIdx, { airSup, myAir: stats.air, enAir: enemyAir })
+    };
   }
 
   /* 战斗结束后移动到下一节点 */
@@ -406,7 +536,13 @@ const Sortie = (() => {
     return { fuel: Math.ceil(fuel), ammo: Math.ceil(ammo) };
   }
 
-  return { start, advance, prepareBattle, continueNight, settleBattle, moveToNext, currentMap, nextNodes, atBoss, retreat, returnHome, nodeDef, sortieConsumption, daPoShips, flagshipDaPo };
+  return {
+    start, advance, prepareBattle, continueNight, settleBattle, moveToNext, currentMap, nextNodes,
+    atBoss, retreat, returnHome, nodeDef, sortieConsumption, daPoShips, flagshipDaPo,
+    /* 出击前情报室（方向一）+ 失败归因 */
+    intel, threatCheck, requiredLos, fleetHasRadar, fleetHasAswShip, attributionLines,
+    THREAT_INFO, THREAT_KEYS
+  };
 })();
 
 if (typeof window !== 'undefined') window.Sortie = Sortie;

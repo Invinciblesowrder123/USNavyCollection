@@ -218,6 +218,10 @@ const MAPS = [
   },
   {
     id: '1-2', name: '所罗门哨戒', desc: '铁底湾的暗流与交锋，第一个出现弹药资源点的海域。', stars: 4,
+    /* threat 维度必须由本图实际节点推导（双向校验见 scripts/simulate.js「海域威胁维度」段）：
+     * los ← branch.if.los；air ← B 点敌军 F05 含空母 Wo 级 */
+    threat: ['los', 'air'],
+    threatNote: '本海域考验索敌与制空。索敌≥20 可在 C 点发现弹药补给航线，直取 BOSS；索敌不足则绕行 A→B 长路线，多打一场。B 点敌编成含空母 Wo 级：未携带舰战将丧失制空，昼战特殊攻击全部无法发动。',
     start: 'S', boss: 'D', gauge: 4,
     admExp: { node: 20, boss: 140 },     // 提督经验（wiki 1-2: 道中+20 / BOSS+140）
     nodes: {
@@ -258,6 +262,9 @@ const MAPS = [
   {
     id: '1-4', name: '欧胡岛防卫线', desc: '深海军夜袭部队反扑近海！驱逐栖姬率领的水雷战队逼近欧胡岛！', stars: 6,
     brief: '昼间防空战报：敌夜袭部队预计 2200 时抵近欧胡岛外海。\n本海域设夜战节点。舰队将失去航空掩护，夜战火力（驱逐舰、轻巡洋舰）将决定胜负。',
+    /* threat：los ← branch.if.los；night ← B 点 mode:'night' */
+    threat: ['los', 'night'],
+    threatNote: '本海域考验索敌与夜战火力。索敌≥30 可靠近 A 点钢材补给，否则正面迎击 B 点夜战。夜战点无昼战阶段：空母无法攻击，火力与雷装兼备的驱逐舰、轻巡洋舰是唯一输出。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 50, boss: 500 },     // 提督经验（wiki 1-4: 道中+50 / BOSS+500）
     nodes: {
@@ -296,6 +303,9 @@ const MAPS = [
   {
     id: '2-2', name: '铁底湾海峡', desc: '深海潜水栖姬潜伏的海峡！反潜装备与夜战火力缺一不可！', stars: 7,
     brief: '铁底湾。沉船和火炮构成了它的另一个名字——"铁底"。\n声呐监听确认：深海潜艇部队在此活动。舰队须编入反潜舰艇（驱逐舰、轻巡洋舰天生具备对潜能力，深水炸弹可强化输出）。\n注意：低速舰艇（21 节标准战列等）是潜艇最理想的猎物，高速新锐舰更易规避雷击。',
+    /* threat：asw ← A/C 点 mode:'sub' */
+    threat: ['asw'],
+    threatNote: '本海域考验对潜。A 点与 C 点均为潜艇伏击点，未编入对潜舰艇的舰队将被单方面雷击。驱逐舰≥3 可走 B 点水雷线（2 战到 BOSS），否则绕行反潜点（3 战）。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 70, boss: 820 },     // 提督经验（wiki 2-2: 道中+70 / BOSS+820）
     nodes: {
@@ -358,6 +368,9 @@ const MAPS = [
   {
     id: '3-1', name: '北大平洋哨戒', desc: '舰队挺进北大平洋！深海战列舰精锐组成的侵攻舰队逼近！', stars: 9,
     brief: '阿留申。雾是这里唯一的常驻居民。\n海图标注了异常洋流（漩涡）：舰队可能损失部分燃料——电探（雷达）可降低导航误差，损失减半。',
+    /* threat：los ← branch.if.los；radar ← W 点 whirlpool；air ← D 点敌军 F33 含轻空母 Nu 级 */
+    threat: ['los', 'air', 'radar'],
+    threatNote: '本海域考验索敌、制空与电探。索敌≥55 可切上 C 点通商破坏线；D 点驻有敌空母机动支援部队，需舰战争夺制空权。B→W 段的异常洋流按持有燃料扣损，编入电探可使损失减半。',
     start: 'S', boss: 'G', gauge: 5,
     admExp: { node: 90, boss: 1450 },    // 提督经验（wiki 3-1: 道中+90 / BOSS+1450）
     nodes: {
