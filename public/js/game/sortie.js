@@ -72,7 +72,7 @@ const Sortie = (() => {
       : null;
     /* 士气轮换提醒（方向三）：只提示不拦截（P0-2），随出击结果一并返回给 UI */
     const advice = moraleAdvice(fleetIdx);
-    st.sortie = { mapId, fleetIdx, node: map.start, path: [map.start], finished: false, nightDisabled: false };
+    st.sortie = { mapId, fleetIdx, node: map.start, path: [map.start], finished: false, nightDisabled: false, daPoSeen: false };
     return { ok: true, warn, advice };
   }
 
@@ -321,6 +321,69 @@ const Sortie = (() => {
     return out;
   }
 
+  /* ============ 海域作战目标（方向四）============
+   * checkObjectives 是**纯函数**：只读入参、只返回判定结果，不写任何状态、不改战斗逻辑。
+   * 判定只在 BOSS 节点进行（道中评价/大破经由 sortie.daPoSeen 汇总，口径是"整次出击"）。
+   * 设计红线：每个目标都必须**迫使玩家改变编成**；不做"不进入夜战"这类纯操作型目标；
+   * 全项目目标数 ≤15，且不做全清奖励（防清单化）。 */
+  function objectiveMet(o, ctx) {
+    const def = ctx.nodeDef || {};
+    if (def.type !== 'boss') return false;          // 只在 BOSS 判定
+    if (o.type === 'sRank') return ctx.result.rank === 'S';
+    if (o.type === 'noHeavy') return !ctx.daPoSeen;
+    if (o.type === 'typeLimit') {
+      const have = (ctx.fleetTypes || []).filter(t => (o.types || []).includes(t)).length;
+      return have >= (o.min || 1);
+    }
+    return false;
+  }
+  /* 条件文本：必须是玩家能**自己核对**的条件（4.3） */
+  function objectiveCondText(o) {
+    if (o.type === 'sRank') return '以 S 胜击破本图 BOSS';
+    if (o.type === 'noHeavy') return '整次出击中不出现大破（含道中）';
+    if (o.type === 'typeLimit') return `编成含 ≥${o.min || 1} 艘${(o.types || []).map(t => SHIP_TYPE_ZH[t] || t).join('/')}`;
+    return o.desc || '';
+  }
+  /* 纯函数判定：返回本场（BOSS 战）各目标的达成情况 */
+  function checkObjectives(map, ctx) {
+    const list = (map && Array.isArray(map.objectives)) ? map.objectives : [];
+    if (!list.length) return [];
+    return list.map(o => ({
+      id: o.id, type: o.type,
+      desc: o.desc || objectiveCondText(o),
+      cond: objectiveCondText(o),
+      reward: o.reward || null,
+      ok: objectiveMet(o, ctx),
+      preCheckable: o.type === 'typeLimit'
+    }));
+  }
+  /* 出击前预览：能算的算出来（限定舰种），算不出的标注"战斗中达成" —— 不替玩家做决定 */
+  function objectivePreview(map, fleetIdx) {
+    const st = GameRef().state;
+    const list = (map && Array.isArray(map.objectives)) ? map.objectives : [];
+    if (!list.length) return [];
+    const types = (st.fleet[fleetIdx] || [])
+      .map(u => st.ships[u] && ShipData[st.ships[u].id] && ShipData[st.ships[u].id].type).filter(Boolean);
+    return list.map(o => {
+      const row = {
+        id: o.id, type: o.type, cond: objectiveCondText(o), desc: o.desc || '',
+        reward: o.reward || null,
+        done: !!(st.stats.objectives && st.stats.objectives[o.id]),
+        pre: null
+      };
+      if (o.type === 'typeLimit') {
+        const have = types.filter(t => (o.types || []).includes(t)).length;
+        row.pre = { ok: have >= (o.min || 1), now: `当前 ${have} 艘` };
+      }
+      return row;
+    });
+  }
+  const OBJ_RES_ZH = { fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土', screws: '改修资材', devMats: '开发资材' };
+  function rewardText(r) {
+    if (!r) return '';
+    return Object.keys(r).filter(k => OBJ_RES_ZH[k]).map(k => `${OBJ_RES_ZH[k]}+${r[k]}`).join(' ');
+  }
+
   /* 战斗结算：油弹/疲劳消耗、hp写回、大破进击轰沉、提督经验、掉落、血条、统计 */
   function settleBattle(prep) {
     const G = GameRef();
@@ -434,6 +497,19 @@ const Sortie = (() => {
     /* 失败归因（P0-5：失败结算要说清原因并指出改进路径；纯函数便于断言） */
     for (const line of attributionLines({ result, nodeDef: def, fleet, st })) result.log.push(line);
 
+    /* 作战目标（方向四）：只做判定 + 一次性奖励 + 战报说明，**不改动上面任何结算数值** */
+    const daPoNow = !!so.daPoSeen || (result.myDaPo || 0) > 0;
+    const objResults = checkObjectives(map, {
+      nodeDef: def, result, daPoSeen: daPoNow,
+      fleetTypes: fleet.map(u => st.ships[u] && ShipData[st.ships[u].id] && ShipData[st.ships[u].id].type).filter(Boolean)
+    });
+    if (daPoNow) so.daPoSeen = true;
+    const objRewards = objResults.length ? Progression.grantObjectiveRewards(objResults) : [];
+    for (const o of objResults) {
+      const got = o.ok && objRewards.includes(o.id);
+      result.log.push(`作战目标「${o.cond}」：${o.ok ? '达成' : '未达成'}${got ? `（一次性奖励 ${rewardText(o.reward)}）` : (o.ok ? '（奖励此前已发放）' : '')}`);
+    }
+
     /* 舰历与荣誉（方向二）：出击路径的唯一写入点（含夜战追加后的二次结算，仍只写一次） */
     const enFlag = result.enemySide && result.enemySide[0];
     const flagSunk = !!(enFlag && !enFlag.alive);
@@ -451,7 +527,8 @@ const Sortie = (() => {
       airKey: result.airKey || null,
       /* 「斩首」只认 BOSS 节点或 5 舰以上的敌方编成，避免"打沉一艘驱逐就叫斩首" */
       bossSunk: flagSunk && (isBoss || (result.enemyTotal || 0) >= 5),
-      bossName: flagSunk ? (enFlag.zh || enFlag.name || '') : ''
+      bossName: flagSunk ? (enFlag.zh || enFlag.name || '') : '',
+      objectives: objResults.filter(o => o.ok).map(o => o.id)
     });
     /* 战报自动追加：本场 MVP / 斩杀者 / 新获得荣誉（方向二 3.4） */
     if (result.mvpUid && st.ships[result.mvpUid]) {
@@ -656,6 +733,8 @@ const Sortie = (() => {
     /* 出击前情报室（方向一）+ 失败归因 */
     intel, threatCheck, requiredLos, fleetHasRadar, fleetHasAswShip, attributionLines,
     THREAT_INFO, THREAT_KEYS,
+    /* 海域作战目标（方向四） */
+    checkObjectives, objectiveCondText, objectivePreview, objectiveMet, rewardText,
     /* 士气（方向三） */
     fleetMorale, moraleAdvice
   };

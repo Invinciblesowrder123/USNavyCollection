@@ -212,6 +212,25 @@ const SortieUI = (() => {
       <div class="md-special"><b>特殊攻击</b>（夜战）${sp.night.map(one).join(' ｜ ')}<span class="dim">（Cut-in 需通过发动率判定）</span></div>`;
   }
 
+  /* 海域作战目标（方向四）：目标列表 + 玩家可自行核算的条件 + 战功状态
+   * 只展示；判定与奖励都在引擎侧（Sortie.checkObjectives / Progression.grantObjectiveRewards）。 */
+  function objectivesHtml(m, fidx) {
+    const list = Sortie.objectivePreview(m, fidx);
+    if (!list.length) return '';
+    const rows = list.map(o => {
+      const pre = o.pre
+        ? (o.pre.ok ? `<span class="ok">✓ ${Util.esc(o.pre.now)}</span>` : `<span class="red">✗ ${Util.esc(o.pre.now)}</span>`)
+        : '<span class="dim">战斗中达成</span>';
+      const done = o.done ? '<span class="eq-rarity-tag eq-r5">战功</span>' : '';
+      const reward = o.reward ? `<span class="dim">｜ 奖励 ${Util.esc(Sortie.rewardText(o.reward))}（一次性）</span>` : '';
+      return `<div class="obj-row${o.done ? ' done' : ''}"><b>${o.done ? '★' : '○'}</b> ${Util.esc(o.cond)} ${done} ${pre}${reward}</div>`;
+    }).join('');
+    const cnt = list.filter(o => o.done).length;
+    return `<div class="md-intel-sep"></div>
+      <div><b>作战目标</b>（可选，只判定、不改战斗；本图战功 ${cnt}/${list.length}）</div>
+      <div class="obj-list">${rows}</div>`;
+  }
+
   function intelRows(m, fidx) {
     const it = Sortie.intel(fidx, m.id);
     if (!it) return '';
@@ -283,6 +302,7 @@ const SortieUI = (() => {
         ${ddNeed ? `<div><b>分支驱逐</b>：≥${ddNeed} 艘</div>` : ''}
         <div><b>道中掉落</b>：${m.drops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
         <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
+        ${objectivesHtml(m, fidx)}
         ${intelRows(m, fidx)}
       </div>
       ${locked

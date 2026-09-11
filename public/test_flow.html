@@ -393,6 +393,28 @@
       R(dtl3.includes('荣誉墙') && !dtl3.includes('undefined'), 'record:freshShip');
       document.querySelector('#modal-root').innerHTML = '';
 
+      /* ===== 方向四：海域作战目标 ===== */
+      R(typeof Sortie.checkObjectives === 'function' && typeof Sortie.objectivePreview === 'function' && typeof Progression.grantObjectiveRewards === 'function', 'obj:api');
+      const objMaps = MAPS.filter(m => (m.objectives || []).length);
+      let objTotal = 0;
+      for (const m of objMaps) objTotal += m.objectives.length;
+      R(objMaps.length >= 6 && objMaps.length <= 8, 'obj:mapCount', 'n=' + objMaps.length);
+      R(objTotal <= 15, 'obj:totalCap', 'n=' + objTotal);
+      R(objMaps.every(m => m.objectives.every(o => o.reward && ['sRank', 'noHeavy', 'typeLimit'].includes(o.type))), 'obj:shape');
+      R(Sortie.checkObjectives(MAPS.find(m => m.id === '2-2'), { nodeDef: { type: 'boss' }, result: { rank: 'S', myDaPo: 0 }, daPoSeen: false, fleetTypes: ['DD', 'DD', 'DD'] }).every(o => o.ok), 'obj:checkApi');
+      UI.go('sortie');
+      document.querySelector('#screen [data-area="3"]').click();
+      document.querySelector('#screen [data-map="3-1"]').click();
+      const oHtml = document.querySelector('#screen').innerHTML;
+      R(oHtml.includes('作战目标') && oHtml.includes('战功'), 'obj:panel');
+      R(oHtml.includes('编成含 ≥2 艘战列舰'), 'obj:condText');
+      R(oHtml.includes('战斗中达成'), 'obj:battleOnlyTag');
+      R(/当前 \d+ 艘/.test(oHtml), 'obj:preCount');
+      R(oHtml.includes('一次性'), 'obj:oneTimeTag');
+      R(!document.querySelector('#screen [data-start]').disabled, 'obj:notBlocking');
+      UI.go('library');
+      R(document.querySelector('#screen').innerHTML.includes('战功'), 'obj:libraryWarRecord');
+
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {
       window.__errors.push('FATAL ' + e.message + ' ' + (e.stack || '').split('\n')[1]);

@@ -64,6 +64,27 @@ function v3Save() {
   };
 }
 
+/* v4 → v5：舰历新增作战目标达成记录（方向四） */
+function v4Save() {
+  return {
+    saveVersion: 4, version: 4,
+    admiral: { name: '提督', level: 20, exp: 0 },
+    resources: { fuel: 800, ammo: 800, steel: 800, baux: 800, screws: 5, devMats: 12 },
+    ships: {
+      s1: {
+        uid: 's1', id: 'fletcher', kai: 1, lv: 55, hp: 30, morale: 49, equipped: [], modern: {}, supply: { fuel: 1, ammo: 1 },
+        record: {
+          sorties: 9, expeditions: 2, sWin: 5, taiha: 1, failures: 2, perfect: 3, bossKills: 4, lastBoss: '深海驱逐栖姬',
+          firstClear: { '1-1': 1700000000000 }, honors: [{ id: 'first_sortie', at: 1700000000001 }], remodelAt: [1700000000002]
+        }
+      }
+    },
+    equipment: {}, fleet: { 1: ['s1'], 2: [], 3: [], 4: [] },
+    library: { ships: { fletcher: true }, equips: {} },
+    mapProgress: {}
+  };
+}
+
 console.log('\n== 存档迁移专项测试 ==');
 
 /* v1 旧档 → 当前版本 */
@@ -123,6 +144,27 @@ check('残缺 record 补齐缺键且不覆盖已有数值',
 check('v1 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV1)) === JSON.stringify(fromV1));
 check('v2 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV2)) === JSON.stringify(fromV2));
 check('v3 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV3)) === JSON.stringify(fromV3));
+
+/* v4 → v5：补 record.objectives（方向四），且不动既有履历数值 */
+const fromV4 = Game.migrateSave(v4Save());
+check('v4 档升级到当前版本', fromV4.saveVersion === CUR && fromV4.version === CUR);
+check('v4 档补齐 record.objectives 为空对象',
+  fromV4.ships.s1.record.objectives && typeof fromV4.ships.s1.record.objectives === 'object' &&
+  Object.keys(fromV4.ships.s1.record.objectives).length === 0,
+  JSON.stringify(fromV4.ships.s1.record.objectives));
+check('v4 档迁移不覆盖既有履历数值',
+  fromV4.ships.s1.record.sorties === 9 && fromV4.ships.s1.record.sWin === 5 &&
+  fromV4.ships.s1.record.taiha === 1 && fromV4.ships.s1.record.failures === 2 &&
+  fromV4.ships.s1.record.perfect === 3 && fromV4.ships.s1.record.bossKills === 4 &&
+  fromV4.ships.s1.record.lastBoss === '深海驱逐栖姬' &&
+  fromV4.ships.s1.record.firstClear['1-1'] === 1700000000000 &&
+  fromV4.ships.s1.record.honors.length === 1 && fromV4.ships.s1.record.remodelAt.length === 1);
+check('v4 迁移后的 record 结构与新建结构一致',
+  JSON.stringify(fromV4.ships.s1.record) === JSON.stringify(Object.assign(Game.defaultRecord(), {
+    sorties: 9, expeditions: 2, sWin: 5, taiha: 1, failures: 2, perfect: 3, bossKills: 4, lastBoss: '深海驱逐栖姬',
+    firstClear: { '1-1': 1700000000000 }, honors: [{ id: 'first_sortie', at: 1700000000001 }], remodelAt: [1700000000002]
+  })));
+check('v4 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV4)) === JSON.stringify(fromV4));
 
 /* 损坏存档 */
 const damaged = Game.migrateSave({ saveVersion: CUR, resources: null, fleet: null, ships: null, equipment: null, library: null });

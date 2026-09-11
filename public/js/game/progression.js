@@ -366,7 +366,7 @@ const Progression = (() => {
   function ensureRecord(s) {
     const G = GameRef();
     if (!s.record || typeof s.record !== 'object') s.record = G.defaultRecord();
-    else G.normalizeRecord(s.record);
+    else s.record = G.normalizeRecord(s.record);   // normalizeRecord 返回重建后的对象，必须写回
     return s.record;
   }
 
@@ -420,6 +420,10 @@ const Progression = (() => {
         if (ctx.bossName) r.lastBoss = ctx.bossName;
       }
       if (ctx.mapId && ctx.firstClear && !r.firstClear[ctx.mapId]) r.firstClear[ctx.mapId] = at;
+      /* 作战目标达成记录（方向四）：复用同一 record 结构，只记首次达成时间 */
+      for (const oid of (ctx.objectives || [])) {
+        if (oid && !r.objectives[oid]) r.objectives[oid] = at;
+      }
       const ids = [];
       for (const h of HONORS) {
         if (h.kind === 'mvp' && ctx.mvpUid !== uid) continue;
@@ -447,10 +451,34 @@ const Progression = (() => {
       taiha: r.taiha, failures: r.failures, perfect: r.perfect,
       bossKills: r.bossKills, lastBoss: r.lastBoss,
       clearCount: Object.keys(r.firstClear || {}).length,
+      objectiveCount: Object.keys(r.objectives || {}).length,
+      objectives: Object.assign({}, r.objectives || {}),
       honors: (r.honors || []).slice(),
       honorCount: (r.honors || []).length,
       remodelAt: (r.remodelAt || []).slice()
     };
+  }
+
+  /* 海域作战目标的一次性奖励（方向四·防刷）
+   * 唯一副作用点：同一目标 id 只发一次（全局账本 st.stats.objectives），重复达成不再发。 */
+  function grantObjectiveRewards(list) {
+    const G = GameRef();
+    const st = G.state;
+    if (!st.stats.objectives || typeof st.stats.objectives !== 'object') st.stats.objectives = {};
+    const granted = [];
+    for (const o of (list || [])) {
+      if (!o || !o.ok || !o.reward) continue;
+      if (st.stats.objectives[o.id]) continue;          // 一次性：已发过就跳过
+      st.stats.objectives[o.id] = Date.now();
+      G.gain(o.reward);
+      granted.push(o.id);
+    }
+    return granted;
+  }
+  /* 已达成目标总览（海图/图鉴展示「战功」） */
+  function objectiveLedger() {
+    const st = GameRef().state;
+    return Object.assign({}, (st.stats && st.stats.objectives) || {});
   }
 
   function applyBattleResult(fleetIdx, result, isPractice) {
@@ -549,8 +577,9 @@ const Progression = (() => {
     gainReward, gainDeviation, bonusLevel,
     resetDue, resetQuests, initQuests, notify, canClaim, claimQuest,
     applyBattleResult, checkDynamic,
-    /* 舰历与荣誉（方向二） */
-    HONORS, HONOR_BY_ID, ensureRecord, grantHonors, recordBattleResult, recordSummary
+    /* 舰历与荣誉（方向二）+ 海域作战目标（方向四） */
+    HONORS, HONOR_BY_ID, ensureRecord, grantHonors, recordBattleResult, recordSummary,
+    grantObjectiveRewards, objectiveLedger
   };
 })();
 

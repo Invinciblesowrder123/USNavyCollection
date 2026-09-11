@@ -96,7 +96,21 @@ const Library = (() => {
   }
 
   function library(root) {
-    function render() {
+    /* 海域作战目标的「战功」（方向四 4.3）：图鉴侧总览（逐图详情在出击页的海域详情里）
+   * 与图鉴的收集率是两条独立线：图鉴=收集，战功=作战目标达成。 */
+  function warRecordHtml() {
+    const ledger = Progression.objectiveLedger();
+    const all = [];
+    for (const m of MAPS) for (const o of (m.objectives || [])) all.push({ map: m, o });
+    if (!all.length) return '';
+    const got = all.filter(x => ledger[x.o.id]);
+    return `<div class="section-title">战功 <span class="dim">（海域作战目标达成记录，${got.length}/${all.length}）</span></div>
+      ${got.length
+        ? `<div class="obj-list">${got.map(x => `<div class="obj-row done"><b>★</b> <span class="dim">${UI.esc(x.map.id)}</span> ${UI.esc(Sortie.objectiveCondText(x.o))}</div>`).join('')}</div>`
+        : '<div class="hint">尚未取得战功。出击页的海域详情里可以看到各图的可选作战目标与可核算条件。</div>'}`;
+  }
+
+  function render() {
       const s = Game.libraryStats();
       const isShip = tab === 'ships';
       const total = isShip ? s.ships.total : s.equips.total;
@@ -148,6 +162,7 @@ const Library = (() => {
             ${list.map(d => isShip ? shipCard(d) : equipCard(d)).join('') ||
         '<div class="hint">没有符合条件的条目</div>'}
           </div>
+          ${warRecordHtml()}
         </div>`;
 
       root.querySelectorAll('[data-tab]').forEach(el =>

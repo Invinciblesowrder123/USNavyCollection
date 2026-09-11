@@ -99,6 +99,13 @@ USNavyCollection/
   存档 v3→v4 有迁移器；**唯一写入入口 `Progression.recordBattleResult(ctx)`**（出击 settleBattle / 演习 applyBattleResult 仅 isPractice / 远征 claimExpedition）。
   `sorties` = 每次战斗结算 +1（与提督「总出击」同口径）。荣誉 8 个（`Progression.HONORS`），**只展示不加成**、幂等；舰史在 `ships[].bio`（42 艘，覆盖 1-x~3-x BOSS 掉落）。
   详情弹窗「舰历」页签在 `ui/homeport.js::recordPane`。**注意：`normalizeSave` 故意不补 record**（补了就绕过迁移器，迁移测试失效）。
+- 海域作战目标（方向四）：`maps[].objectives = [{id,type,min,types,desc,reward}]`，类型只用 `sRank/noHeavy/typeLimit`——
+  **每个目标必须迫使玩家改变编成**，不做纯操作型（如"不进入夜战"）、不做全清奖励、全项目 ≤15 个（现 12 个/6 图）。
+  `Sortie.checkObjectives(map,ctx)` 是**纯函数**，只在 BOSS 节点判定；`noHeavy` 的"全程"由 `sortie.daPoSeen` 汇总。
+  奖励一次性：`Progression.grantObjectiveRewards`（全局账本 `st.stats.objectives`），达成记录写进 `record.objectives`。
+  **目标绝不影响主结算** —— 固定种子逐项对拍断言守着。
+- 战绩/战力核对工具：`scripts/drift_check.js`（固定种子 LCG → 9 组战斗场景 → 评价串/伤害/日志指纹）+ 基线 `scripts/battle_digest.baseline.txt`；
+  `scripts/recon_eng_paper.js`（方向五纸面验证复跑）。**改战斗代码前后必须跑 drift_check**。
 - 失败归因：`game/sortie.js::attributionLines()` 是**纯函数**（输入 result/nodeDef/fleet/state → 输出归因行）；覆盖 sub / night / 制空不足 / 索敌失败 / 红脸。
   只在败局输出。结算结果里 `recon`/`myAir`/`enAir`/`airSup`/`airKey` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。结算结果里 `recon`/`myAir`/`enAir`/`airSup` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。
 
@@ -149,6 +156,11 @@ sim 1413 / 迁移 18 / E2E 123 全过，0 JS 错误；引擎逐位对拍仍零�
 sim 1441 / 迁移 27 / E2E 133 全过，0 JS 错误；引擎逐位对拍仍零漂移。
 顺手修复：① 批次1 的同源断言在索敌失败时会假失败（改为重试到索敌成功）；② `washington` 台词史实错误（"海军上将"级 → 北卡罗来纳级二号舰）；
 ③ E2E 不再为测弹窗而进母港（每次进母港会多起一套秘书舰 rAF 循环，拖垮 headless 虚拟时间预算）。
+
+**开发任务书 · 批次4（2026-09-11）**：方向四「海域作战目标」——存档升到 **v5**（`record.objectives`，`normalizeRecord` 改为按规范键序重建）；
+6 图 12 个目标（typeLimit 6 / sRank 3 / noHeavy 3），全部迫使改编成；纯函数 `checkObjectives` 只在 BOSS 判定；
+一次性奖励 + 防刷；海图详情与图鉴「战功」展示。sim 1466 / 迁移 32 / E2E 145 全过，0 JS 错误；对拍零漂移。
+**四个批次全部交付完毕**，汇总报告见 `../design/开发任务书_交付报告.md`；方向五验证结论 `../design/方向五_纸面验证结论.md`。
 
 见 `HEARTBEAT.md` 最新条目（本文件只保留决策，心跳文件记录流水）。
 

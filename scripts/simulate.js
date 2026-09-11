@@ -1499,6 +1499,130 @@ assert('连续通关不刷新首通时间戳（只写一次）',
   assert('舰史复用台词中已埋的真史原料（16 艘显式核对）', notReused.length === 0, notReused.join('、'));
 }
 
+section('方向四·海域作战目标（任务4.1–4.3）');
+/* 目标数据约束（红线自检的数据面） */
+{
+  const all = [];
+  for (const m of MAPS) for (const o of (m.objectives || [])) all.push({ map: m.id, o });
+  const withObj = MAPS.filter(m => (m.objectives || []).length);
+  assert('作战目标总数 ≤15（防清单化）', all.length <= 15, 'n=' + all.length);
+  assert('配目标的图 6–8 张、每图 ≤2 个', withObj.length >= 6 && withObj.length <= 8 && MAPS.every(m => (m.objectives || []).length <= 2),
+    'maps=' + withObj.length);
+  assert('目标类型只用 sRank / noHeavy / typeLimit 三种',
+    all.every(x => ['sRank', 'noHeavy', 'typeLimit'].includes(x.o.type)), all.map(x => x.o.type).join(','));
+  assert('typeLimit 目标都给出 types 与 min',
+    all.filter(x => x.o.type === 'typeLimit').every(x => Array.isArray(x.o.types) && x.o.types.length > 0 && x.o.min >= 1));
+  assert('每个目标都有一次性奖励且只含资源字段',
+    all.every(x => x.o.reward && Object.keys(x.o.reward).every(k => ['fuel', 'ammo', 'steel', 'baux', 'screws', 'devMats'].includes(k))));
+  assert('目标 id 全局唯一', new Set(all.map(x => x.o.id)).size === all.length);
+  assert('不存在纯操作型目标（无"不进入夜战"这类描述）',
+    all.every(x => !/不进入夜战|点一下|战斗结束即可/.test(x.o.desc || '')));
+  assert('无全清奖励（不存在覆盖全部图的奖励目标）',
+    !all.some(x => /全清|全部海域|所有海域/.test(x.o.desc || '')));
+}
+/* 4.1 判定（纯函数，含边界/反向） */
+{
+  const m22 = MAPS.find(m => m.id === '2-2');
+  const m14 = MAPS.find(m => m.id === '1-4');
+  const mkResult = (rank, daPo) => ({ rank, victory: rank !== 'D', myDaPo: daPo || 0, enemyKilled: 3, enemyTotal: 4, mySide: [], enemySide: [] });
+  const resOf = (map, ctx) => { const out = {}; for (const x of Sortie.checkObjectives(map, ctx)) out[x.id] = x.ok; return out; };
+  const boss = (rank, daPo, types) => ({ nodeDef: { type: 'boss' }, result: mkResult(rank, daPo), daPoSeen: !!daPo, fleetTypes: types });
+  assert('typeLimit：≥3 驱逐舰 → 达成', resOf(m22, boss('A', 0, ['DD', 'DD', 'DD', 'CA']))['2-2-dd3'] === true);
+  assert('typeLimit：仅 2 驱逐 → 未达成', resOf(m22, boss('A', 0, ['DD', 'DD', 'CA', 'BB']))['2-2-dd3'] === false);
+  assert('typeLimit：按舰队实际舰种判定，不看总舰数', resOf(m22, boss('A', 0, ['BB', 'BB', 'BB', 'BB', 'BB', 'BB']))['2-2-dd3'] === false);
+  assert('sRank：BOSS 战 S 胜 → 达成', resOf(m22, boss('S', 0, ['DD', 'DD', 'DD']))['2-2-s'] === true);
+  assert('sRank：BOSS 战 A 胜 → 未达成', resOf(m22, boss('A', 0, ['DD', 'DD', 'DD']))['2-2-s'] === false);
+  assert('sRank：道中 S 胜不算（只在 BOSS 节点判定）',
+    resOf(m22, { nodeDef: { type: 'battle' }, result: mkResult('S', 0), daPoSeen: false, fleetTypes: ['DD', 'DD', 'DD'] })['2-2-s'] === false);
+  assert('noHeavy：本场有舰大破 → 未达成', resOf(m14, boss('A', 1, ['DD', 'DD', 'DD', 'CV']))['1-4-noheavy'] === false);
+  assert('noHeavy：全程无大破 → 达成', resOf(m14, boss('A', 0, ['DD', 'DD', 'DD', 'CV']))['1-4-noheavy'] === true);
+  assert('noHeavy：道中出现过大破（daPoSeen）→ BOSS 战达成无效',
+    Sortie.checkObjectives(m14, { nodeDef: { type: 'boss' }, result: mkResult('A', 0), daPoSeen: true, fleetTypes: ['DD', 'DD', 'DD', 'CV'] })[1].ok === false);
+  assert('未配目标的图返回空数组且不报错', Sortie.checkObjectives(MAPS.find(m => m.id === '1-1'), boss('S', 0, [])) .length === 0);
+  assert('条件文本是可核算的（含数量与舰种名）',
+    Sortie.objectiveCondText(MAPS.find(m => m.id === '2-2').objectives[0]).includes('≥3') &&
+    Sortie.objectiveCondText(MAPS.find(m => m.id === '2-2').objectives[0]).includes('驱逐舰'));
+  assert('出击前预览能算出 typeLimit 的当前值',
+    (() => { Game.state.fleet[1] = recFleet.slice(); const p = Sortie.objectivePreview(MAPS.find(m => m.id === '2-2'), 1); return p.length === 2 && p[0].pre && typeof p[0].pre.now === 'string' && p[0].pre.ok === false; })(),
+    JSON.stringify(Sortie.objectivePreview(MAPS.find(m => m.id === '2-2'), 1)[0]));
+}
+/* 4.1 断言 3：目标完全不影响主结算（固定种子逐项对拍） */
+{
+  const realRandom = Math.random;
+  function withSeed(seed, fn) {
+    let s0 = seed;
+    Math.random = () => { s0 = (s0 * 1103515245 + 12345) & 0x7fffffff; return s0 / 0x7fffffff; };
+    try { return fn(); } finally { Math.random = realRandom; }
+  }
+  function probe(objectives) {
+    const map = MAPS.find(m => m.id === '1-1');
+    const backup = map.objectives;
+    if (objectives) map.objectives = objectives; else delete map.objectives;
+    Game.newGame();
+    Game.gain({ fuel: 90000, ammo: 90000, steel: 90000, baux: 90000 });
+    const fleet = [];
+    for (const id of ['enterprise', 'iowa', 'essex', 'fletcher', 'atlanta', 'saratoga']) {
+      const s = Game.createShip(id, 60); s.kai = 1; Game.equipDefaults(s.uid);
+      s.hp = Game.shipStats(s.uid).hpMax; fleet.push(s.uid);
+    }
+    Game.state.fleet[1] = fleet;
+    const out = withSeed(987654321, () => {
+      if (!Sortie.start('1-1', 1).ok) throw new Error('probe start failed');
+      let guard = 0, battles = 0, drops = [], lastRank = null;
+      while (Game.state.sortie && guard++ < 8) {
+        const r = Sortie.advance('单纵阵', true);
+        if (!r.ok) break;
+        if (r.type === 'battle' || r.type === 'boss') { battles++; lastRank = r.result.rank; if (r.drop) drops.push(r.drop.id); }
+        if (!Sortie.moveToNext()) break;
+      }
+      Sortie.returnHome();
+      return {
+        battles, lastRank, drops,
+        res: JSON.parse(JSON.stringify(Game.state.resources)),
+        admiral: JSON.parse(JSON.stringify(Game.state.admiral)),
+        prog: JSON.parse(JSON.stringify(Game.state.mapProgress['1-1'])),
+        supply: fleet.map(u => JSON.stringify(Game.state.ships[u].supply)),
+        hp: fleet.map(u => Game.state.ships[u].hp),
+        sorties: fleet.map(u => Game.state.ships[u].record.sorties)
+      };
+    });
+    map.objectives = backup;
+    return out;
+  }
+  const noObj = probe(null);
+  const unmet = probe([{ id: 'zz-unmet', type: 'typeLimit', types: ['SS'], min: 3, reward: { fuel: 1234 } }]);
+  assert('目标存在但未达成 → 主结算逐项相同（油弹/提督经验/掉落/血条/消耗/履历）',
+    JSON.stringify(noObj) === JSON.stringify(unmet));
+  const met = probe([{ id: 'zz-met', type: 'typeLimit', types: ['DD'], min: 1, reward: { fuel: 1234 } }]);
+  const stripRes = o => JSON.stringify(Object.assign({}, o, { res: null }));
+  assert('目标达成只多发一次资源奖励，其余结算逐项不变',
+    met.res.fuel === unmet.res.fuel + 1234 && stripRes(met) === stripRes(unmet),
+    `metFuel=${met.res.fuel} unmetFuel=${unmet.res.fuel}`);
+}
+/* 4.2 断言 4：重复达成不重复发奖 */
+{
+  const map = MAPS.find(m => m.id === '1-1');
+  const backup = map.objectives;
+  map.objectives = [{ id: 'zz-once', type: 'typeLimit', types: ['DD'], min: 1, reward: { fuel: 1000 } }];
+  Game.newGame();
+  Game.gain({ fuel: 90000, ammo: 90000, steel: 90000, baux: 90000 });
+  const fleet = [];
+  for (const id of ['enterprise', 'iowa', 'essex', 'fletcher', 'atlanta', 'saratoga']) {
+    const s = Game.createShip(id, 60); s.kai = 1; Game.equipDefaults(s.uid);
+    s.hp = Game.shipStats(s.uid).hpMax; fleet.push(s.uid);
+  }
+  Game.state.fleet[1] = fleet;
+  const objBystander = Game.createShip('benson', 3);   // 未参战
+  const fuel0 = Game.state.resources.fuel;
+  for (let i = 0; i < 3; i++) runMap('1-1');
+  const gained = Game.state.resources.fuel - fuel0;
+  assert('重复达成 3 次：资源只增加一次', gained === 1000, 'gained=' + gained);
+  assert('达成写入全局账本 + 参战舰履历（复用 record 结构）',
+    !!Game.state.stats.objectives['zz-once'] && Game.state.ships[fleet[0]].record.objectives['zz-once'] > 0);
+  assert('未参战舰的履历不写达成记录', Object.keys(objBystander.record.objectives).length === 0);
+  map.objectives = backup;
+}
+
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed ? 1 : 0);

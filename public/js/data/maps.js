@@ -198,6 +198,11 @@ const ENEMY_FLEETS = {
  * node: { type: 'battle'|'boss'|'resource'|'supply'|'empty', enemy, reward }
  * branch: 单对象 {at, if: {los?, dd?}, to: [...]} 或数组 [{at,...},...]（每个分歧点一条，按序判定）
  *         命中走 to 分支，否则走其余边（兜底路线）
+ * objectives（可选，方向四·海域作战目标）：
+ *   [{ id, type:'sRank'|'noHeavy'|'typeLimit', types[], min, desc, reward }]
+ *   判定只在 BOSS 节点进行（checkObjectives）；**只做判定与一次性奖励，绝不改战斗逻辑**。
+ *   type 的取舍原则：必须**迫使玩家改变编成**，不做"多点一下按钮"型目标（如"不进入夜战"）。
+ *   全项目目标数 ≤15，且**不做全清奖励**（防清单化）。
  */
 const MAPS = [
   {
@@ -236,6 +241,11 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F06' }
     },
     branch: { at: 'S', if: { los: 20 }, to: ['C'] },   // 索敌≥20发现弹药补给路线（C→D 一战到BOSS）；否则走 A→B 长路线
+    /* 作战目标（方向四）：迫使改编成 —— 带航母争制空 vs 6 舰满编输出 */
+    objectives: [
+      { id: '1-2-cv', type: 'typeLimit', types: ['CV', 'CVB'], min: 1, desc: '编成含 ≥1 艘正规空母（B 点敌编成含空母，需争夺制空）', reward: { fuel: 300, steel: 300 } },
+      { id: '1-2-s', type: 'sRank', desc: '以 S 胜击破 BOSS', reward: { ammo: 300, baux: 100 } }
+    ],
     drops: ['neworleans', 'fletcher', 'kidd', 'sims', 'bagley', 'langley'],
     bossDrops: ['fletcher', 'atlanta', 'independence']
   },
@@ -279,6 +289,11 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F15' }
     },
     branch: { at: 'S', if: { los: 30 }, to: ['A'] },   // 索敌≥30 走钢材资源点；否则直接迎击B
+    /* 作战目标（方向四）：两个目标方向相反 —— 轻快夜战编成 vs 全程不掉血，迫使取舍 */
+    objectives: [
+      { id: '1-4-ddcl', type: 'typeLimit', types: ['DD', 'CL'], min: 3, desc: '编成含 ≥3 艘驱逐舰或轻巡洋舰（夜战节点无昼战阶段）', reward: { fuel: 400, ammo: 300 } },
+      { id: '1-4-noheavy', type: 'noHeavy', desc: '全程无舰大破（整次出击中不出现大破）', reward: { steel: 500, baux: 200 } }
+    ],
     drops: ['laffey', 'heermann', 'porter', 'pensacola', 'gudgeon'],
     bossDrops: ['johnston', 'sanfrancisco', 'quincy']
   },
@@ -320,6 +335,11 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F21' }
     },
     branch: { at: 'S', if: { dd: 3 }, to: ['B'] },   // 驱逐舰≥3 直取水雷线（2战到BOSS）；否则绕反潜点（3战）
+    /* 作战目标（方向四）：驱逐 ≥3 与「该图分支条件」同源 —— 想走 B 点水雷线本来就要 3 驱逐 */
+    objectives: [
+      { id: '2-2-dd3', type: 'typeLimit', types: ['DD'], min: 3, desc: '编成含 ≥3 艘驱逐舰（对潜能力 + 走 B 点水雷线）', reward: { fuel: 500, ammo: 500 } },
+      { id: '2-2-s', type: 'sRank', desc: '以 S 胜击破 BOSS', reward: { steel: 400, devMats: 1 } }
+    ],
     drops: ['sumner', 'belleauwood', 'cushing', 'sullivan'],
     bossDrops: ['sbroberts', 'reno', 'indianapolis']
   },
@@ -361,6 +381,11 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F29' }
     },
     branch: { at: 'A', if: { los: 60 }, to: ['B'] },   // 索敌≥60 走夜战水雷线；否则走哨戒线
+    /* 作战目标（方向四）：双空母编成要求 —— 该图是制空决战，但要牺牲两个水面输出位 */
+    objectives: [
+      { id: '2-4-cv2', type: 'typeLimit', types: ['CV', 'CVB', 'CVL'], min: 2, desc: '编成含 ≥2 艘空母（该图是制空决战）', reward: { baux: 500, fuel: 300 } },
+      { id: '2-4-s', type: 'sRank', desc: '以 S 胜击破 BOSS', reward: { steel: 500, devMats: 1 } }
+    ],
     drops: ['archerfish', 'tang', 'honolulu', 'stlouis', 'chicago'],
     bossDrops: ['northcarolina', 'washington', 'wasp']
   },
@@ -393,6 +418,11 @@ const MAPS = [
       { at: 'A', if: { los: 55 }, to: ['C'] },   // 索敌≥55 走通商破坏水雷线；否则走哨戒舰队线
       { at: 'C', if: { dd: 2 }, to: ['F'] }      // 驱逐舰≥2 走重巡任务部队线；否则绕空母支援部队
     ],
+    /* 作战目标（方向四）：≥2 战列舰 —— 与「该图需要制空」直接冲突（战列舰挤掉空母位） */
+    objectives: [
+      { id: '3-1-bb2', type: 'typeLimit', types: ['BB', 'BBV'], min: 2, desc: '编成含 ≥2 艘战列舰（正面强攻，代价是制空位被挤占）', reward: { fuel: 600, steel: 600 } },
+      { id: '3-1-noheavy', type: 'noHeavy', desc: '全程无舰大破', reward: { ammo: 600, baux: 300 } }
+    ],
     drops: ['tang', 'barb', 'balao', 'bowfin'],
     bossDrops: ['saratoga', 'enterprise', 'colorado']
   },
@@ -416,6 +446,11 @@ const MAPS = [
     branch: [
       { at: 'S', if: { dd: 5 }, to: ['B'] },   // 驱逐舰≥5 走弹药补给捷径；否则绕游击部队（wiki：驱逐主力带路）
       { at: 'C', if: { dd: 4 }, to: ['L'] }    // 驱逐舰≥4 直取BOSS；否则迎击战列舰打击舰队
+    ],
+    /* 作战目标（方向四）：驱逐主力编成 —— 与该图「驱逐带路」的分支条件同源，但 4 驱逐意味着放弃重火力 */
+    objectives: [
+      { id: '3-2-dd4', type: 'typeLimit', types: ['DD'], min: 4, desc: '编成含 ≥4 艘驱逐舰（驱逐带路）', reward: { fuel: 600, ammo: 600 } },
+      { id: '3-2-noheavy', type: 'noHeavy', desc: '全程无舰大破', reward: { steel: 600, screws: 3 } }
     ],
     drops: ['kidd', 'gato', 'pampanito', 'wahoo'],
     bossDrops: ['yorktown', 'intrepid', 'alabama']

@@ -10,7 +10,7 @@
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
-  const CURRENT_SAVE_VERSION = 4;
+  const CURRENT_SAVE_VERSION = 5;
   const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
@@ -194,20 +194,24 @@ const Game = (() => {
       bossKills: 0,      // 击沉敌旗舰次数
       lastBoss: '',      // 最近击沉的敌旗舰名
       firstClear: {},    // mapId -> 首次通关时间戳（只写一次）
+      objectives: {},    // 作战目标 id -> 首次达成时间戳（海域作战目标，方向四）
       honors: [],        // [{id, at}] 荣誉（幂等，同 id 不重复）
       remodelAt: []      // 改造纪念时间戳（按 kai 阶段依次追加）
     };
   }
 
-  /* 补齐舰历结构（缺哪个键补哪个；形状与 defaultRecord 完全一致） */
+  /* 补齐舰历结构（缺哪个键补哪个）并按 defaultRecord 的**规范键序重建**。
+   * 重建而不是就地补键：一是保证迁移路径与新建路径的 JSON 形状逐字符一致（迁移测试才对得上），
+   * 二是顺手丢掉存档里的未知/脏键。 */
   function normalizeRecord(rec) {
     if (!rec || typeof rec !== 'object') return defaultRecord();
-    const d = defaultRecord();
-    for (const k in d) if (rec[k] === undefined || rec[k] === null) rec[k] = d[k];
-    if (!Array.isArray(rec.honors)) rec.honors = [];
-    if (!Array.isArray(rec.remodelAt)) rec.remodelAt = [];
-    if (!rec.firstClear || typeof rec.firstClear !== 'object') rec.firstClear = {};
-    return rec;
+    const out = defaultRecord();
+    for (const k in out) if (rec[k] !== undefined && rec[k] !== null) out[k] = rec[k];
+    if (!Array.isArray(out.honors)) out.honors = [];
+    if (!Array.isArray(out.remodelAt)) out.remodelAt = [];
+    if (!out.firstClear || typeof out.firstClear !== 'object') out.firstClear = {};
+    if (!out.objectives || typeof out.objectives !== 'object') out.objectives = {};
+    return out;
   }
 
   /* ============ 舰船实例 ============ */
@@ -567,7 +571,21 @@ const Game = (() => {
     return save;
   }
 
-  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4 };
+  /* v4 -> v5：舰历新增「作战目标达成记录」（方向四）。
+   * 只补齐键，不动任何已有数值。 */
+  function migrateV4ToV5(data) {
+    const save = cloneSave(data);
+    for (const k in save.ships || {}) {
+      const s = save.ships[k];
+      if (!s) continue;
+      s.record = normalizeRecord(s.record);
+    }
+    save.saveVersion = 5;
+    save.version = 5;
+    return save;
+  }
+
+  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5 };
 
   function normalizeSave(save) {
     if (!save.resources || typeof save.resources !== 'object') {
