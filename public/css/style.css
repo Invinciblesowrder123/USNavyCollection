@@ -1115,6 +1115,17 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .md-morale.red { color: #ffb0b0; border-left: 2px solid var(--red); background: rgba(224,85,85,.10); }
 .md-morale.low { color: #ffd6a8; border-left: 2px solid var(--orange); background: rgba(240,160,80,.10); }
 .morale-row { font-size: 11.5px; line-height: 1.9; }
+/* 舰历页签（方向二）：履历摘要 / 荣誉墙 / 舰史 */
+.rec-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.rec-item { border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; background: rgba(10,20,36,.5); display: flex; justify-content: space-between; align-items: baseline; }
+.rec-item b { font-size: 15px; color: var(--text); }
+.honor-wall { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.honor { border: 1px solid var(--line); border-left-width: 3px; border-radius: 5px; padding: 6px 9px; background: rgba(10,20,36,.45); font-size: 11.5px; line-height: 1.7; }
+.honor.got { border-left-color: var(--gold); color: var(--text); }
+.honor.got b { color: var(--gold); }
+.honor.locked { border-left-color: var(--line); opacity: .55; }
+.honor span { display: block; font-size: 11px; }
+.ship-bio { font-size: 12.5px; line-height: 1.85; color: var(--text); border-left: 2px solid var(--blue); padding-left: 10px; }
 .md-btn { margin-top: auto; font-size: 15px; padding: 9px 0; }
 
 

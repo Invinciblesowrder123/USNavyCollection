@@ -28,6 +28,37 @@ const Homeport = (() => {
   let matType = 'ALL';
   let matSort = { key: 'lv', dir: -1 };
 
+  /* ============ 舰历页签（方向二 3.4）============
+   * 履历摘要 + 荣誉墙 + 真实舰史。
+   * 与「图鉴」的分工：图鉴记「有没有收集到」，舰历记「我和她一起打过什么」——不复述收集进度（3.5 设计约束）。 */
+  function recordPane(uid) {
+    const r = Progression.recordSummary(uid);
+    const def = Game.shipDef(Game.state.ships[uid]);
+    if (!r) return '<div class="hint">暂无履历。</div>';
+    const cells = [
+      ['出击', r.sorties], ['S 胜', r.sWin], ['大破', r.taiha], ['失败', r.failures],
+      ['完全胜利', r.perfect], ['击沉旗舰', r.bossKills], ['远征', r.expeditions], ['通关海域', r.clearCount]
+    ];
+    const wall = Progression.HONORS.map(h => {
+      const got = (r.honors || []).find(x => x && x.id === h.id);
+      const at = got ? new Date(got.at).toLocaleDateString('zh-CN') : '';
+      return `<div class="honor ${got ? 'got' : 'locked'}" title="${Util.esc(h.desc)}">
+        <b>${got ? '★ ' : '☆ '}${Util.esc(h.name)}</b>
+        <span class="dim">${Util.esc(h.desc)}${at ? '（' + at + '）' : ''}</span>
+      </div>`;
+    }).join('');
+    const hist = def.bio || def.line || '暂无舰史资料。';
+    return `
+      <div class="section-title">履历 <span class="dim">（记录实际战果，含失败与大破）</span></div>
+      <div class="rec-grid">${cells.map(([k, v]) => `<div class="rec-item"><span class="dim">${k}</span><b>${v}</b></div>`).join('')}</div>
+      <div class="section-title">荣誉墙 <span class="dim">（只做展示与排序，不提供任何战斗加成）</span></div>
+      <div class="honor-wall">${wall}</div>
+      <div class="section-title">舰史</div>
+      <div class="ship-bio">${Util.esc(hist)}</div>
+      ${r.lastBoss ? `<div class="hint">最近斩杀的敌旗舰：${Util.esc(r.lastBoss)}</div>` : ''}
+      ${r.remodelAt.length ? `<div class="hint">改造纪念：${r.remodelAt.map(ts => new Date(ts).toLocaleDateString('zh-CN')).join('、')}</div>` : ''}`;
+  }
+
   /* ============ 舰娘详情模态 ============ */
   function openShipDetail(uid, back = () => {}) {
     const st = Game.state;
@@ -35,6 +66,7 @@ const Homeport = (() => {
     if (!s) return;
     const stNames = [['hp', '耐久'], ['fp', '火力'], ['tp', '雷装'], ['aa', '对空'], ['arm', '装甲'], ['evd', '回避'], ['asw', '对潜'], ['los', '索敌'], ['lck', '幸运']];
     let m = null;
+    let tab = 'stat';   // 'stat' 属性与装备 / 'record' 舰历
 
     function detailHtml() {
       const def = Game.shipDef(s);
@@ -66,9 +98,15 @@ const Homeport = (() => {
         </div>`;
       }).join('');
 
+      const recHtml = recordPane(uid);
       return `
         <span class="modal-close" data-close>×</span>
         <h3>${UI.shipNameHtml(def)} ${UI.rarityStars(def.rarity)} ${s.locked ? '<span class="state-badge morale">锁</span>' : ''} <span class="dim">${UI.esc(def.en)}</span> <span class="dim">${SHIP_TYPE_ZH[def.type]}</span></h3>
+        <div class="tabs" style="margin-bottom:8px">
+          <button class="${tab === 'stat' ? 'active' : ''}" data-dtab="stat">属性与装备</button>
+          <button class="${tab === 'record' ? 'active' : ''}" data-dtab="record">舰历 <span class="dim">（${(Progression.recordSummary(uid) || { honorCount: 0 }).honorCount}/${Progression.HONORS.length} 荣誉）</span></button>
+        </div>
+        ${tab === 'record' ? recHtml : `
         <div class="flex">
           <div style="width:170px">${UI.shipIcon(s.uid, 'tall')}
             <div class="text-center dim">Lv.${s.lv} ${s.kai === 1 ? '改' : s.kai >= 2 ? '改二' : ''} · 补给${supply}%</div>
@@ -90,19 +128,27 @@ const Homeport = (() => {
             <div class="hint">近代化改修：用多余的舰娘强化属性，消耗 油30/弹30，素材舰将被解体（详细规则见「工厂 → 近代化改修」）。</div>
             <div class="hint">${Util.esc(def.line || '')}</div>
           </div>
-        </div>`;
+        </div>`}`;
     }
 
     function wire() {
       /* refresh() 重建 DOM 后需重新绑定关闭按钮（×），否则详情页无法关闭 */
       m.root.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => m.close()));
-      m.root.querySelector('[data-act="supply"]').addEventListener('click', () => {
+      /* 页签切换：属性与装备 / 舰历（方向二） */
+      m.root.querySelectorAll('[data-dtab]').forEach(b => b.addEventListener('click', () => {
+        tab = b.dataset.dtab;
+        refresh();
+      }));
+      /* 舰历页签没有操作按钮 —— 下面所有 [data-act] 绑定都必须判空 */
+      const supplyBtn = m.root.querySelector('[data-act="supply"]');
+      if (supplyBtn) supplyBtn.addEventListener('click', () => {
         const r = Logistics.supplyShip(uid);
         if (!r.ok) { UI.toast(r.msg); return; }
         UI.toast(`${Game.shipDef(s).zh} 补给完毕`);
         Game.save(); refresh();
       });
-      m.root.querySelector('[data-act="lock"]').addEventListener('click', () => {
+      const lockBtn = m.root.querySelector('[data-act="lock"]');
+      if (lockBtn) lockBtn.addEventListener('click', () => {
         s.locked = !s.locked;
         Game.save(); refresh();
       });
@@ -123,7 +169,8 @@ const Homeport = (() => {
         Game.save(); refresh();
         if (UI.current && UI.current.name !== 'factory') UI.go(UI.current.name, UI.current.arg);
       });
-      m.root.querySelector('[data-act="scrap"]').addEventListener('click', () => {
+      const scrapBtn = m.root.querySelector('[data-act="scrap"]');
+      if (scrapBtn) scrapBtn.addEventListener('click', () => {
         if (s.locked) { UI.toast('该舰艇已上锁（首个舰艇/稀有舰艇自动上锁），请先解锁再解体。'); return; }
         if (!confirm(`确定解体 ${Game.shipDef(s).zh}？\n（解体后其装备一并销毁）`)) return;
         Game.destroyShip(uid);

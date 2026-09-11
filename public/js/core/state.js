@@ -10,7 +10,7 @@
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
-  const CURRENT_SAVE_VERSION = 3;
+  const CURRENT_SAVE_VERSION = 4;
   const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
@@ -179,6 +179,37 @@ const Game = (() => {
     state.resources.devMats = Math.min(3000, (state.resources.devMats || 0) + (res.devMats || 0));
   }
 
+  /* ============ 舰历（方向二）============
+   * 记录「她在你手里经历过的战斗」，包含失败与大破 —— 履历与真实代价绑在一起，
+   * 所以「用弱船出战」才是一个有代价的选择，而不是零代价的自我讲述。
+   * 默认结构由 defaultRecord() 单点定义：createShip 与存档迁移都必须用它，保证两条路径形状一致。 */
+  function defaultRecord() {
+    return {
+      sorties: 0,        // 出击次数（含演习的出击，不含远征）
+      expeditions: 0,    // 远征次数
+      sWin: 0,           // S 胜次数
+      taiha: 0,          // 大破次数（本场战斗结束时处于大破）
+      failures: 0,       // 沉船以外的失败次数（败局：非 S/A/B 评价）
+      perfect: 0,        // 完全胜利（无伤全歼）
+      bossKills: 0,      // 击沉敌旗舰次数
+      lastBoss: '',      // 最近击沉的敌旗舰名
+      firstClear: {},    // mapId -> 首次通关时间戳（只写一次）
+      honors: [],        // [{id, at}] 荣誉（幂等，同 id 不重复）
+      remodelAt: []      // 改造纪念时间戳（按 kai 阶段依次追加）
+    };
+  }
+
+  /* 补齐舰历结构（缺哪个键补哪个；形状与 defaultRecord 完全一致） */
+  function normalizeRecord(rec) {
+    if (!rec || typeof rec !== 'object') return defaultRecord();
+    const d = defaultRecord();
+    for (const k in d) if (rec[k] === undefined || rec[k] === null) rec[k] = d[k];
+    if (!Array.isArray(rec.honors)) rec.honors = [];
+    if (!Array.isArray(rec.remodelAt)) rec.remodelAt = [];
+    if (!rec.firstClear || typeof rec.firstClear !== 'object') rec.firstClear = {};
+    return rec;
+  }
+
   /* ============ 舰船实例 ============ */
   function nextUid() { return uidSeq++; }
 
@@ -206,6 +237,7 @@ const Game = (() => {
       equipped: [],                  // 装备 uid 列表
       modern: { fp: 0, tp: 0, aa: 0, arm: 0, evd: 0, asw: 0, los: 0 },
       supply: { fuel: 1, ammo: 1 },  // 0~1 补给比例
+      record: defaultRecord(),       // 舰历（方向二）：与 createShip 同一默认结构，勿另写
       locked: firstShip || shouldAutoLockShip(shipId)   // 首个舰艇 / 稀有舰艇（紫/金）自动上锁
     };
     if (state.library && state.library.ships) state.library.ships[shipId] = true;
@@ -520,7 +552,22 @@ const Game = (() => {
     return save;
   }
 
-  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3 };
+  /* v3 -> v4：每舰新增舰历 record（方向二）。旧档无该字段 → 补默认空结构。
+   * 注意：故意不在 normalizeSave 里补 record —— 补了就等于绕过迁移器，
+   * 迁移测试也就失去意义（会出现"迁移器坏了但测试仍绿"的假通过）。 */
+  function migrateV3ToV4(data) {
+    const save = cloneSave(data);
+    for (const k in save.ships || {}) {
+      const s = save.ships[k];
+      if (!s) continue;
+      s.record = normalizeRecord(s.record);   // 无 record → 默认空结构；形状不完整 → 补齐
+    }
+    save.saveVersion = 4;
+    save.version = 4;
+    return save;
+  }
+
+  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4 };
 
   function normalizeSave(save) {
     if (!save.resources || typeof save.resources !== 'object') {
@@ -676,7 +723,7 @@ const Game = (() => {
     moraleTier, moraleMods, moraleBadge,
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
     setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets,
-    migrateSave, normalizeSave, CURRENT_SAVE_VERSION,
+    migrateSave, normalizeSave, CURRENT_SAVE_VERSION, defaultRecord, normalizeRecord,
     libraryStats, libraryHasShip, libraryHasEquip
   };
 })();

@@ -95,8 +95,12 @@ USNavyCollection/
 - 交战形态权重（**方向五**）：`battle.js` 的 `ENG_WEIGHTS = { base:45/30/15/10, recon:45/30/20/5 }`，由 `engagementWeights(reconOk, hasReconPlane)` 选择。
   **只有「索敌成功 且 舰队携带舰侦（`cat==='舰侦'`）」才用 recon 表**；不消灭 T 不利（仍 5%）。未携带舰侦时行为与改动前逐位一致。
   纸面验证见 `../design/方向五_纸面验证结论.md`、脚本 `scripts/recon_eng_paper.js`：带舰侦**不是无脑更强**（1-3 +11.25pp、3-1 −5.85pp）。
+- 舰历与荣誉（方向二）：`state.ships[uid].record`（`Game.defaultRecord()` 单点定义：`sorties/expeditions/sWin/taiha/failures/perfect/bossKills/lastBoss/firstClear/honors/remodelAt`），
+  存档 v3→v4 有迁移器；**唯一写入入口 `Progression.recordBattleResult(ctx)`**（出击 settleBattle / 演习 applyBattleResult 仅 isPractice / 远征 claimExpedition）。
+  `sorties` = 每次战斗结算 +1（与提督「总出击」同口径）。荣誉 8 个（`Progression.HONORS`），**只展示不加成**、幂等；舰史在 `ships[].bio`（42 艘，覆盖 1-x~3-x BOSS 掉落）。
+  详情弹窗「舰历」页签在 `ui/homeport.js::recordPane`。**注意：`normalizeSave` 故意不补 record**（补了就绕过迁移器，迁移测试失效）。
 - 失败归因：`game/sortie.js::attributionLines()` 是**纯函数**（输入 result/nodeDef/fleet/state → 输出归因行）；覆盖 sub / night / 制空不足 / 索敌失败 / 红脸。
-  只在败局输出。结算结果里 `recon`/`myAir`/`enAir`/`airSup` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。
+  只在败局输出。结算结果里 `recon`/`myAir`/`enAir`/`airSup`/`airKey` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。结算结果里 `recon`/`myAir`/`enAir`/`airSup` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。
 
 ## 当前进度状态
 
@@ -138,6 +142,13 @@ USNavyCollection/
 **开发任务书 · 批次2（2026-09-11）**：方向三「士气可见化」（4 档 + 修正数值同源 + 编成/出击/母港三处可见 + 出击前轮换提醒 + 红脸归因）
 与方向五「侦察引导航向」（先纸面验证达标 → 索敌成功+携舰侦时交战形态权重 45/30/15/10 → 45/30/20/5，不消灭 T 不利；战报加引导说明；情报室加「航向侦察」行）。
 sim 1413 / 迁移 18 / E2E 123 全过，0 JS 错误；引擎逐位对拍仍零漂移。顺手修复 `test_flow.html` 的 1-1 攻略循环偶发假失败（3 轮 → 最多 6 轮）。
+
+**开发任务书 · 批次3（2026-09-11）**：方向二「舰历」——存档升到 **v4**（每舰新增 `record`，走 `SAVE_MIGRATIONS` 迁移）；
+唯一写入入口 `Progression.recordBattleResult`（出击/演习/远征三路径覆盖）；荣誉 8 个（只展示不加成、幂等）；
+详情弹窗新增「舰历」页签（履历/荣誉墙/舰史）；战报追加 MVP / 斩杀者 / 新荣誉；**42 艘舰史** `ships[].bio`（1-x~3-x 全部 BOSS 掉落）。
+sim 1441 / 迁移 27 / E2E 133 全过，0 JS 错误；引擎逐位对拍仍零漂移。
+顺手修复：① 批次1 的同源断言在索敌失败时会假失败（改为重试到索敌成功）；② `washington` 台词史实错误（"海军上将"级 → 北卡罗来纳级二号舰）；
+③ E2E 不再为测弹窗而进母港（每次进母港会多起一套秘书舰 rAF 循环，拖垮 headless 虚拟时间预算）。
 
 见 `HEARTBEAT.md` 最新条目（本文件只保留决策，心跳文件记录流水）。
 

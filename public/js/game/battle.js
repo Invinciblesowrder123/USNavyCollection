@@ -970,6 +970,7 @@ const Battle = (() => {
     /* 索敌演出事件：UI 展示雷达扫描 + 提示横幅 */
     log.push({ event: { kind: 'recon', ok: reconOk, lost: planeLost > 0, myLos: Math.round(recon.myLos), enLos: Math.round(recon.enLos) } });
     let airSup = false;
+    let airKey = null;
 
     /* ---- 交战形态（wiki 45/30/15/10；索敌成功且携带舰侦 → 权重向有利方向偏移一档，见 ENG_WEIGHTS） ---- */
     const hasReconPlane = sideA.some(s => s.alive && s.reconPlane);
@@ -992,6 +993,7 @@ const Battle = (() => {
     if ((myAir > 0 || enAir > 0)) {
       if (reconOk) {
         const air = airState(myAir, enAir);
+        airKey = air.key;
         L(`航空战！我军制空 ${myAir}，敌军制空 ${enAir}，${air.label}！`);
         airSup = air.key === 'SUP' || air.key === 'SURE';
         /* 环节一·放飞机：双方机群同时起飞 */
@@ -1236,7 +1238,7 @@ const Battle = (() => {
 
     /* ---- 结算 ---- */
     const r = settle(log, sideA, sideB, nightUsed, formAName, formBName);
-    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng });
+    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng, airKey });
     return r;
   }
 
@@ -1246,6 +1248,7 @@ const Battle = (() => {
     r.myAir = ctx.myAir || 0;
     r.enAir = ctx.enAir || 0;
     r.airSup = !!ctx.airSup;
+    r.airKey = ctx.airKey || null;          // 制空状态 key（SURE/SUP/PAR/INF/LOST），供荣誉判定
     r.engagement = ctx.eng || null;
     return r;
   }
@@ -1262,7 +1265,7 @@ const Battle = (() => {
     const r = settle(log, sideA, sideB, nightUsed, formAName, formBName);
     return attachBattleContext(r, {
       reconOk: dayResult.recon, myAir: dayResult.myAir, enAir: dayResult.enAir,
-      airSup: dayResult.airSup, eng: dayResult.engagement
+      airSup: dayResult.airSup, eng: dayResult.engagement, airKey: dayResult.airKey
     });
   }
 

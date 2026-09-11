@@ -1008,8 +1008,12 @@ const ddUid2 = intelEquipShip('fletcher', 80, 0, ['gun5in_38', 'torp_mk15', 'tor
 Game.state.fleet[1] = [iowaUid, cvUid, ddUid2];
 const intelFs = Game.battleFleetStats(1);
 assert('fleetStats 可用（公共接口已导出）', !!intelFs && Array.isArray(intelFs.ships) && intelFs.ships.length === 3);
-const airBattle = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F05.ships, '单纵阵', ENEMY_FLEETS.F05.formation, { allowNight: false, fleetIdx: 1 });
-const airLine = airBattle.log.find(x => typeof x === 'string' && x.includes('我军制空'));
+/* 索敌失败的场次不会打印「我军制空」（改打「无法参加航空战」），故重试到索敌成功为止 */
+let airBattle = null, airLine = null;
+for (let i = 0; i < 40 && !airLine; i++) {
+  airBattle = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F05.ships, '单纵阵', ENEMY_FLEETS.F05.formation, { allowNight: false, fleetIdx: 1 });
+  if (airBattle.recon === true) airLine = airBattle.log.find(x => typeof x === 'string' && x.includes('我军制空'));
+}
 assert('fleetAir 与实战首回合「我军制空」一致（同源验证）',
   !!airLine && Number(airLine.match(/我军制空\s*(\d+)/)[1]) === Game.fleetAir(1),
   'fleetAir=' + Game.fleetAir(1) + ' log=' + airLine);
@@ -1300,6 +1304,200 @@ for (const e of ['PARALLEL', 'REVERSE', 'T_ADV', 'T_DIS']) {
 assert('只改航向：同一交战形态下输出无系统性差异（命中/伤害/暴击随机未改动）',
   maxDelta < 0.15, `maxΔ=${(maxDelta * 100).toFixed(1)}% @${worstEng}`);
 Game.state.fleet[1] = [iowaUid, cvUid, ddUid2];
+
+section('方向二·舰历：数据结构 / 三路径写入 / 荣誉（任务3.1–3.3）');
+Game.newGame();
+Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+function mkRecFleet() {
+  const ids = ['enterprise', 'iowa', 'essex', 'fletcher', 'atlanta', 'saratoga'];
+  const out = [];
+  for (const id of ids) {
+    const s = Game.createShip(id, 60);
+    s.kai = 1;
+    Game.equipDefaults(s.uid);
+    s.hp = Game.shipStats(s.uid).hpMax;
+    s.supply = { fuel: 1, ammo: 1 };
+    out.push(s.uid);
+  }
+  return out;
+}
+const recFleet = mkRecFleet();
+Game.state.fleet[1] = recFleet.slice();
+const recBystander = Game.createShip('benson', 3);   // 未参战舰（不编入任何舰队）
+const bystanderKey = JSON.stringify(recBystander.record);
+/* 出击一次海域全流程（每个战斗节点都会 settleBattle 一次 → 履历 +1，与提督「总出击」口径一致）
+ * 起跑前先补满油弹与耐久，避免连续跑图时被补给/大破拦下（与本用例目标无关） */
+function runMap(mapId) {
+  for (const uid of Game.state.fleet[1]) {
+    const s = Game.state.ships[uid];
+    if (s) { s.hp = Game.shipStats(uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; }
+  }
+  const st0 = Sortie.start(mapId, 1);
+  if (!st0.ok) throw new Error('start failed: ' + st0.msg);
+  let guard = 0, last = null, battles = 0, sWins = 0;
+  while (Game.state.sortie && guard++ < 12) {
+    const r = Sortie.advance('单纵阵', true);
+    if (!r.ok) break;
+    last = r;
+    if (r.type === 'battle' || r.type === 'boss') {
+      battles++;
+      if (r.result && r.result.rank === 'S') sWins++;
+    }
+    if (!Sortie.moveToNext()) break;
+  }
+  Sortie.returnHome();
+  return { battles, sWins, last };
+}
+/* 任务 3.2 断言 3：出击结算写入 */
+const recBefore = recFleet.map(u => JSON.parse(JSON.stringify(Game.state.ships[u].record)));
+const run1 = runMap('1-1');
+const recAfter = recFleet.map(u => Game.state.ships[u].record);
+assert('一次出击结算后参战各舰 record.sorties +1（1-1 两个战斗节点 = +2）',
+  run1.battles === 2 && recAfter.every((r, i) => r.sorties === recBefore[i].sorties + run1.battles),
+  'battles=' + run1.battles + ' sorties=' + JSON.stringify(recAfter.map(r => r.sorties)));
+assert('出击 S 胜时 record.sWin +1（按 S 结算次数累计）',
+  recAfter.every((r, i) => r.sWin === recBefore[i].sWin + run1.sWins),
+  'S结算=' + run1.sWins + ' sWin=' + JSON.stringify(recAfter.map(r => r.sWin)));
+assert('未参战舰的履历不变', JSON.stringify(recBystander.record) === bystanderKey);
+assert('履历结构与默认结构一致（写入不引入新字段）',
+  JSON.stringify(Object.keys(Game.state.ships[recFleet[0]].record)) === JSON.stringify(Object.keys(Game.defaultRecord())),
+  JSON.stringify(Object.keys(Game.state.ships[recFleet[0]].record)));
+/* 任务 3.4：战报自动追加「本场 MVP / 斩杀者 / 新获得荣誉」 */
+{
+  const logs = (run1.last && run1.last.result && run1.last.result.log) || [];
+  const texts = logs.filter(l => typeof l === 'string');
+  const enFlagSunk = run1.last && run1.last.result && run1.last.result.enemySide[0] && !run1.last.result.enemySide[0].alive;
+  assert('战报自动追加「本场 MVP」', texts.some(t => t.includes('本场 MVP')), texts.slice(-4).join(' | '));
+  assert('战报自动追加「斩杀」（击沉敌旗舰时）',
+    !enFlagSunk || texts.some(t => t.includes('斩杀：击沉敌方旗舰')), 'flagSunk=' + !!enFlagSunk);
+  assert('战报自动追加「新获得荣誉」', texts.some(t => t.includes('新获得荣誉')), texts.slice(-4).join(' | '));
+}
+/* 任务 3.2 断言 4/5：首次通关只写一次 + 与 mapProgress 双向一致 */
+runMap('1-1'); runMap('1-1');
+const mp11 = Game.state.mapProgress['1-1'];
+const fc = Game.state.ships[recFleet[0]].record.firstClear['1-1'];
+assert('1-1 已通关', mp11.cleared === true, 'gauge=' + mp11.gauge);
+assert('首次通关写入时间戳', typeof fc === 'number' && fc > 0, 'fc=' + fc);
+runMap('1-1');
+assert('连续通关不刷新首通时间戳（只写一次）',
+  Game.state.ships[recFleet[0]].record.firstClear['1-1'] === fc, 'now=' + Game.state.ships[recFleet[0]].record.firstClear['1-1']);
+{
+  const recClears = new Set(Object.keys(Game.state.ships[recFleet[0]].record.firstClear));
+  const clearedMaps = MAPS.filter(m => Game.state.mapProgress[m.id].cleared).map(m => m.id);
+  assert('履历首通集合与 mapProgress.cleared 双向一致',
+    recClears.size === clearedMaps.length &&
+    clearedMaps.every(id => recClears.has(id)) &&
+    [...recClears].every(id => Game.state.mapProgress[id] && Game.state.mapProgress[id].cleared),
+    'rec=' + [...recClears].join(',') + ' cleared=' + clearedMaps.join(','));
+}
+/* 任务 3.2：另外两条写入路径 */
+{
+  const before = Game.state.ships[recFleet[0]].record.sorties;
+  const pr = Logistics.practiceReady();
+  const pracRes = Battle.battle(Game.state.fleet[1], pr.fleets[0].ships, '单纵阵', '单纵阵', { allowNight: true, fleetIdx: 1 });
+  Progression.applyBattleResult(1, pracRes, true);
+  assert('演习计入履历（sorties+1）', Game.state.ships[recFleet[0]].record.sorties === before + 1,
+    'before=' + before + ' now=' + Game.state.ships[recFleet[0]].record.sorties);
+}
+{
+  const before = Game.state.ships[recFleet[0]].record.expeditions;
+  Game.state.expeditions[1] = { exId: 'ex1', start: Date.now() - 60000, end: Date.now() - 1 };
+  const exr = Logistics.claimExpedition(1);
+  assert('远征计入履历（expeditions+1，不增加 sorties）', exr.ok &&
+    Game.state.ships[recFleet[0]].record.expeditions === before + 1 &&
+    /* 累计结算次数：run1(battles) + 后续 3 次跑图(2×3) + 演习(1) = run1.battles + 7 */
+    Game.state.ships[recFleet[0]].record.sorties === recBefore[0].sorties + run1.battles + 7,
+    JSON.stringify(recFleet.map(u => Game.state.ships[u].record.expeditions)));
+}
+/* 任务 3.3：荣誉（幂等 / 无数值加成） */
+{
+  const uid0 = recFleet[0];
+  const rec0 = Game.state.ships[uid0].record;
+  const honorIds = rec0.honors.map(h => h.id);
+  assert('荣誉数组无重复 id', new Set(honorIds).size === honorIds.length, honorIds.join(','));
+  assert('出击后至少获得「初阵」「初捷」荣誉',
+    honorIds.includes('first_sortie') && honorIds.includes('first_s'), honorIds.join(','));
+  const owned = new Set(rec0.honors.map(h => h.id));
+  const spare = Progression.HONORS.map(h => h.id).find(id => !owned.has(id));
+  assert('存在尚未获得的荣誉（用于幂等测试）', !!spare, [...owned].join(','));
+  const n0 = rec0.honors.length;
+  Progression.grantHonors(uid0, [spare], 111);
+  const n1 = rec0.honors.length;
+  Progression.grantHonors(uid0, [spare], 222);
+  assert('荣誉幂等：首次授予 +1、重复授予不再增加',
+    n1 === n0 + 1 && rec0.honors.length === n1 && rec0.honors.filter(h => h.id === spare).length === 1,
+    `n0=${n0} n1=${n1} now=${rec0.honors.length}`);
+  const nBeforeBad = rec0.honors.length;
+  Progression.grantHonors(uid0, ['not_a_real_honor']);
+  assert('荣誉表外的 id 一律不写入', rec0.honors.length === nBeforeBad);
+  assert('荣誉数量 6–8 个（首版）', Progression.HONORS.length >= 6 && Progression.HONORS.length <= 8, 'n=' + Progression.HONORS.length);
+  assert('荣誉表不含任何数值加成字段',
+    Progression.HONORS.every(h => !('bonus' in h) && !('mod' in h) && !('stat' in h) && typeof h.check === 'function'));
+}
+{
+  /* 断言 7：授予荣誉不改变任何战斗数值 —— 逐字段对拍（含战斗引擎实际读取的字段） */
+  const uid0 = recFleet[0];
+  const snap = () => {
+    const s = Game.state.ships[uid0];
+    return JSON.stringify({
+      stats: Game.shipStats(uid0), def: Game.shipDef(s), morale: s.morale, lv: s.lv,
+      kai: s.kai, modern: s.modern, equipped: s.equipped.slice(), supply: s.supply
+    });
+  };
+  const beforeSnap = snap();
+  Progression.grantHonors(uid0, Progression.HONORS.map(h => h.id), 999);
+  const afterSnap = snap();
+  assert('授予全部荣誉后战斗数值逐字段不变', beforeSnap === afterSnap);
+  const combatStats = Battle.fleetStats(1).ships.find(x => x.uid === uid0);
+  const panel = Game.shipStats(uid0);
+  assert('荣誉不影响战斗对象构建（战斗对象面板与 shipStats 逐项相同）',
+    !!combatStats && ['hp', 'fp', 'tp', 'aa', 'arm', 'evd', 'asw', 'los', 'lck'].every(k => combatStats.stats[k] === panel[k]),
+    combatStats ? JSON.stringify(combatStats.stats) : 'no ship');
+}
+/* 任务 3.1 断言 8：无履历新舰不报错、无 undefined */
+{
+  const fresh = Game.createShip('benson', 1);
+  const sum = Progression.recordSummary(fresh.uid);
+  assert('新舰履历摘要全 0 且不含 undefined',
+    sum && sum.sorties === 0 && sum.sWin === 0 && sum.taiha === 0 && sum.failures === 0 &&
+    sum.honorCount === 0 && sum.clearCount === 0 && sum.lastBoss === '' && !JSON.stringify(sum).includes('undefined'),
+    JSON.stringify(sum));
+  assert('recordSummary 对不存在的 uid 返回 null 而非抛错', Progression.recordSummary('s_nope') === null);
+}
+/* 任务 3.4 断言 9：舰史与 line 不矛盾 + 材料复用 */
+{
+  const order = [];
+  for (const mp of MAPS) {
+    if (!['1', '2', '3'].includes(mp.id.split('-')[0])) continue;
+    for (const id of mp.bossDrops || []) if (!order.includes(id)) order.push(id);
+  }
+  assert('1-x/2-x/3-x 的 BOSS 掉落舰均有舰史 bio',
+    order.every(id => ShipData[id] && (ShipData[id].bio || '').length >= 8),
+    order.filter(id => !(ShipData[id] && ShipData[id].bio)).join(','));
+  assert('舰史数量 ≥40 且无空文本/undefined',
+    Object.values(ShipData).filter(d => d.bio).length >= 40 &&
+    Object.values(ShipData).every(d => d.bio === undefined || (d.bio.length >= 8 && !d.bio.includes('undefined'))),
+    'n=' + Object.values(ShipData).filter(d => d.bio).length);
+  const twoGram = s => { const out = []; for (let i = 0; i + 2 <= s.length; i++) out.push(s.slice(i, i + 2)); return out; };
+  const sinkObj = s => { const m2 = s.match(/击沉([^。；！\s]{2,10})/); return m2 ? m2[1] : null; };
+  const starNum = s => { const m2 = s.match(/([0-9]+)\s*枚?战星/); return m2 ? m2[1] : null; };
+  const contra = [];
+  for (const id in ShipData) {
+    const d = ShipData[id];
+    if (!d.bio || !d.line) continue;
+    const ls = sinkObj(d.line), bs = sinkObj(d.bio);
+    if (ls && bs && !twoGram(ls).some(g => bs.includes(g))) contra.push(`${id}:击沉对象不一致(${ls} vs ${bs})`);
+    const ln = starNum(d.line), bn = starNum(d.bio);
+    if (ln && bn && ln !== bn) contra.push(`${id}:战星数不一致(${ln} vs ${bn})`);
+    if (/不会沉没|绝不沉没/.test(d.line) && !/不会沉没|不沉/.test(d.bio)) contra.push(`${id}:line 主张不沉没但 bio 未呼应`);
+  }
+  assert('舰史与台词中的历史事实不矛盾', contra.length === 0, contra.join('、'));
+  const REUSE = { sanfrancisco: '铁底湾', quincy: '萨沃岛', laffey: '不会沉没', yorktown: '中途岛', hornet: '杜立特',
+    southdakota: '圣克鲁斯', washington: '雾岛', enterprise: '灰色幽灵', colorado: '大七', intrepid: '硬脖子',
+    alabama: '无一名士兵阵亡', massachusetts: '北非', albacore: '大凤', harder: '驱逐舰', nevada: '珍珠港', vestal: '珍珠港' };
+  const notReused = Object.keys(REUSE).filter(id => !(ShipData[id].bio || '').includes(REUSE[id]));
+  assert('舰史复用台词中已埋的真史原料（16 艘显式核对）', notReused.length === 0, notReused.join('、'));
+}
 
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);

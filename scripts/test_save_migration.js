@@ -16,8 +16,10 @@ const { Game } = require('../public/js/core/state.js');
 
 const CUR = Game.CURRENT_SAVE_VERSION;
 
+let TOTAL_CHECKS = 0;
 function check(name, condition) {
   assert.ok(condition, name);
+  TOTAL_CHECKS++;
   console.log('  ✓ ' + name);
 }
 
@@ -45,6 +47,23 @@ function v2Save() {
   };
 }
 
+function v3Save() {
+  return {
+    saveVersion: 3, version: 3,
+    admiral: { name: '提督', level: 12, exp: 0 },
+    resources: { fuel: 700, ammo: 700, steel: 700, baux: 700, screws: 3, devMats: 12 },
+    ships: {
+      s1: { uid: 's1', id: 'mahan', kai: 1, lv: 30, hp: 20, morale: 40, equipped: [], modern: {}, supply: { fuel: 1, ammo: 1 } },
+      s2: { uid: 's2', id: 'fletcher', kai: 0, lv: 12, hp: 18, morale: 55, equipped: [], modern: {}, supply: { fuel: 0.5, ammo: 0.5 } }
+    },
+    equipment: { e1: { uid: 'e1', id: 'gun5in_30', star: 2 } },
+    fleet: { 1: ['s1', 's2'], 2: [], 3: [], 4: [] },
+    fleetUnlock: { 3: true, 4: false },
+    library: { ships: { mahan: true, fletcher: true }, equips: { gun5in_30: true } },
+    mapProgress: {}
+  };
+}
+
 console.log('\n== 存档迁移专项测试 ==');
 
 /* v1 旧档 → 当前版本 */
@@ -63,9 +82,47 @@ check('v2 图鉴按持有补登舰船', fromV2.library.ships.mahan === true && f
 check('v2 图鉴按持有补登装备', fromV2.library.equips.gun5in_30 === true);
 check('v2 图鉴不误登未持有项', !fromV2.library.ships.iowa);
 
+/* v3 → v4：每舰补舰历 record（方向二） */
+const fromV3 = Game.migrateSave(v3Save());
+check('v3 档升级到含舰历的版本', fromV3.saveVersion === CUR && fromV3.version === CUR);
+check('v3 档每舰补齐 record 且为默认空结构',
+  fromV3.ships.s1.record && fromV3.ships.s2.record &&
+  fromV3.ships.s1.record.sorties === 0 && fromV3.ships.s1.record.sWin === 0 &&
+  fromV3.ships.s1.record.taiha === 0 && fromV3.ships.s1.record.failures === 0 &&
+  fromV3.ships.s1.record.bossKills === 0 && fromV3.ships.s1.record.lastBoss === '',
+  JSON.stringify(fromV3.ships.s1.record));
+check('v3 档 record 的容器字段齐全',
+  Array.isArray(fromV3.ships.s1.record.honors) && fromV3.ships.s1.record.honors.length === 0 &&
+  Array.isArray(fromV3.ships.s1.record.remodelAt) &&
+  fromV3.ships.s1.record.firstClear && typeof fromV3.ships.s1.record.firstClear === 'object');
+check('v3 档迁移不影响资源与舰队',
+  fromV3.resources.fuel === 700 && fromV3.resources.devMats === 12 &&
+  JSON.stringify(fromV3.fleet[1]) === JSON.stringify(['s1', 's2']) &&
+  fromV3.ships.s1.lv === 30 && fromV3.ships.s1.kai === 1 && fromV3.ships.s2.morale === 55);
+check('v3 档迁移保留旧字段（装备星级/图鉴/舰队解锁）',
+  fromV3.equipment.e1.star === 2 && fromV3.library.ships.fletcher === true && fromV3.fleetUnlock[3] === true);
+/* 形状一致性：迁移路径与新建路径必须产生同一形状 */
+const freshShape = JSON.stringify(Game.defaultRecord());
+check('迁移后的 record 结构与新建舰船的结构一致', JSON.stringify(fromV3.ships.s1.record) === freshShape,
+  JSON.stringify(fromV3.ships.s1.record));
+check('v1/v2 档迁移后同样带 record',
+  !!fromV1.ships.s40.record && !!fromV2.ships.s1.record &&
+  JSON.stringify(fromV1.ships.s40.record) === freshShape && JSON.stringify(fromV2.ships.s1.record) === freshShape);
+/* 半残 record（形状不完整）补齐，不覆盖已有数值 */
+const partial = Game.migrateSave({
+  saveVersion: 3, version: 3,
+  resources: { fuel: 1, ammo: 1, steel: 1, baux: 1, screws: 0, devMats: 10 },
+  ships: { s9: { uid: 's9', id: 'mahan', record: { sorties: 7, honors: [{ id: 'first_sortie', at: 1 }] } } },
+  equipment: {}, fleet: { 1: [], 2: [], 3: [], 4: [] }
+});
+check('残缺 record 补齐缺键且不覆盖已有数值',
+  partial.ships.s9.record.sorties === 7 && partial.ships.s9.record.sWin === 0 &&
+  partial.ships.s9.record.honors.length === 1 && partial.ships.s9.record.honors[0].id === 'first_sortie');
+
 /* 幂等 */
 check('v1 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV1)) === JSON.stringify(fromV1));
 check('v2 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV2)) === JSON.stringify(fromV2));
+check('v3 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV3)) === JSON.stringify(fromV3));
 
 /* 损坏存档 */
 const damaged = Game.migrateSave({ saveVersion: CUR, resources: null, fleet: null, ships: null, equipment: null, library: null });
@@ -83,4 +140,4 @@ check('当前档资源保持不变', current.resources.fuel === 9 && current.res
 check('当前档图鉴保持不变', current.library.ships.mahan === true);
 check('当前档版本号不变', current.saveVersion === CUR && current.version === CUR);
 
-console.log('\n通过 18 项，失败 0 项');
+console.log("\n通过 " + (TOTAL_CHECKS) + " 项，失败 0 项");

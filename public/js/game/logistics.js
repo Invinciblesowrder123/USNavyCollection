@@ -83,6 +83,13 @@ const Logistics = (() => {
       Progression.addShipExp(uid, Math.round(exp));
       s.morale = Math.min(100, s.morale + 30);
     }
+    /* 舰历（方向二）：远征计入履历（走与出击/演习相同的唯一写入入口） */
+    Progression.recordBattleResult({
+      uids: st.fleet[fleetIdx].slice(),
+      kind: 'expedition',
+      rank: null,
+      perfect: false, taiha: false, failed: false, mvpUid: null
+    });
     return { ok: true, ex, reward: rew, great };
   }
 

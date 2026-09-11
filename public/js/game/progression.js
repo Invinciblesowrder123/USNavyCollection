@@ -99,6 +99,8 @@ const Progression = (() => {
     s.hp = max;
     s.supply = { fuel: 1, ammo: 1 };
     st.stats.remodel++;
+    /* 舰历：改造纪念时间（方向二） */
+    ensureRecord(s).remodelAt.push(Date.now());
     notify('remodel', 1);
     if (def.type === 'BB' || def.type === 'BBV') notify('remodel_bb', 1);
     return { ok: true, def };
@@ -334,6 +336,123 @@ const Progression = (() => {
   /* 演习评价倍率（wiki「演习·评价补正表」）：演习败北倍率比出击更低 */
   const PRACTICE_RANK_EXP = { S: 1.2, A: 1.0, B: 1.0, C: 0.64, D: 0.56, E: 0.4 };
 
+  /* ============ 舰历与荣誉（方向二） ============
+   * recordBattleResult 是履历的**唯一写入入口**：出击（settleBattle）/ 演习（applyBattleResult，仅 isPractice）/
+   * 远征（claimExpedition）三条路径都调它，避免出现「打了但履历没涨」的不一致。
+   * 履历口径：**记录实际战果，包含失败与大破**——这样"用弱船出战"才是有代价的选择（原提案的"只记 S 胜"是零代价的伪选择）。
+   * 荣誉：只做展示与排序，**绝不提供战斗数值加成**；每个荣誉都指向"可用不同打法达成的作战事实"，
+   * 不做「累计出击 100 次」这类磨时间条件（禁止事项 10：不要把重复操作包装成沉浸感）。 */
+  const HONORS = [
+    { id: 'first_sortie', name: '初阵', desc: '第一次出击', kind: 'fleet',
+      check: (c, p) => c.kind === 'sortie' && p.sorties === 0 },
+    { id: 'first_s', name: '初捷', desc: '取得第一次 S 胜', kind: 'fleet',
+      check: (c, p) => c.rank === 'S' && p.sWin === 0 },
+    { id: 'perfect', name: '完全胜利', desc: '无伤全歼敌舰队', kind: 'fleet',
+      check: c => c.rank === 'S' && !!c.perfect },
+    { id: 'decapitation', name: '斩首', desc: '击沉敌方旗舰', kind: 'fleet',
+      check: c => !!c.bossSunk },
+    { id: 'night_ace', name: '夜战无双', desc: '在夜战节点取得 S 胜', kind: 'fleet',
+      check: c => c.nodeMode === 'night' && c.rank === 'S' },
+    { id: 'sub_hunter', name: '反潜先锋', desc: '在潜艇节点取得 S 胜', kind: 'fleet',
+      check: c => c.nodeMode === 'sub' && c.rank === 'S' },
+    { id: 'air_supreme', name: '制空权确保', desc: '取得制空权确保并 S 胜', kind: 'fleet',
+      check: c => c.airKey === 'SURE' && c.rank === 'S' },
+    { id: 'mvp', name: 'MVP 之誉', desc: '在单场战斗中拿下 MVP', kind: 'mvp',
+      check: () => true }
+  ];
+  const HONOR_BY_ID = (() => { const m = {}; for (const h of HONORS) m[h.id] = h; return m; })();
+
+  /* 取（并补齐）舰历结构：写入点统一走这里，任何缺口都不会让脚本崩 */
+  function ensureRecord(s) {
+    const G = GameRef();
+    if (!s.record || typeof s.record !== 'object') s.record = G.defaultRecord();
+    else G.normalizeRecord(s.record);
+    return s.record;
+  }
+
+  /* 授勋（幂等：同一荣誉不重复授予，荣誉数组无重复 id） */
+  function grantHonors(uid, ids, at) {
+    const G = GameRef();
+    const s = G.state.ships[uid];
+    if (!s) return [];
+    const r = ensureRecord(s);
+    const granted = [];
+    for (const id of ids) {
+      if (!HONOR_BY_ID[id]) continue;                       // 只授予荣誉表内的 id
+      if (r.honors.some(h => h && h.id === id)) continue;    // 幂等
+      r.honors.push({ id, at: at || Date.now() });
+      granted.push(id);
+    }
+    return granted;
+  }
+
+  /* 履历写入（唯一入口）
+   * ctx = {
+   *   uids: [uid],              // 参战舰（未参战的不受影响）
+   *   kind: 'sortie'|'practice'|'expedition',
+   *   rank: 'S'|'A'|... ,       // 远征可为 undefined
+   *   perfect, taiha, failed,   // 完全胜利 / 本场有大破 / 败局
+   *   mvpUid,
+   *   mapId, firstClear,        // 首次通关只写一次
+   *   nodeMode: 'sub'|'night'|null,
+   *   airKey: 'SURE'|...|null,
+   *   bossSunk, bossName,
+   *   at
+   * } */
+  function recordBattleResult(ctx) {
+    const G = GameRef();
+    const st = G.state;
+    const at = ctx.at || Date.now();
+    const out = { granted: [], byUid: {} };
+    for (const uid of (ctx.uids || [])) {
+      const s = st.ships[uid];
+      if (!s) continue;
+      const r = ensureRecord(s);
+      const prior = { sorties: r.sorties, sWin: r.sWin, perfect: r.perfect };
+      if (ctx.kind === 'expedition') r.expeditions++;
+      else r.sorties++;
+      if (ctx.rank === 'S') r.sWin++;
+      if (ctx.taiha) r.taiha++;
+      if (ctx.failed) r.failures++;
+      if (ctx.perfect) r.perfect++;
+      if (ctx.bossSunk) {
+        r.bossKills++;
+        if (ctx.bossName) r.lastBoss = ctx.bossName;
+      }
+      if (ctx.mapId && ctx.firstClear && !r.firstClear[ctx.mapId]) r.firstClear[ctx.mapId] = at;
+      const ids = [];
+      for (const h of HONORS) {
+        if (h.kind === 'mvp' && ctx.mvpUid !== uid) continue;
+        let ok = false;
+        try { ok = !!h.check(ctx, prior); } catch (e) { ok = false; }
+        if (ok) ids.push(h.id);
+      }
+      const got = grantHonors(uid, ids, at);
+      if (got.length) {
+        out.granted.push(...got.map(id => ({ uid, id })));
+        out.byUid[uid] = got;
+      }
+    }
+    return out;
+  }
+
+  /* 舰历摘要（展示用）：出击/S胜/大破/失败/荣誉数 + 首次通关海域数 */
+  function recordSummary(uid) {
+    const G = GameRef();
+    const s = G.state.ships[uid];
+    if (!s) return null;
+    const r = ensureRecord(s);
+    return {
+      sorties: r.sorties, expeditions: r.expeditions, sWin: r.sWin,
+      taiha: r.taiha, failures: r.failures, perfect: r.perfect,
+      bossKills: r.bossKills, lastBoss: r.lastBoss,
+      clearCount: Object.keys(r.firstClear || {}).length,
+      honors: (r.honors || []).slice(),
+      honorCount: (r.honors || []).length,
+      remodelAt: (r.remodelAt || []).slice()
+    };
+  }
+
   function applyBattleResult(fleetIdx, result, isPractice) {
     const G = GameRef();
     const st = G.state;
@@ -388,6 +507,19 @@ const Progression = (() => {
     } else {
       notify('practice', 1);
     }
+    /* 舰历（方向二）：演习走这里；出击由 settleBattle 写（同一入口，避免双计） */
+    if (isPractice) {
+      recordBattleResult({
+        uids: fleet.slice(),
+        kind: 'practice',
+        rank,
+        perfect: !!result.perfect,
+        taiha: (result.myDaPo || 0) > 0,
+        failed: rank !== 'S' && rank !== 'A' && rank !== 'B',
+        mvpUid: result.mvpUid || null,
+        airKey: result.airKey || null
+      });
+    }
     return { gains, adm: admOut };
   }
 
@@ -416,7 +548,9 @@ const Progression = (() => {
     modernizeInfo, modernize, modernizePreview, materialValue, modernCap,
     gainReward, gainDeviation, bonusLevel,
     resetDue, resetQuests, initQuests, notify, canClaim, claimQuest,
-    applyBattleResult, checkDynamic
+    applyBattleResult, checkDynamic,
+    /* 舰历与荣誉（方向二） */
+    HONORS, HONOR_BY_ID, ensureRecord, grantHonors, recordBattleResult, recordSummary
   };
 })();
 

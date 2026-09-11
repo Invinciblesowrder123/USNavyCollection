@@ -434,7 +434,50 @@ const Sortie = (() => {
     /* 失败归因（P0-5：失败结算要说清原因并指出改进路径；纯函数便于断言） */
     for (const line of attributionLines({ result, nodeDef: def, fleet, st })) result.log.push(line);
 
-    return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true, admExp: admGain };
+    /* 舰历与荣誉（方向二）：出击路径的唯一写入点（含夜战追加后的二次结算，仍只写一次） */
+    const enFlag = result.enemySide && result.enemySide[0];
+    const flagSunk = !!(enFlag && !enFlag.alive);
+    const honorOut = Progression.recordBattleResult({
+      uids: fleet.slice(),
+      kind: 'sortie',
+      rank: result.rank,
+      perfect: !!result.perfect,
+      taiha: (result.myDaPo || 0) > 0,
+      failed: !result.victory,
+      mvpUid: result.mvpUid || null,
+      mapId: map.id,
+      firstClear: !!cleared,          // 首次通关只写一次（recordBattleResult 内部再判一次）
+      nodeMode: def.mode || null,
+      airKey: result.airKey || null,
+      /* 「斩首」只认 BOSS 节点或 5 舰以上的敌方编成，避免"打沉一艘驱逐就叫斩首" */
+      bossSunk: flagSunk && (isBoss || (result.enemyTotal || 0) >= 5),
+      bossName: flagSunk ? (enFlag.zh || enFlag.name || '') : ''
+    });
+    /* 战报自动追加：本场 MVP / 斩杀者 / 新获得荣誉（方向二 3.4） */
+    if (result.mvpUid && st.ships[result.mvpUid]) {
+      const mv = st.ships[result.mvpUid];
+      result.log.push(`本场 MVP：${(ShipData[mv.id] && ShipData[mv.id].zh) || mv.id}（获得经验 ×2）`);
+    }
+    if (flagSunk && enFlag) {
+      result.log.push(`斩杀：击沉敌方旗舰「${enFlag.zh || enFlag.name}」。`);
+    }
+    if (honorOut && honorOut.granted.length) {
+      const seen = new Set();
+      const parts = [];
+      for (const g of honorOut.granted) {
+        if (seen.has(g.id)) continue;
+        seen.add(g.id);
+        const h = Progression.HONOR_BY_ID[g.id];
+        if (h) parts.push(h.name);
+      }
+      const names = [...new Set(honorOut.granted.map(g => {
+        const s = st.ships[g.uid];
+        return (s && ShipData[s.id] && ShipData[s.id].zh) || g.uid;
+      }))];
+      if (parts.length) result.log.push(`新获得荣誉：${parts.join('、')}（${names.join('、')}）`);
+    }
+
+    return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true, admExp: admGain, honors: honorOut };
   }
 
   /* ============ 出击前情报室（方向一） ============
