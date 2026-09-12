@@ -939,6 +939,10 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .map-node.whirlpool .node-icon { animation: whirlSpin 2.2s linear infinite; display: inline-block; }
 @keyframes whirlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .map-node.empty { border-color: #4a5a75; background: #1a2333; color: #8fa3c4; }
+/* 特殊节点（mode）：航空战 / 夜战 / 潜艇 —— 与 map-legend 的配色一致，便于在图上区分 */
+.map-node.mode-air { border-color: #7fd7ff; background: linear-gradient(180deg, #1d3350, #101c2c); color: #bfe9ff; }
+.map-node.mode-night { border-color: #7a8cff; background: linear-gradient(180deg, #25243f, #151425); color: #c3c9ff; }
+.map-node.mode-sub { border-color: #6fe0d0; background: linear-gradient(180deg, #16333a, #0d1d22); color: #a8f0e6; }
 
 /* 作战简报（海域出击前的编成引导，军事简报体） */
 .map-brief {
@@ -962,6 +966,16 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 }
 .sortie-brief .sb-head {
   color: var(--gold); font-weight: bold; letter-spacing: 2px; margin-bottom: 3px;
+}
+
+/* 节点进入横幅（设计稿 §5.2：夜战/潜艇/航空战/漩涡统一文案表，进入节点时显示一行） */
+.map-banner {
+  margin-top: 10px; padding: 9px 14px;
+  background: linear-gradient(90deg, rgba(232, 194, 74, 0.14), rgba(232, 194, 74, 0.03));
+  border-left: 3px solid var(--gold);
+  border-radius: 4px;
+  font-size: 13px; line-height: 1.7; color: var(--text);
+  letter-spacing: 0.5px;
 }
 
 /* 当前节点：金色脉冲 + 舰队标记 */

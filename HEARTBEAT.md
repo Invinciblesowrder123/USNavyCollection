@@ -955,3 +955,60 @@ E2E 立刻报 `FAIL layout:mapNotStretched :: 1-1 674x810 / 2-2 659x892` 与 `FA
 - 地图固定比例后，左列（地图+简报）通常比右列短，左下会留出空白。这是「不拉伸」的必然代价；
   若希望填满，可改为让简报框吃掉剩余高度，但会让简报框高度随海域变化，反而更乱。当前选择保留空白。
 - 只改了海域选择页；出击中的节点页（`sortieActive`）仍把作战简报放在面板内联位置，那里是整宽布局，不存在拉伸问题。
+
+---
+
+## 2026-09-12 V0.302 批次1 — 航空战点（mode:'air'）+ 被动防空分支
+
+**依据**：`../特殊节点与航空触接设计稿.md` §2.2 air / §5.2 节点横幅 / §5.3 失败归因；
+`../design/开发任务书_V0.302.md` 批次1（任务 1.1–1.3，坑 #10~#15）。
+
+### 交付内容
+
+| 文件 | 改了什么 |
+|---|---|
+| `public/js/data/maps.js` | 2-3 A 点新增 `mode:'air'`；F22 改造为「圣克鲁斯机动部队」（Wo 级 + Nu 级精锐，制空 130）；2-3 加 `brief` / `threat:['los','air']` / `threatNote`；海域定义头部注释补 mode 语义 |
+| `public/js/game/battle.js` | ① 新增「航空战力」判据 `hasAirWing`（空母系 CV/CVL/CVB + 搭载格 size>0 且 plane，与引擎 markLaunch 同源）；② `opts.airMode` 触发「被动防空」分支；③ `airStrike` 增加 `capRatio`（被动防空单次轰炸 ≤ 目标耐久上限 60%，与潜艇点同口径）；④ `fleetStats` 增 `carriers/carrierNames/airWing`；⑤ `attachBattleContext` 增 `airWing/airPassive/touch`；导出 `hasAirWing/isCarrierType/PASSIVE_AA_CAP` |
+| `public/js/game/sortie.js` | `prepareBattle` 传 `airMode`；`attributionLines` 增 air 分支（三种边界文案可区分）；新增 `NODE_BANNER` 文案表 + `nodeBanner()/usedNodeModes()/mapHasAirNode()`；`threatCheck` 的 air 维度改用 `airWing`；`intel()` 增 `air` 区块 |
+| `public/js/ui/sortie.js` | 新节点进点横幅 `.map-banner`；`NODE_MODE_ZH` 增 air；`nodeMeta` 给 mode 节点专属图标（✈ / ☾ / ⌇）+ 图例 |
+| `public/css/style.css` | `.map-banner` + `.map-node.mode-air / mode-night / mode-sub` |
+| `public/index.html` | `?v=20260912b5` → `20260912c1` |
+| `scripts/simulate.js` | 新增 40 条断言；威胁维度 ANNOTATED 增 2-3（4→5 张），新增「航空战点敌军须有航空战力」数据护栏 |
+| `public/test_flow.html` | 新增 12 条 E2E 断言（真实 DOM 的进点横幅三种边界 + 节点图标 + 简报） |
+| `public/_shot_air.html` / `scripts/shot.js` | 新增（人工核对页 + 无头浏览器截图工具，Gate 4 复用） |
+
+### 三种「无航母」边界（坑 #12，本次最容易出错的地方）
+
+| 情形 | 判据 | 行为 | 横幅 / 归因文案 |
+|---|---|---|---|
+| ① 完全没有航母 | `airWing=false` 且无 CV/CVL/CVB | 被动防空 | 「舰队没有航空母舰。全舰队，对空战斗配置——」/「失去制空权。敌机轰击毫无遮蔽的舰队。（编入航空母舰并搭载舰战可夺取制空）」 |
+| ② 有航母但未搭载舰载机（空槽） | `airWing=false` 且有 CV | 被动防空 | 「航空母舰未搭载舰载机。全舰队，对空战斗配置——」/「航空母舰未搭载舰载机，无法展开航空战……」 |
+| ③ 有航母但没带舰战（只带舰攻，制空 0） | `airWing=true` | **正常**航空战（只是打不赢） | 「桅顶瞭望：机群临空。这是航母之间的战斗。」 |
+
+**判据与引擎 `markLaunch`（放飞机）同源** —— 不新造一套「谁有航母」的算法（禁止事项 6）。
+**伤害封顶 60%**（`Battle.PASSIVE_AA_CAP`，与潜艇点封顶同口径）：150 场实测单次轰炸 max(dmg/hpMax) 见断言输出，不做硬死档（P0-2）。
+**坑 #13 的结论**：「无航母 + 索敌失败」进航空战点只挨一次（同一分支，不叠加惩罚）。
+
+### 测试
+
+| 层 | 结果 |
+|---|---|
+| `npm run sim` | **1506 项通过 / 0 失败**（1466 → +40，连跑 3 次稳定） |
+| `npm run test:migration` | 32 项通过（本批无存档字段变更） |
+| `npm run test:e2e` | **165 项通过 / 0 JS 错误**（153 → +12） |
+| `drift_check`（改前 / 改后） | **9 组场景逐位一致（零漂移）** —— 被动防空分支只在 `opts.airMode` 下生效，非航空战点路径一位未动 |
+
+### 浏览器实测（Gate 4，1440px）
+
+`../backup/2026-09-12_V0302_航空线/实测截图/`：
+- `b1_air_noCV.png`：2-3 A 点无航母 → 横幅「舰队没有航空母舰。全舰队，对空战斗配置——」+ 提示「敌机将直接轰炸，仅有对空炮火还击（单次伤害封顶 60%）」
+- `b1_air_withCV.png`：带舰战航母（制空 241 > 敌军 130）→ 横幅「桅顶瞭望：机群临空。这是航母之间的战斗。」
+- `b1_brief_2-3.png`：海域选择页作战简报 + 威胁对位「✗ 制空：…该图含航空战点，将只能以对空炮火被动迎击敌机轰炸」；地图 5:4 未被右列文案拉伸
+
+### 已知问题 / 未纳入范围
+
+- 炮击战里敌方空母的「航空攻击」不适用被动防空的 60% 封顶（那是既有机制、所有战斗都有，非本分支新增）；封顶只作用于**空袭阶段**。
+- 2-3 的 desc/brief 按设计稿改为「圣克鲁斯 · 航母对决」叙事（name 本就是「圣克鲁斯海域」）；原 desc 提到的「战列舰精锐」改由 BOSS 编成（F26 含 ebb2e）承接。
+- 「被动防空」不额外扣资源、不额外加疲劳 —— 与普通战斗点结算完全一致。
+
+**下一步**：批次2 航空触接（`_touchHit` 独立字段 × `_reconHit`，绝不覆盖）。

@@ -451,6 +451,68 @@
       UI.go('library');
       R(document.querySelector('#screen').innerHTML.includes('战功'), 'obj:libraryWarRecord');
 
+      /* ===== 批次1：航空战点（mode:'air'）——进点横幅的三种边界 =====
+       * 断言的是「真实渲染出来的 DOM」，不是函数返回值：横幅必须出现在节点页上，
+       * 且无航母 / 有航母两种编成拿到不同的文案（坑 #12 的防误报）。 */
+      Sortie.returnHome();
+      UI.go('sortie');
+      const mkAirShip = (id, lv, eqs) => {
+        const sh = Game.createShip(id, lv);
+        sh.equipped = eqs.map(x => Game.createEquip(x).uid);
+        sh.hp = Game.shipStats(sh.uid).hpMax;
+        return sh.uid;
+      };
+      const airNoCvFleet = [mkAirShip('benson', 60, ['gun5in_38']), mkAirShip('mahan', 60, ['gun5in_38'])];
+      Game.state.fleet[2] = airNoCvFleet.slice();
+      const srtAir1 = Sortie.start('2-3', 2);
+      R(srtAir1.ok === true, 'air:startWithoutCV', JSON.stringify(srtAir1));
+      Game.state.sortie.node = 'A';                 // 2-3 A = 航空战点
+      UI.go('sortie');
+      const airBanner1 = document.querySelector('#screen .map-banner');
+      R(!!airBanner1 && airBanner1.textContent.indexOf('舰队没有航空母舰') >= 0, 'air:bannerNoCV',
+        airBanner1 ? airBanner1.textContent : '(无横幅元素)');
+      R(document.querySelector('#screen').innerHTML.indexOf('航空战点') >= 0, 'air:nodeTypeLabel');
+      R(document.querySelector('#screen .map-node.mode-air') !== null, 'air:mapNodeIcon');
+      /* 回归：夜战/潜艇节点的专属图标、配色与进点横幅仍在（1-4 B=night、2-2 A=sub） */
+      Sortie.returnHome();
+      const srtNight = Sortie.start('1-4', 2);
+      if (srtNight.ok) {
+        Game.state.sortie.node = 'B';            // 1-4 B = 夜战点
+        UI.go('sortie');
+        R(document.querySelector('#screen .map-node.mode-night') !== null, 'air:nightNodeIcon');
+        const nb = document.querySelector('#screen .map-banner');
+        R(!!nb && nb.textContent.indexOf('照明弹') >= 0, 'air:nightBanner', nb ? nb.textContent : '(无)');
+        Sortie.returnHome();
+      }
+      const srtSub = Sortie.start('2-2', 2);
+      if (srtSub.ok) {
+        Game.state.sortie.node = 'A';            // 2-2 A = 潜艇点
+        UI.go('sortie');
+        R(document.querySelector('#screen .map-node.mode-sub') !== null, 'air:subNodeIcon');
+        const sb = document.querySelector('#screen .map-banner');
+        R(!!sb && sb.textContent.indexOf('声呐') >= 0, 'air:subBanner', sb ? sb.textContent : '(无)');
+        Sortie.returnHome();
+      }
+      Sortie.returnHome();
+      const airCvUid = mkAirShip('enterprise', 60, ['f6f5', 'f6f5', 'f6f5', 'f6f5']);
+      Game.state.fleet[2] = [airCvUid].concat(airNoCvFleet);
+      const srtAir2 = Sortie.start('2-3', 2);
+      R(srtAir2.ok === true, 'air:startWithCV', JSON.stringify(srtAir2));
+      Game.state.sortie.node = 'A';
+      UI.go('sortie');
+      const airBanner2 = document.querySelector('#screen .map-banner');
+      R(!!airBanner2 && airBanner2.textContent.indexOf('航母之间的战斗') >= 0, 'air:bannerWithCV',
+        airBanner2 ? airBanner2.textContent : '(无横幅元素)');
+      /* 三处文案（简报 / 横幅 / 归因）与机制同批：简报在 2-3 海域详情里 */
+      Sortie.returnHome();
+      UI.go('sortie');
+      document.querySelector('#screen [data-area="2"]').click();
+      document.querySelector('#screen [data-map="2-3"]').click();
+      const b23 = document.querySelector('#screen').innerHTML;
+      R(b23.indexOf('航空战') >= 0 && b23.indexOf('编入航母并搭载舰战') >= 0, 'air:briefVisible');
+      R(b23.indexOf('航空战点') >= 0, 'air:threatRow');
+      UI.go('sortie');
+
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {
       window.__errors.push('FATAL ' + e.message + ' ' + (e.stack || '').split('\n')[1]);

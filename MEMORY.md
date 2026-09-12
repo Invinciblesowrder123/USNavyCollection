@@ -84,7 +84,15 @@ USNavyCollection/
 - 重置节奏：每日05:00（日常/入渠/演习/远征任务），每周一05:00（周常），每月1日05:00（月常）
 - 海域威胁维度（`maps[].threat`，可选）：取值 `air|los|asw|night|radar`，**必须能由该图节点推导**——
   `asw⟺有 mode:'sub' 节点`、`night⟺有 mode:'night'`、`radar⟺有 type:'whirlpool'`、`los⟺branch.if.los 存在`、`air⟺某 battle/boss 节点敌军模板含舰载机`。
-  配套 `maps[].threatNote`（军事简报体威胁说明，措辞必须与 threat 维度一致）。`simulate.js`「海域威胁维度声明」段做双向校验，禁漂移。**首版只声明 1-2/1-4/2-2/3-1 四图**。
+  配套 `maps[].threatNote`（军事简报体威胁说明，措辞必须与 threat 维度一致）。`simulate.js`「海域威胁维度声明」段做双向校验，禁漂移。**当前声明 5 图：1-2 / 1-4 / 2-2 / 2-3 / 3-1**。
+- 特殊节点（`maps[].defs[x].mode`，V0.302）：`'sub'` 潜艇点 / `'night'` 夜战点 / `'air'` 航空战点。
+  - `mode:'air'`（批次1）：舰队**无航空战力**时进入「被动防空」——敌机直接轰炸、我方仅对空炮火还击。
+    判据 **`Battle.hasAirWing(side)`**（存活的 CV/CVL/CVB 且有 `slots[].size>0 && plane`），**与引擎 `markLaunch` 同源**；
+    `Battle.PASSIVE_AA_CAP === 0.6` 是单次轰炸伤害封顶（与潜艇点同口径，不做硬死档）。
+    三种边界必须区分（坑 #12）：①无航母 ②有航母未搭载舰载机 ③有航母只带舰攻（制空 0）——③仍走正常航空战。
+    结算结果上挂 `r.airWing / r.airPassive`；`fleetStats()` 也带 `airWing / carriers / carrierNames`。
+  - 节点进入横幅文案统一在 `Sortie.NODE_BANNER` + `Sortie.nodeBanner(def, {airWing, hasCarrier})`（**不逐图硬编码**）；
+    `Sortie.usedNodeModes()` 供「文案表覆盖全部 mode」断言使用。UI 渲染在 `ui/sortie.js::sortieActive` 的 `.map-banner`。
 - 舰队级能力接口（**唯一来源，UI 禁止另写一套**）：`Battle.fleetStats(fleetIdx)` / `enemyAirPower(key)` / `hasAirSuperiority(my,en)` / `specialAttackReport(fleetIdx,{airSup})`；
   `Game.fleetAir/fleetAsw/fleetNight/fleetSpeed/battleFleetStats` 是薄包装。「存档实例→战斗对象→聚合」链路只在 `battle.js` 内实现一次。
 - 特殊攻击判定表：`battle.js` 的 `DAY_SPECIALS`（5 项）/ `NIGHT_SPECIALS`（3 项）+ `attackProfile()`；`resolveDayAttack`/`resolveNightAttack` 与出击前清单**共用同一张表**，改倍率只改一处。
@@ -159,7 +167,8 @@ sim 1441 / 迁移 27 / E2E 133 全过，0 JS 错误；引擎逐位对拍仍零�
 
 **开发任务书 · 批次4（2026-09-11）**：方向四「海域作战目标」——存档升到 **v5**（`record.objectives`，`normalizeRecord` 改为按规范键序重建）；
 6 图 12 个目标（typeLimit 6 / sRank 3 / noHeavy 3），全部迫使改编成；纯函数 `checkObjectives` 只在 BOSS 判定；
-一次性奖励 + 防刷；海图详情与图鉴「战功」展示。sim 1466 / 迁移 32 / E2E 145 全过，0 JS 错误；对拍零漂移。
+一次性奖励 + 防刷；海图详情与图鉴「战功」展示。sim 1466 / 迁移 32 / E2E 153 全过，0 JS 错误；对拍零漂移。
+（E2E 原记 145，2026-09-12 复核实测为 153 —— 布局修复 commit `b002b08` 之后新增了断言，数字已校准。）
 **四个批次全部交付完毕**，汇总报告见 `../design/开发任务书_交付报告.md`；方向五验证结论 `../design/方向五_纸面验证结论.md`。
 
 **UI 布局修复 · 海域选择页（2026-09-12）**：用户反馈「2-1 正常、2-2 地图被拉长」。根因是
@@ -173,6 +182,13 @@ sim 1441 / 迁移 27 / E2E 133 全过，0 JS 错误；引擎逐位对拍仍零�
 任何一轮打出 C/D 就失败；改为每轮出击前 `Logistics.supplyFleet(1)` + 补满耐久。sim 1466 / 迁移 32 / E2E 153 全过。
 
 见 `HEARTBEAT.md` 最新条目（本文件只保留决策，心跳文件记录流水）。
+
+**V0.302 批次1 · 航空战点（2026-09-12）**：`mode:'air'` 落地 2-3 A 点（圣克鲁斯=航母对决，敌军 F22 制空 130）。
+无航空战力 → 「被动防空」分支（敌机直接轰炸 + 仅对空炮火还击，单次伤害封顶 60%）。
+新增 `Battle.hasAirWing/isCarrierType/PASSIVE_AA_CAP`、`fleetStats.airWing/carriers`、`r.airWing/airPassive`、
+`Sortie.NODE_BANNER/nodeBanner/usedNodeModes/mapHasAirNode`；2-3 补 `brief/threat/threatNote`。
+sim **1506** / 迁移 32 / E2E **165**（0 JS 错误）；**drift_check 9 组仍逐位一致**。
+工具新增 `scripts/shot.js`（无头浏览器截图，Gate 4）+ `public/_shot_air.html`（人工核对页）。
 
 ## 反遗忘检查清单
 

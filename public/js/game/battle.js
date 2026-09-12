@@ -175,6 +175,19 @@ const Battle = (() => {
   const isCV = s => s.type === 'CV' || s.type === 'CVL' || s.type === 'CVB';
   const isTorpType = s => ['DD', 'CL', 'CLT', 'CA', 'CAV', 'SS'].includes(s.type);
 
+  /* ============ 航空战力判定（航空战点 mode:'air' 的唯一判据） ============
+   * 「有航空战力」= 存在存活的空母系（CV/CVL/CVB）且至少一个搭载格有实际舰载机（size>0 且 plane）。
+   * 与引擎内的 markLaunch（放飞机）判据同源，因此三种「无航母」边界被自然区分（坑 #12）：
+   *   ① 完全没有航母            → 无航空战力 → 被动防空
+   *   ② 有航母但未搭载舰载机（空槽）→ 无航空战力 → 被动防空（但归因文案与 ① 不同）
+   *   ③ 有航母但没带舰战（只带舰攻）→ 有航空战力 → 走正常航空战，只是打不赢（不进被动防空） */
+  const hasCarrier = s => s.alive && (s.type === 'CV' || s.type === 'CVL' || s.type === 'CVB');
+  function hasAirWing(side) {
+    return side.some(s => hasCarrier(s) && s.slots.some(sl => sl.size > 0 && sl.plane));
+  }
+  /* 被动防空：敌机轰炸的伤害封顶比例（单次不超过目标耐久上限的 60%，与潜艇点一致 —— P0-2 不做硬死档） */
+  const PASSIVE_AA_CAP = 0.6;
+
   /* ============ 损伤状态（wiki: 小破75% / 中破50% / 大破25%） ============ */
   const dmgState = s => {
     const r = s.hp / s.stats.hpMax;
@@ -681,8 +694,10 @@ const Battle = (() => {
   }
 
   /* ============ 开幕空袭（批量结算）：双方防空(S2)结算完毕后，一次性结算全部空袭伤害，
-   * 命中行静默并汇总为一行，返回打击列表供 UI 一次性演出 ============ */
-  function airStrike(log, attackers, defenders, sideLabel, defSide, defForm) {
+   * 命中行静默并汇总为一行，返回打击列表供 UI 一次性演出
+   * capRatio（可选）：被轰炸方为玩家时，单次伤害不超过其耐久上限的该比例
+   *                   —— 仅「航空战点·被动防空」分支传入（P0-2：不做硬死档） */
+  function airStrike(log, attackers, defenders, sideLabel, defSide, defForm, capRatio) {
     const strikes = [];
     let hitN = 0, missN = 0, totalDmg = 0;
     for (const s of attackers) {
@@ -709,7 +724,8 @@ const Battle = (() => {
             ap = 20 + sl.planeAA * 3;
           }
           ap = threshold(ap, THRESHOLD.AIR);
-          const dmg = calcDamage(ap, t.stats.arm, 0.1);
+          let dmg = calcDamage(ap, t.stats.arm, 0.1);
+          if (capRatio && t.isPlayer) dmg = Math.min(dmg, Math.floor(t.stats.hpMax * capRatio));
           /* 空袭同样触发旗舰援护与防沉保护（wiki）；常规命中行静默，汇总输出 */
           const wasAlive = t.alive;
           applyDamage(log, s, t, dmg, `${sideLabel}空袭！`, ' 的机队轰炸', defSide, defForm, true);
@@ -862,10 +878,15 @@ const Battle = (() => {
   function fleetStats(fleetIdx) {
     const ships = playerShipsOf(fleetIdx);
     const slowNames = ships.filter(s => s.speed === 'slow').map(s => s.zh || s.name || s.uid);
+    const carriers = ships.filter(hasCarrier);
     return {
       ships,
       count: ships.length,
       air: airPower(ships),
+      carriers: carriers.length,
+      carrierNames: carriers.map(s => s.zh || s.name || s.uid),
+      /* 是否具备航空战力（空母系 + 舰载机）—— 航空战点是否走「被动防空」的唯一判据，UI 同源读取 */
+      airWing: hasAirWing(ships),
       los: ships.reduce((a, s) => a + (s.stats.los || 0), 0),
       asw: ships.reduce((a, s) => a + (s.stats.asw || 0), 0),
       aswCapable: ships.filter(canOpeningASW).length,
@@ -949,7 +970,7 @@ const Battle = (() => {
       const r0 = settle(log, sideA, sideB, false, formAName, formBName);
       r0.forceNight = true;
       /* 夜战节点无索敌/航空阶段：显式标记 recon=null，避免归因误判为「索敌失败」 */
-      attachBattleContext(r0, { reconOk: null, myAir: 0, enAir: 0, airSup: false, eng: null });
+      attachBattleContext(r0, { reconOk: null, myAir: 0, enAir: 0, airSup: false, eng: null, airKey: null, airWing: hasAirWing(sideA), airPassive: false });
       return r0;
     }
 
@@ -971,6 +992,7 @@ const Battle = (() => {
     log.push({ event: { kind: 'recon', ok: reconOk, lost: planeLost > 0, myLos: Math.round(recon.myLos), enLos: Math.round(recon.enLos) } });
     let airSup = false;
     let airKey = null;
+    let touchSide = null;      // 航空触接结果：'A' 我方触接成功 / 'B' 敌方触接成功 / null 未触接（批次2）
 
     /* ---- 交战形态（wiki 45/30/15/10；索敌成功且携带舰侦 → 权重向有利方向偏移一档，见 ENG_WEIGHTS） ---- */
     const hasReconPlane = sideA.some(s => s.alive && s.reconPlane);
@@ -978,8 +1000,13 @@ const Battle = (() => {
     const eng = Util.weighted(engagementWeights(reconOk, hasReconPlane));
     const engMod = ENG_MOD[eng];
 
-    /* ---- 航空战（索敌失败则无法参加航空战） ---- */
+    /* ---- 航空战（索敌失败则无法参加航空战） ----
+     * 航空战点（opts.airMode）且我方无航空战力时，转入「被动防空」分支（设计稿 §2.2 air）：
+     * 敌方舰攻/舰爆直接轰炸，我方仅对空炮火还击，战斗继续但劣化。 */
     const myAir = airPower(sideA), enAir = airPower(sideB);
+    const airWing = hasAirWing(sideA);
+    const passiveAA = !!opts.airMode && !airWing;
+    let airPhaseRan = false;
     /* 放飞机：拥有搭载飞机的舰艇起飞舰载机（合并为一次事件，双方同时起飞） */
     const launch = { A: [], B: [] };
     const markLaunch = (side, letter) => {
@@ -991,7 +1018,24 @@ const Battle = (() => {
       if (launch.A.length || launch.B.length) log.push({ event: { kind: 'launch', ships: launch } });
     };
     if ((myAir > 0 || enAir > 0)) {
-      if (reconOk) {
+      airPhaseRan = true;
+      if (passiveAA) {
+        /* ---- 被动防空（航空战点 · 我方无航空战力） ---- */
+        airKey = 'LOST';
+        L(reconOk
+          ? `航空战：我军制空 0，敌军制空 ${enAir} —— 舰队没有可投入航空战的舰载机，制空权自动丧失！`
+          : '索敌失败！无法参加航空战，制空权自动丧失！');
+        L('转入被动防空：敌机群直扑舰队，全舰队对空战斗配置 —— 我方仅有对空炮火还击，无法以舰载机反击。');
+        /* 我方舰载机不离舰；敌方机群照常起飞并遭我方对空炮火迎击 */
+        markLaunch(sideB, 'B');
+        pushLaunch();
+        const s2a = aaShootdown(sideB, sideA, true, fA.aa, log);
+        evFlak(s2a.shots, s2a.totalPlanes);
+        const airEn = airStrike(log, sideB, sideA, '敌军', sideA, formAName, PASSIVE_AA_CAP);
+        evAir(airEn.strikes);
+        if (airEn.line) L(airEn.line);
+        pushSnap();
+      } else if (reconOk) {
         const air = airState(myAir, enAir);
         airKey = air.key;
         L(`航空战！我军制空 ${myAir}，敌军制空 ${enAir}，${air.label}！`);
@@ -1238,17 +1282,23 @@ const Battle = (() => {
 
     /* ---- 结算 ---- */
     const r = settle(log, sideA, sideB, nightUsed, formAName, formBName);
-    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng, airKey });
+    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng, airKey, airWing, airPassive: passiveAA, touch: touchSide });
     return r;
   }
 
-  /* 把索敌/制空/交战形态结果挂到结算结果上（供 game 层失败归因使用；夜战追加后需重新挂载） */
+  /* 把索敌/制空/交战形态结果挂到结算结果上（供 game 层失败归因使用；夜战追加后需重新挂载）
+   * airWing   ：我方是否具备航空战力（空母系 + 舰载机）——航空战点归因要区分「无航母」与「制空不足」
+   * airPassive：本场是否走了「被动防空」分支（航空战点 + 无航空战力）
+   * touch     ：航空触接是否成功（'A' 我方 / 'B' 敌方 / null 未触接） */
   function attachBattleContext(r, ctx) {
     r.recon = ctx.reconOk === undefined ? null : ctx.reconOk;
     r.myAir = ctx.myAir || 0;
     r.enAir = ctx.enAir || 0;
     r.airSup = !!ctx.airSup;
     r.airKey = ctx.airKey || null;          // 制空状态 key（SURE/SUP/PAR/INF/LOST），供荣誉判定
+    r.airWing = !!ctx.airWing;
+    r.airPassive = !!ctx.airPassive;
+    r.touch = ctx.touch || null;
     r.engagement = ctx.eng || null;
     return r;
   }
@@ -1265,7 +1315,8 @@ const Battle = (() => {
     const r = settle(log, sideA, sideB, nightUsed, formAName, formBName);
     return attachBattleContext(r, {
       reconOk: dayResult.recon, myAir: dayResult.myAir, enAir: dayResult.enAir,
-      airSup: dayResult.airSup, eng: dayResult.engagement, airKey: dayResult.airKey
+      airSup: dayResult.airSup, eng: dayResult.engagement, airKey: dayResult.airKey,
+      airWing: dayResult.airWing, airPassive: dayResult.airPassive, touch: dayResult.touch
     });
   }
 
@@ -1274,6 +1325,8 @@ const Battle = (() => {
     /* 出击前情报室共用接口（禁止在 UI 另写一套算法） */
     buildCombatShip, airPower, fleetStats, enemyAirPower, hasAirSuperiority, specialAttackReport,
     DAY_SPECIALS, NIGHT_SPECIALS,
+    /* 航空线（批次1/2）：航空战力判定 + 被动防空封顶比例 —— UI 与归因禁止另写一套 */
+    hasAirWing, isCarrierType: hasCarrier, PASSIVE_AA_CAP,
     /* 士气档位（UI 徽记与文案读同一张表） */
     MORALE_TIERS, moraleTier, moraleMods, moraleBadge,
     /* 交战形态权重（方向五：侦察引导航向） */

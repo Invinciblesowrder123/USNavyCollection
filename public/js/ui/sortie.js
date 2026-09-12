@@ -16,7 +16,7 @@ const SortieUI = (() => {
   const MAP_BOARD = { w: 760, h: 460 };
   const MAP_MINI = { w: 236, h: 168 };
   const NODE_TYPE_ZH = { start: '出击点', battle: '战斗点', boss: 'BOSS点', resource: '资源点', supply: '补给点', whirlpool: '漩涡', empty: '航路节点' };
-  const NODE_MODE_ZH = { night: '夜战点', sub: '潜艇点' };
+  const NODE_MODE_ZH = { night: '夜战点', sub: '潜艇点', air: '航空战点' };
   const RES_ICON = { fuel: ['油', 'res-fuel'], ammo: ['弹', 'res-ammo'], steel: ['钢', 'res-steel'], baux: ['铝', 'res-baux'] };
   const RES_NAME = { fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土' };
   let _boardUid = 0;
@@ -33,6 +33,10 @@ const SortieUI = (() => {
   }
 
   function nodeMeta(def) {
+    /* 特殊节点（mode）优先：地图上一眼能看出「这个点是什么」，不必逐个点开 */
+    if (def.mode === 'night') return { cls: 'battle mode-night', icon: '☾' };
+    if (def.mode === 'sub') return { cls: 'battle mode-sub', icon: '⌇' };
+    if (def.mode === 'air') return { cls: 'battle mode-air', icon: '✈' };
     switch (def.type) {
       case 'start': return { cls: 'start', icon: '出撃' };
       case 'battle': return { cls: 'battle', icon: '⚔' };
@@ -95,6 +99,9 @@ const SortieUI = (() => {
         <span><b style="color:#ff8585">☠</b>BOSS</span>
         <span><b style="color:#7fe07f">◆</b>资源</span>
         <span><b style="color:#8fd0ff">⚓</b>补给</span>
+        <span><b style="color:#7fd7ff">✈</b>航空战</span>
+        <span><b style="color:#7a8cff">☾</b>夜战</span>
+        <span><b style="color:#6fe0d0">⌇</b>潜艇</span>
       </div>`}
     </div>`;
   }
@@ -427,6 +434,14 @@ const SortieUI = (() => {
     const def = Sortie.nodeDef(map, so.node);
 
     function renderNode() {
+      /* 航空战点横幅：文案与判据全部来自 game 层（Sortie.nodeBanner + Battle.fleetStats），UI 不另算 */
+      const fs = Game.battleFleetStats(so.fleetIdx) || { airWing: false, carriers: 0 };
+      const banner = Sortie.nodeBanner(def, { airWing: !!fs.airWing, hasCarrier: (fs.carriers || 0) > 0 });
+      const airHint = def.mode === 'air'
+        ? (fs.airWing
+          ? `<span class="dim">｜ 航空战力：航母 ${fs.carriers} 艘（制空 ${fs.air}）——将展开航母对决</span>`
+          : `<span class="dim">｜ 舰队无航空战力：敌机将直接轰炸，仅有对空炮火还击（单次伤害封顶 60%）</span>`)
+        : '';
       root.innerHTML = `
         <div class="panel">
           <div class="map-head">
@@ -435,12 +450,15 @@ const SortieUI = (() => {
           </div>
           ${mapTopbar(map, so)}
           <div class="map-board-wrap">${mapBoard(map, so)}</div>
+          ${banner ? `<div class="map-banner" data-banner="${def.mode || def.type}">${UI.esc(banner)}</div>` : ''}
           <div class="map-nodeinfo">
             <b>当前节点 ${so.node}</b>：${def.mode ? NODE_MODE_ZH[def.mode] : (NODE_TYPE_ZH[def.type] || def.type)}            ${def.mode === 'night'
               ? `<span class="dim">｜ 无昼战，直接夜战：驱逐/轻巡的夜战火力是关键</span>`
               : def.mode === 'sub'
                 ? `<span class="dim">｜ 潜艇伏击：需对潜舰艇（DD/CL）；低速大目标更易被雷击</span>`
-                : def.type === 'whirlpool'
+                : def.mode === 'air'
+                  ? airHint
+                  : def.type === 'whirlpool'
                   ? `<span class="dim">｜ 燃料 -min(${def.lossBase || 200}, 10%)；编入电探可减半</span>`
                   : def.type === 'battle' || def.type === 'boss'
                     ? `<span class="dim">｜ 敌军：${(ENEMY_FLEETS[def.enemy] || { ships: [], formation: '未知' }).ships.length} 舰（${(ENEMY_FLEETS[def.enemy] || { formation: '未知' }).formation}）</span>`

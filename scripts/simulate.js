@@ -169,19 +169,26 @@ assert('爱荷华/企业=高速', shipSpeed(ShipData['iowa']) === 'fast' && ship
 assert('兰利=低速', shipSpeed(ShipData['langley']) === 'slow');
 
 section('特殊节点数据完整性');
-let subNodeN = 0, nightNodeN = 0, whirlNodeN = 0;
+let subNodeN = 0, nightNodeN = 0, whirlNodeN = 0, airNodeN = 0;
 for (const m of MAPS) for (const [nid, def] of Object.entries(m.defs)) {
   if (def.mode === 'sub') {
     subNodeN++;
     assert(`${m.id}-${nid} 潜艇点敌编成含潜水舰`, ENEMY_FLEETS[def.enemy].ships.some(k => DEEP_TEMPLATES[k].type === 'SS'), def.enemy);
   }
   if (def.mode === 'night') nightNodeN++;
+  if (def.mode === 'air') {
+    airNodeN++;
+    /* 航空战点的敌军必须有航空战力，否则「制空」无意义（数据护栏） */
+    assert(`${m.id}-${nid} 航空战点敌军含舰载机`, Battle.enemyAirPower(def.enemy) > 0, def.enemy + ' air=' + Battle.enemyAirPower(def.enemy));
+  }
   if (def.type === 'whirlpool') { whirlNodeN++; assert(`${m.id}-${nid} 漩涡lossBase>0`, (def.lossBase || 0) > 0); }
 }
 assert('夜战节点已落1-4 B点', MAPS.find(m => m.id === '1-4').defs.B.mode === 'night', 'n=' + nightNodeN);
 assert('潜艇节点=2处且都在2-2', subNodeN === 2, 'n=' + subNodeN);
 assert('漩涡节点=1处且在3-1 W', whirlNodeN === 1 && !!MAPS.find(m => m.id === '3-1').defs.W);
-for (const bid of ['1-4', '2-2', '3-1']) {
+assert('航空战点首现于 2-3 A 点（圣克鲁斯=航母对决）',
+  airNodeN >= 1 && MAPS.find(m => m.id === '2-3').defs.A.mode === 'air', 'n=' + airNodeN);
+for (const bid of ['1-4', '2-2', '2-3', '3-1']) {
   const mm = MAPS.find(x => x.id === bid);
   assert(`${bid} 作战简报已配置`, typeof mm.brief === 'string' && mm.brief.length > 20);
 }
@@ -1036,7 +1043,7 @@ const mapHasWhirl = m => Object.values(m.defs).some(d => d.type === 'whirlpool')
 const mapHasLos = m => { const b = m.branch ? (Array.isArray(m.branch) ? m.branch : [m.branch]) : []; return b.some(x => x.if && x.if.los); };
 const mapHasAir = m => Object.values(m.defs).some(d => (d.type === 'battle' || d.type === 'boss') && d.enemy && Battle.enemyAirPower(d.enemy) > 0);
 const THREAT_RULES = [['asw', mapHasSub], ['night', mapHasNight], ['radar', mapHasWhirl], ['los', mapHasLos], ['air', mapHasAir]];
-const ANNOTATED = ['1-2', '1-4', '2-2', '3-1'];
+const ANNOTATED = ['1-2', '1-4', '2-2', '2-3', '3-1'];
 const vocabBad = [], exactBad = [], forwardBad = [];
 let annotatedCount = 0;
 for (const m of MAPS) {
@@ -1051,9 +1058,9 @@ for (const m of MAPS) {
 }
 assert('威胁维度全部来自允许词表', vocabBad.length === 0, vocabBad.join('、'));
 assert('已声明维度的海域：必需维度无遗漏（防剖面漂移）', forwardBad.length === 0, forwardBad.join('、'));
-assert('4 张声明海域的维度与节点类型逐项一致（双向）', exactBad.length === 0, exactBad.join('、'));
-assert('首版只声明 4 张图', annotatedCount === 4, 'n=' + annotatedCount);
-assert('4 张图均有威胁说明文案', ANNOTATED.every(id => {
+assert('5 张声明海域的维度与节点类型逐项一致（双向）', exactBad.length === 0, exactBad.join('、'));
+assert('已声明维度的海域数 = 已铺开特殊节点的海域数（防空转）', annotatedCount === 5, 'n=' + annotatedCount);
+assert('5 张图均有威胁说明文案', ANNOTATED.every(id => {
   const m = MAPS.find(x => x.id === id);
   return (m.threat || []).length > 0 && (m.threatNote || '').length > 20;
 }));
@@ -1622,6 +1629,184 @@ section('方向四·海域作战目标（任务4.1–4.3）');
   assert('未参战舰的履历不写达成记录', Object.keys(objBystander.record.objectives).length === 0);
   map.objectives = backup;
 }
+
+/* ============================================================
+ * 批次1：航空战点（mode:'air'）+ 被动防空分支（V0.302）
+ * 1.1 节点类型与数据 / 1.2 被动防空（三种「无航母」边界 + 伤害封顶）/ 1.3 文案三处
+ * ============================================================ */
+section('批次1·航空战点数据（任务1.1）');
+const MAP23 = MAPS.find(m => m.id === '2-3');
+assert('2-3 A 点被 Sortie.nodeDef 解析为航空战点',
+  Sortie.nodeDef(MAP23, 'A').mode === 'air' && Sortie.nodeDef(MAP23, 'A').type === 'battle',
+  JSON.stringify(Sortie.nodeDef(MAP23, 'A')));
+assert('2-3 A 点是航母对决敌军（敌军有航空战力）', Battle.enemyAirPower('F22') > 0, 'air=' + Battle.enemyAirPower('F22'));
+assert('air 节点在地图结构中可被分支/前进逻辑正常遍历（S→A 有边）',
+  MAP23.edges.some(e => e[0] === 'S' && e[1] === 'A'));
+assert('航空战点海域已声明 air 威胁维度', (MAP23.threat || []).includes('air'), JSON.stringify(MAP23.threat));
+assert('2-3 brief 含「航空战」关键字（P0-6 机制与文案同批）', /航空战/.test(MAP23.brief || ''), MAP23.brief);
+assert('2-3 brief 写明「没有航空母舰的舰队将暴露在敌机轰炸之下」', /没有航空母舰的舰队将暴露在敌机轰炸之下/.test(MAP23.brief || ''));
+assert('2-3 brief 写明「编入航母并搭载舰战」', /编入航母并搭载舰战/.test(MAP23.brief || ''));
+
+section('批次1·被动防空分支（任务1.2）');
+/* 四种编成：无航母 / 有航母·舰战满载 / 有航母·只带舰攻（制空 0）/ 有航母·空槽 */
+const airFleetNoCV = [intelEquipShip('iowa', 99, 1, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+  intelEquipShip('benson', 80, 0, ['gun5in_38', 'torp_mk15'])];
+const airFleetFighter = [intelEquipShip('enterprise', 99, 1, ['f6f5', 'f6f5', 'f6f5', 'f6f5'])];
+const airFleetTorpedo = [intelEquipShip('enterprise', 99, 1, ['tbf', 'tbf', 'tbf', 'tbf'])];
+const airFleetEmpty = [intelEquipShip('enterprise', 99, 1, [])];
+const AIR_OPTS = { allowNight: false, fleetIdx: 1, airMode: true };
+const AIR_PLAIN = { allowNight: false, fleetIdx: 1 };
+const runAir = (fleet, opts) => Battle.battle(fleet, ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation, opts);
+const logHas = (r, kw) => r.log.some(l => typeof l === 'string' && l.includes(kw));
+
+/* —— 断言 3：无航母编成进 air 节点，战斗正常结束 + 走被动防空 —— */
+const airNoCV = runAir(airFleetNoCV, AIR_OPTS);
+assert('无航母进点：战斗正常结束（返回评价、无异常）',
+  typeof airNoCV.rank === 'string' && airNoCV.log.length > 0, 'rank=' + airNoCV.rank);
+assert('无航母进点：日志含「被动防空」关键字', logHas(airNoCV, '被动防空'), airNoCV.log.filter(l => typeof l === 'string').slice(-4).join(' | '));
+assert('无航母进点：日志含「对空战斗」关键字', logHas(airNoCV, '对空战斗'));
+assert('无航母进点：结算标记 airPassive / airKey=LOST / airWing=false',
+  airNoCV.airPassive === true && airNoCV.airKey === 'LOST' && airNoCV.airWing === false,
+  `passive=${airNoCV.airPassive} key=${airNoCV.airKey} wing=${airNoCV.airWing}`);
+
+/* —— 断言 4：有航母且带舰战 → 正常航空战路径（不进被动防空） —— */
+/* 索敌失败的场次不走航空战（既非被动防空也非正常航空战），故重试到索敌成功为止 */
+let airFighter = null;
+for (let i = 0; i < 80; i++) {
+  const r = runAir(airFleetFighter, AIR_OPTS);
+  if (r.recon === true) { airFighter = r; break; }
+}
+assert('有航母带舰战进点：走正常航空战（日志含「航空战！我军制空」）',
+  !!airFighter && logHas(airFighter, '航空战！我军制空'),
+  airFighter ? airFighter.log.filter(l => typeof l === 'string').slice(0, 4).join(' | ') : '(80 次索敌全部失败)');
+assert('有航母带舰战进点：不进被动防空',
+  !!airFighter && airFighter.airPassive === false && !logHas(airFighter, '被动防空') && airFighter.airWing === true);
+/* 与「普通战斗图」行为一致：同一编成、不加 airMode 时同样不发生被动防空 */
+const airFighterPlain = runAir(airFleetFighter, AIR_PLAIN);
+assert('有航母带舰战：加不加 airMode 都走同一条航空战路径（不加 airMode 也不出现被动防空）',
+  !logHas(airFighterPlain, '被动防空') && airFighterPlain.airPassive === false,
+  'plain passive=' + airFighterPlain.airPassive);
+Game.state.fleet[1] = airFleetFighter;
+assert('有航母带舰战：能对 2-3 敌军取得制空优势以上（设计上「单航母满载舰战 ≈289 > 敌军 130」）',
+  Battle.hasAirSuperiority(Game.battleFleetStats(1).air, Battle.enemyAirPower('F22')) === true,
+  'my=' + Game.battleFleetStats(1).air + ' en=' + Battle.enemyAirPower('F22'));
+
+/* —— 断言 5：有航母但没带舰战（制空 0）→ 不 进被动防空（有航空战，只是打不赢） —— */
+const airTorpedo = runAir(airFleetTorpedo, AIR_OPTS);
+assert('有航母但只带舰攻（制空 0）：仍走正常航空战，不进被动防空',
+  airTorpedo.airWing === true && airTorpedo.airPassive === false && !logHas(airTorpedo, '被动防空'),
+  `wing=${airTorpedo.airWing} passive=${airTorpedo.airPassive} airKey=${airTorpedo.airKey}`);
+assert('有航母但只带舰攻：制空为 0 且未取得航空优势（airSup=false）',
+  airTorpedo.myAir === 0 && airTorpedo.airSup === false, `myAir=${airTorpedo.myAir} airSup=${airTorpedo.airSup}`);
+
+/* —— 断言 6：单次敌机轰炸伤害 ≤ 目标耐久上限 × 60%（明确比例）
+ * 只统计「空袭阶段」（第一轮炮击战之前）的轰炸事件；炮击战里空母系的航空攻击属既有机制，另有口径 —— */
+const AIR_CAP_RATIO = 0.6;
+let worstStrike = 0, worstTarget = '', airStrikeN = 0;
+for (let i = 0; i < 150; i++) {
+  const r = runAir(airFleetNoCV, AIR_OPTS);
+  const shellIdx = r.log.findIndex(l => typeof l === 'string' && l.includes('第一轮炮击战'));
+  const end = shellIdx < 0 ? r.log.length : shellIdx;
+  for (let k = 0; k < end; k++) {
+    const e = r.log[k];
+    if (!e || !e.event || e.event.kind !== 'air' || e.event.atkS !== 'B') continue;
+    for (const st of (e.event.strikes || [])) {
+      if (!st.hit) continue;
+      const t = r.mySide[st.tgtI];
+      if (!t) continue;
+      airStrikeN++;
+      const ratio = st.dmg / Math.max(1, t.stats.hpMax);
+      if (ratio > worstStrike) { worstStrike = ratio; worstTarget = t.name; }
+    }
+  }
+}
+assert('被动防空的敌机轰炸确实发生过（样本有效，非空转）', airStrikeN > 0, 'n=' + airStrikeN);
+assert(`单次敌机轰炸伤害 ≤ 目标耐久上限 ×${AIR_CAP_RATIO}（不进点即大破旗舰）`,
+  worstStrike <= AIR_CAP_RATIO + 1e-9, `max=${worstStrike.toFixed(3)} on ${worstTarget} / n=${airStrikeN}`);
+assert('封顶比例与潜艇点一致（P0-2 不做硬死档的统一口径）',
+  Battle.PASSIVE_AA_CAP === 0.6, 'cap=' + Battle.PASSIVE_AA_CAP);
+
+/* —— 断言 7（回归）：非 air 节点的战斗行为不变 —— */
+const plainF22 = runAir(airFleetNoCV, AIR_PLAIN);
+assert('回归：不加 airMode 时不会出现被动防空日志（普通战斗点行为不变）',
+  !logHas(plainF22, '被动防空') && plainF22.airPassive === false);
+assert('回归：夜战节点（nightOnly）仍然不经过航空战、不产生被动防空',
+  (() => {
+    const r0 = Battle.battle(airFleetNoCV, ENEMY_FLEETS.F13.ships, '单纵阵', ENEMY_FLEETS.F13.formation,
+      { allowNight: false, nightOnly: true, fleetIdx: 1, airMode: true });
+    return r0.airPassive === false && !logHas(r0, '被动防空') && r0.recon === null;
+  })());
+
+section('批次1·航空战点文案三处（任务1.3）');
+const bannerAirWing = Sortie.nodeBanner({ mode: 'air' }, { airWing: true, hasCarrier: true });
+const bannerNoCV = Sortie.nodeBanner({ mode: 'air' }, { airWing: false, hasCarrier: false });
+const bannerNoPlanes = Sortie.nodeBanner({ mode: 'air' }, { airWing: false, hasCarrier: true });
+assert('航空战点横幅：有航母 → 「桅顶瞭望：机群临空。这是航母之间的战斗。」',
+  bannerAirWing === '桅顶瞭望：机群临空。这是航母之间的战斗。', bannerAirWing);
+assert('航空战点横幅：无航母 → 「舰队没有航空母舰。全舰队，对空战斗配置——」',
+  bannerNoCV === '舰队没有航空母舰。全舰队，对空战斗配置——', bannerNoCV);
+/* 坑 #12：三种边界的文案必须互不相同（否则归因/横幅会误报） */
+assert('三种「无航空战力」边界文案互不相同',
+  new Set([bannerAirWing, bannerNoCV, bannerNoPlanes]).size === 3,
+  [bannerAirWing, bannerNoCV, bannerNoPlanes].join(' / '));
+assert('横幅文案表覆盖全部已使用的节点 mode（无 fallback 成空串）',
+  Sortie.usedNodeModes().every(k => {
+    const def = k === 'whirlpool' ? { type: 'whirlpool' } : { mode: k, type: 'battle' };
+    return [true, false].every(w => Sortie.nodeBanner(def, { airWing: w, hasCarrier: w }).length > 0);
+  }), Sortie.usedNodeModes().join(','));
+assert('回归：夜战/潜艇/漩涡 横幅仍非空',
+  Sortie.nodeBanner({ mode: 'night' }).length > 0 && Sortie.nodeBanner({ mode: 'sub' }).length > 0 &&
+  Sortie.nodeBanner({ type: 'whirlpool' }).length > 0);
+
+/* 归因（接入 attributionLines，不新建消息系统） */
+const airAttrFleet = airFleetNoCV.slice();
+Game.state.fleet[1] = airAttrFleet;
+const attrAirNoCV = Sortie.attributionLines({
+  result: { victory: false, rank: 'D', myAir: 0, enAir: 130, airSup: false, recon: true, airWing: false, airKey: 'LOST' },
+  nodeDef: { type: 'battle', mode: 'air' }, fleet: airAttrFleet, st: Game.state
+});
+assert('无航母败局归因：命中「没有航空母舰」分支',
+  attrAirNoCV.some(l => l.includes('失去制空权') && l.includes('编入航空母舰并搭载舰战')), attrAirNoCV.join(' | '));
+assert('无航母败局归因：不得出现「制空不足」（防误报）',
+  !attrAirNoCV.some(l => l.includes('制空不足')), attrAirNoCV.join(' | '));
+/* 断言 10（最关键）：有航母但制空不足 → 命中「制空」分支，而 不是「没有航空母舰」分支 */
+const attrAirWeak = Sortie.attributionLines({
+  result: { victory: false, rank: 'D', myAir: 40, enAir: 300, airSup: false, recon: true, airWing: true, airKey: 'LOST' },
+  nodeDef: { type: 'battle', mode: 'air' }, fleet: [intelEquipShip('enterprise', 99, 1, ['f6f5'])], st: Game.state
+});
+assert('有航母但制空不足：归因命中「制空不足」分支',
+  attrAirWeak.some(l => l.includes('制空不足') || l.includes('制空权丧失')), attrAirWeak.join(' | '));
+assert('有航母但制空不足：归因 不 出现「没有航空母舰」（防误报，最关键）',
+  !attrAirWeak.some(l => l.includes('没有航空母舰')), attrAirWeak.join(' | '));
+/* 有航母但空槽 → 第三种文案 */
+const attrAirNoPlanes = Sortie.attributionLines({
+  result: { victory: false, rank: 'D', myAir: 0, enAir: 130, airSup: false, recon: true, airWing: false, airKey: 'LOST' },
+  nodeDef: { type: 'battle', mode: 'air' }, fleet: [intelEquipShip('enterprise', 99, 1, [])], st: Game.state
+});
+assert('有航母但未搭载舰载机：归因与「没有航空母舰」区分开',
+  attrAirNoPlanes.some(l => l.includes('未搭载舰载机')) && !attrAirNoPlanes.some(l => l.includes('失去制空权')),
+  attrAirNoPlanes.join(' | '));
+assert('回归：胜局不因新增 air 归因分支而产生归因',
+  Sortie.attributionLines({
+    result: { victory: true, rank: 'S', myAir: 0, enAir: 130, airSup: false, recon: true, airWing: false },
+    nodeDef: { type: 'battle', mode: 'air' }, fleet: airAttrFleet, st: Game.state
+  }).length === 0);
+/* 情报室同源：2-3 的 air 对位读 fleetStats.airWing（不在 UI 另算） */
+Game.state.fleet[1] = airFleetNoCV;
+const intel23NoCV = Sortie.intel(1, '2-3');
+assert('情报室 2-3：无航母 → air 对位不满足，且文案指明「没有航空母舰」',
+  intel23NoCV.threats.find(t => t.key === 'air').ok === false &&
+  /没有航空母舰|未搭载/.test(intel23NoCV.threats.find(t => t.key === 'air').detail),
+  intel23NoCV.threats.find(t => t.key === 'air').detail);
+Game.state.fleet[1] = airFleetFighter;
+const intel23CV = Sortie.intel(1, '2-3');
+assert('情报室 2-3：带舰战航母 → air 对位满足（同源自 fleetStats.airWing）',
+  intel23CV.threats.find(t => t.key === 'air').ok === true && intel23CV.air.airWing === true,
+  intel23CV.threats.find(t => t.key === 'air').detail);
+assert('情报室 2-3：横幅与编成状态一致（有航空战力 → 航母对决文案）',
+  intel23CV.air.banner === Sortie.NODE_BANNER.air, intel23CV.air.banner);
+assert('情报室 air 区块只在含航空战点的图出现（2-1 无）',
+  Sortie.intel(1, '2-1').air.node === false && Sortie.intel(1, '2-1').air.banner === '');
 
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);

@@ -103,8 +103,10 @@ const ENEMY_FLEETS = {
   F20: { formation: '单纵阵', ships: ['eca1e', 'edd3', 'edd2', 'ecl1e'] },
   F20b: { formation: '梯形阵', ships: ['ess4', 'ess3', 'eca1e', 'edd2e'] },   // 2-2 C点：精锐潜艇+重巡混合伏击
   F21: { formation: '梯形阵', ships: ['eB8', 'ess1', 'ess1', 'edd2e'] },
-  /* ---- 2-3 圣克鲁斯海域（wiki 2-3 东部奥廖尔海：长航路哨戒，战列舰Ru级flagship BOSS） ---- */
-  F22: { formation: '单纵阵', ships: ['ecl1e', 'edd2', 'edd2', 'edd2'] },
+  /* ---- 2-3 圣克鲁斯海域（wiki 2-3 东部奥廖尔海：长航路哨戒，战列舰Ru级flagship BOSS）
+   * F22 改造为「圣克鲁斯机动部队」——本图 A 点航空战点（mode:'air'）的敌军：
+   * 圣克鲁斯海战=史上航母对决，双空母（Wo级 + Nu级精锐）制空 130（单航母满载舰战 ≈289 → 可夺优势，双航母确保） */
+  F22: { formation: '轮形阵', ships: ['ecv1', 'ecvl1e', 'eca1e', 'edd2e', 'edd2e'] },
   F23: { formation: '单纵阵', ships: ['ecl1e', 'eclt1e', 'eclt1e', 'edd2e', 'edd2', 'edd2'] },
   F24: { formation: '复纵阵', ships: ['ecl1e', 'eap1', 'eap1', 'eap1', 'edd2e', 'edd2e'] },
   F25: { formation: '单纵阵', ships: ['eclt1e', 'eca1e', 'eca1', 'ecl1', 'edd2', 'edd2'] },
@@ -195,7 +197,14 @@ const ENEMY_FLEETS = {
 };
 
 /* ---------- 海域定义 ----------
- * node: { type: 'battle'|'boss'|'resource'|'supply'|'empty', enemy, reward }
+ * node: { type: 'battle'|'boss'|'resource'|'supply'|'whirlpool'|'empty', enemy, reward, mode?, cost? }
+ *   mode（特殊节点，P1 批A/批B）：'sub' 潜艇点 / 'night' 夜战点 / 'air' 航空战点
+ *     - 'sub'  ：敌方潜艇雷击按速力修正 + 单次 60% 耐久封顶
+ *     - 'night'：跳过昼战索敌/航空阶段，直接夜战（结算 recon=null，不误判为索敌失败）
+ *     - 'air'  ：舰队无航空战力（无航母或航母未搭载舰载机）时进入「被动防空」分支——
+ *                敌机直接轰炸、我方仅对空炮火还击，单次轰炸伤害封顶 60% 耐久（不做硬死档）
+ *   cost：覆写本节点油弹消耗（默认战斗点 油20%/弹20%，如 1-5 反潜点 油8%/弹0）
+ *   whirlpool：{ lossBase } 只扣燃料，双封顶（min(lossBase, 持有量×10%)），编入电探减半
  * branch: 单对象 {at, if: {los?, dd?}, to: [...]} 或数组 [{at,...},...]（每个分歧点一条，按序判定）
  *         命中走 to 分支，否则走其余边（兜底路线）
  * objectives（可选，方向四·海域作战目标）：
@@ -344,7 +353,11 @@ const MAPS = [
     bossDrops: ['sbroberts', 'reno', 'indianapolis']
   },
   {
-    id: '2-3', name: '圣克鲁斯海域', desc: '漫长的哨戒航线，舰队的补给生命线。敌战列舰精锐主力迫近！', stars: 8,
+    id: '2-3', name: '圣克鲁斯海域', desc: '1942 年，双方的航母在这片海域互相寻找了三天。敌机动部队与战列舰精锐同时迫近！', stars: 8,
+    brief: '圣克鲁斯。1942 年，双方的航母在这里互相寻找了三天。\n本海域含航空战节点。没有航空母舰的舰队将暴露在敌机轰炸之下。建议编入航母并搭载舰战。',
+    /* threat：los ← C 点 branch.if.los；air ← A 点 mode:'air'（敌军 F22 含空母 Wo/Nu 级） */
+    threat: ['los', 'air'],
+    threatNote: '本海域考验索敌与制空。A 点即为航空战点：未编入航母的舰队无法展开航空战，只能以对空炮火被动迎击敌机轰炸。索敌≥45 可直取燃料补给线（B/D 资源点 → BOSS），否则沟入输送舰队多打一场。',
     start: 'S', boss: 'H', gauge: 5,
     admExp: { node: 80, boss: 1100 },    // 提督经验（wiki 2-3: 道中+80 / BOSS+1100）
     nodes: {
@@ -354,7 +367,7 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'B'], ['B', 'C'], ['C', 'D'], ['C', 'G'], ['D', 'H'], ['G', 'H']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F22' },
+      A: { type: 'battle', enemy: 'F22', mode: 'air' },   // 航空战点：航母对决（无航母 → 被动防空，仅对空炮火还击）
       B: { type: 'resource', reward: ['ammo'] },
       C: { type: 'battle', enemy: 'F23' },
       D: { type: 'resource', reward: ['fuel'] },

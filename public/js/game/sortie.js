@@ -215,7 +215,8 @@ const Sortie = (() => {
     const result = Battle.battle(fleet, enemyFleet.ships, formation, enemyFleet.formation, {
       allowNight: false, fleetIdx: so.fleetIdx,
       sub: def.mode === 'sub',            // 潜艇点：敌潜艇速力打击修正 + 60% 耐久封顶
-      nightOnly: def.mode === 'night'     // 夜战点：跳过昼战直接夜战
+      nightOnly: def.mode === 'night',    // 夜战点：跳过昼战直接夜战
+      airMode: def.mode === 'air'         // 航空战点：无航空战力时进入被动防空分支（单次轰炸伤害封顶 60%）
     });
     if (oilerUsed) result.log.unshift('「洋上补给」发动！舰队油弹恢复到100%。');
     return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, doomed };
@@ -295,9 +296,24 @@ const Sortie = (() => {
         : '反潜战斗失利。深水炸弹与对潜声呐可强化驱逐舰的反潜输出。');
     } else if (def.mode === 'night') {
       out.push('夜战不利。驱逐舰与轻巡洋舰的鱼雷与夜战装备是夜战的王牌。');
+    } else if (def.mode === 'air') {
+      /* 航空战点（批次1）：先区分「根本没展开航空战」与「展开了但制空不足」——防误报（坑 #12）
+       * 归因文案按「是否编入航母」再分两种，与节点横幅文案表同源 */
+      const hasCV = ships.some(uid => {
+        const s = st.ships[uid];
+        if (!s) return false;
+        const ty = ShipData[s.id] && ShipData[s.id].type;
+        return ty === 'CV' || ty === 'CVL' || ty === 'CVB';
+      });
+      if (result.airWing === false) {
+        out.push(hasCV
+          ? '航空母舰未搭载舰载机，无法展开航空战。敌机轰击毫无遮蔽的舰队。（为航母搭载舰战或舰攻即可展开航空战）'
+          : '失去制空权。敌机轰击毫无遮蔽的舰队。（编入航空母舰并搭载舰战可夺取制空）');
+      }
     }
-    /* 2) 制空丧失（我方有航空战力、敌方也有，但未取得航空优势） */
-    if (result.myAir > 0 && result.enAir > 0 && result.airSup === false) {
+    /* 2) 制空不足/丧失（我方确实展开了航空战但未取得优势）
+     *    被动防空（airWing=false）已在上面单独归因，此处不再重复（防重复归因） */
+    if (result.airWing !== false && result.enAir > 0 && result.airSup === false && (result.myAir > 0 || result.airKey === 'LOST')) {
       out.push(`制空不足：我军制空 ${result.myAir} 对敌 ${result.enAir}，未能取得航空优势，昼战特殊攻击全部无法发动。`
         + '改进方向：编入更多舰战，或提高舰载机搭载。');
     }
@@ -570,6 +586,40 @@ const Sortie = (() => {
   };
   const THREAT_KEYS = Object.keys(THREAT_INFO);
 
+  /* ============ 节点进入横幅文案（设计稿 §5.2；统一文案表，不逐海域硬编码）============
+   * 航空战点分三种：有航空战力（航母对决）/ 无航母 / 有航母但未搭载舰载机——
+   * 三者文案必须可区分（坑 #12：归因误报是本项目最易出的一类 bug）。
+   * 覆盖度断言见 scripts/simulate.js（全部已使用的 mode 值都必须有非空文案）。 */
+  const NODE_BANNER = {
+    night: '日落。照明弹升起，敌水雷战队在黑暗中逼近。',
+    sub: '声呐捕捉到水下异响——深海潜艇，伏击阵位。',
+    air: '桅顶瞭望：机群临空。这是航母之间的战斗。',
+    airNoWing: '舰队没有航空母舰。全舰队，对空战斗配置——',
+    airNoPlanes: '航空母舰未搭载舰载机。全舰队，对空战斗配置——',
+    whirlpool: '罗盘开始打转。洋流正在拖拽舰队。'
+  };
+  /* 取本节点进入横幅；ctx.airWing / ctx.hasCarrier 一律来自 Battle.fleetStats（UI 不得另算） */
+  function nodeBanner(def, ctx = {}) {
+    if (!def) return '';
+    if (def.mode === 'night') return NODE_BANNER.night;
+    if (def.mode === 'sub') return NODE_BANNER.sub;
+    if (def.mode === 'air') {
+      if (ctx.airWing) return NODE_BANNER.air;
+      return ctx.hasCarrier ? NODE_BANNER.airNoPlanes : NODE_BANNER.airNoWing;
+    }
+    if (def.type === 'whirlpool') return NODE_BANNER.whirlpool;
+    return '';
+  }
+  /* 全海域实际用到的节点 mode（含 type:'whirlpool'）—— 供文案覆盖度断言使用 */
+  function usedNodeModes() {
+    const s = new Set();
+    for (const m of MAPS) for (const d of Object.values(m.defs || {})) {
+      if (d.mode) s.add(d.mode);
+      if (d.type === 'whirlpool') s.add('whirlpool');
+    }
+    return [...s];
+  }
+
   /* 海域分支索敌需求（无索敌分支返回 0） */
   function requiredLos(map) {
     const brs = map.branch ? (Array.isArray(map.branch) ? map.branch : [map.branch]) : [];
@@ -598,6 +648,10 @@ const Sortie = (() => {
       return ty === 'DD' || ty === 'CL' || ty === 'DE' || ty === 'AS';
     });
   }
+  /* 该图是否含航空战点（mode:'air'） */
+  function mapHasAirNode(map) {
+    return Object.values((map && map.defs) || {}).some(d => d.mode === 'air');
+  }
 
   /* 海域威胁维度对位判定：只对该图声明的维度返回结果（未声明维度的海域返回空数组，UI 不显示该区块） */
   function threatCheck(fleetIdx, map, stats) {
@@ -611,8 +665,14 @@ const Sortie = (() => {
     const out = [];
     for (const k of dims) {
       if (k === 'air') {
-        out.push({ key: k, name: THREAT_INFO[k].name, ok: s.air > 0,
-          detail: s.air > 0 ? `制空 ${s.air}` : '制空 0：舰队没有舰载战斗机，该图敌军有航空战力，将丧失制空权（建议编入舰战）' });
+        /* 航空战点（mode:'air'）：判据用「是否有航空战力」（空母系 + 舰载机），
+         * 而非单纯的制空值——有航母但没带舰战的情况制空为 0，却仍能展开航空战（坑 #12 情形③） */
+        const airNode = mapHasAirNode(map);
+        const ok = airNode ? !!s.airWing : s.air > 0;
+        const detail = ok
+          ? (s.air > 0 ? `制空 ${s.air}（可争夺制空权）` : '有航母但未搭载舰战：制空 0，可展开航空战但无法争夺制空权')
+          : '制空 0：舰队没有航空母舰或未搭载舰载机，该图含航空战点，将只能以对空炮火被动迎击敌机轰炸（建议编入航母并搭载舰战）';
+        out.push({ key: k, name: THREAT_INFO[k].name, ok, detail });
       } else if (k === 'los') {
         out.push({ key: k, name: THREAT_INFO[k].name, ok: losNeed === 0 || los >= losNeed,
           detail: losNeed ? `需求 ≥${losNeed}（当前 ${los}）` : `当前 ${los}` });
@@ -660,6 +720,14 @@ const Sortie = (() => {
         air: stats.air, los: G.fleetLos(fleetIdx), asw: stats.asw, aswCapable: stats.aswCapable,
         night: stats.night, speed
       },
+      /* 航空线（批次1）：航空战力状态 —— 一律来自 Battle.fleetStats（同源，UI 不得另算） */
+      air: {
+        node: mapHasAirNode(map),
+        airWing: !!stats.airWing,
+        carriers: stats.carriers || 0,
+        carrierNames: stats.carrierNames || [],
+        banner: nodeBanner(Sortie_nodeDefOf(map), { airWing: stats.airWing, hasCarrier: (stats.carriers || 0) > 0 })
+      },
       enemyAir, airSup,
       morale,
       moraleAdvice: moraleAdvice(fleetIdx),
@@ -667,6 +735,13 @@ const Sortie = (() => {
       threats: threatCheck(fleetIdx, map, stats),
       specials: B.specialAttackReport(fleetIdx, { airSup, myAir: stats.air, enAir: enemyAir })
     };
+  }
+  /* 该图「含航空战节点」时的节点定义（供情报室取横幅文案；无则返回空对象） */
+  function Sortie_nodeDefOf(map) {
+    for (const [nid, d] of Object.entries((map && map.defs) || {})) {
+      if (d.mode === 'air') return Object.assign({ _node: nid }, d);
+    }
+    return {};
   }
 
   /* 战斗结束后移动到下一节点 */
@@ -733,6 +808,8 @@ const Sortie = (() => {
     /* 出击前情报室（方向一）+ 失败归因 */
     intel, threatCheck, requiredLos, fleetHasRadar, fleetHasAswShip, attributionLines,
     THREAT_INFO, THREAT_KEYS,
+    /* 节点进入横幅文案表（批次1：航空战点三种边界的文案必须可区分） */
+    NODE_BANNER, nodeBanner, usedNodeModes, mapHasAirNode,
     /* 海域作战目标（方向四） */
     checkObjectives, objectiveCondText, objectivePreview, objectiveMet, rewardText,
     /* 士气（方向三） */

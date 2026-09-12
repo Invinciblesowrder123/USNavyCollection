@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>air node preview</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="background:#0a1626">
+  <div id="app">
+    <main id="screen" style="max-width:1440px;margin:0 auto;padding:12px"></main>
+  </div>
+  <script src="js/core/utils.js"></script>
+  <script src="js/data/equipment.js"></script>
+  <script src="js/data/ships.js"></script>
+  <script src="js/data/maps.js"></script>
+  <script src="js/data/quests.js"></script>
+  <script src="js/core/state.js"></script>
+  <script src="js/game/battle.js"></script>
+  <script src="js/game/factory.js"></script>
+  <script src="js/game/improve.js"></script>
+  <script src="js/game/logistics.js"></script>
+  <script src="js/game/progression.js"></script>
+  <script src="js/game/sortie.js"></script>
+  <script src="js/ui/common.js"></script>
+  <script src="js/ui/sortie.js"></script>
+  <script>
+    /* 航空战点（2-3 A）人工核对页：?case=noCV 无航母 / withCV 带舰战航母 / brief 海域简报
+     * 用法：npm start 后打开 http://127.0.0.1:3000/_shot_air.html?case=noCV */
+    window.addEventListener('load', function () {
+      var q = new URLSearchParams(location.search);
+      var c = q.get('case') || 'noCV';
+      Game.newGame();
+      Game.gain({ fuel: 50000, ammo: 50000, steel: 50000, baux: 50000 });
+      var scr = document.getElementById('screen');
+
+      function mk(id, lv, eqs) {
+        var s = Game.createShip(id, lv);
+        s.hp = Game.shipStats(s.uid).hpMax;
+        s.supply = { fuel: 1, ammo: 1 };
+        if (eqs) {
+          s.equipped = eqs.map(function (e) { return Game.createEquip(e).uid; });
+        } else { Game.equipDefaults(s.uid); }
+        return s.uid;
+      }
+      var escorts = [mk('iowa', 90, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+                     mk('fletcher', 80, ['gun5in_38', 'torp_mk15', 'torp_mk15']),
+                     mk('benson', 70, ['gun5in_38', 'torp_mk15'])];
+      var fleet = c === 'withCV'
+        ? [mk('enterprise', 95, ['f6f5', 'f6f5', 'f6f5', 'sbdvs2'])].concat(escorts)
+        : escorts.slice();
+      Game.state.fleet[1] = fleet;
+      /* 制造部分攻略进度，便于看地图状态 */
+      Game.state.mapProgress['1-1'].cleared = true; Game.state.mapProgress['1-1'].gauge = 0; Game.state.mapProgress['1-1'].kills = 3;
+      Game.state.mapProgress['1-2'].cleared = true; Game.state.mapProgress['1-2'].gauge = 0; Game.state.mapProgress['1-2'].kills = 4;
+      Game.state.mapProgress['2-3'].kills = 2; Game.state.mapProgress['2-3'].gauge = 3;
+
+      if (c === 'brief') {
+        SortieUI.mapList(scr);
+        /* 直接选中 2-3 展示海域详情（含作战简报 + 威胁评估） */
+        var a2 = scr.querySelector('[data-area="2"]'); if (a2) a2.click();
+        var m23 = scr.querySelector('[data-map="2-3"]'); if (m23) m23.click();
+        return;
+      }
+      var st = Sortie.start('2-3', 1);
+      if (!st.ok) { scr.innerHTML = '<pre style="color:#f88">' + st.msg + '</pre>'; return; }
+      Game.state.sortie.node = 'A';                      // 2-3 A = 航空战点
+      SortieUI.sortieActive(scr);
+    });
+  </script>
+</body>
+</html>
