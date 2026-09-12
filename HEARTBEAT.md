@@ -1602,3 +1602,24 @@ drift **12 / 9 / 9 逐位一致**。
 
 > 教训：**手工注入全局命名空间的测试脚本是脆的**。引擎新增一个全局依赖，它就在某天静默失效。
 > 新增依赖全局的模块（或新增全局常量）时，请顺手把这类脚本都跑一遍；长期方案是把它并入 `npm run sim`。
+## 2026-09-13 秘书舰分层立绘升级：live2d_v2 转面重建层包 + 表情差分
+
+**是什么**：秘书舰（fletcher）分层立绘从 See-through 原始 23 层换成
+ArtPipeline/live2d_v2「转面重建」管线的补全层包（生产代码在游戏仓库外的
+../ArtPipeline/live2d_v2/，见其 DESIGN.md），并新增表情差分（闭眼/张嘴/微笑）。
+
+**资产变更**：public/art/live2d/fletcher/ 27 个层文件重制
+（跨视图补全：4 yaw 全身转面 + 2 裁头贴回 pitch 视图 → 身体静止层洞区填充，
+G3 转动露出检查 ±2°洞 268→32px）；新增 3 张差分（整头交换方案，deltas 字段）。
+
+**代码变更**：
+1. js/data/live2d.js 重新生成（新增 deltas 字段 + 差分行）。
+2. js/ui/secretary-live2d.js：眨眼/说话优先走差分交叉渐显（--dx-<tag> 透明度），
+   无差分包时退回旧眼睑贴片/嘴部拉伸路径（向后兼容，老包无需重制）。
+3. 新增 public/_shot_homeport.html 母港人工核对页（?talk=1 验证张嘴差分 / ?eyes=1 验证闭眼差分）。
+
+**验证**：浏览器 E2E 224/0（JS 错误 0）；核对页截图确认闭眼/张嘴差分对位正确；
+live2d_v2 质量门 G1 静止合成 PASS / G3 露出检查 PASS / G4 装配审计 PASS。
+
+**备份**：改动前 secretary-live2d.js / style.css 已存 ../backup/20260913_l2d_deltas/。
+
