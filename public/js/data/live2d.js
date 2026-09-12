@@ -1,24 +1,23 @@
-/* 分层立绘数据 —— 由 ArtPipeline/live2d_v2 自动生成，勿手改 */
+/* 分层立绘数据 —— 由 ArtPipeline/install_live2d.py 自动生成，勿手改 */
 /* layers 行格式: [层名, 文件名, left, top, width, height] */
 window.LIVE2D_SETS = {
   fletcher: {
     canvas: 1024,
     dir: 'art/live2d/fletcher/',
     origin: [531, 250],
-    bbox: [275, 24, 476, 992],
+    bbox: [275, 29, 476, 987],
     neck: 'neck',
     eyelid: '__eyelid',
     mouth: 'mouth',
-    deltas: {"eyes_closed": "eyes_closed", "mouth_open": "mouth_open", "mouth_smile": "mouth_smile"},
     head: ['face', 'ears-l', 'ears-r', 'mouth', 'nose', 'eyewhite-l', 'eyewhite-r', 'irides-l', 'irides-r', 'eyelash-l', 'eyelash-r', 'eyebrow-l', 'eyebrow-r', 'front hair', 'headwear'],
     layers: [
-      ['back hair', 'back_hair.png', 413, 24, 225, 242],
-      ['footwear', 'footwear.png', 409, 740, 220, 276],
-      ['legwear', 'legwear.png', 390, 495, 229, 312],
-      ['handwear-r', 'handwear_r.png', 275, 242, 226, 334],
-      ['bottomwear', 'bottomwear.png', 376, 394, 283, 325],
-      ['topwear', 'topwear.png', 436, 190, 198, 252],
-      ['neck', 'neck.png', 505, 186, 52, 52],
+      ['back hair', 'back_hair.png', 413, 38, 225, 199],
+      ['footwear', 'footwear.png', 409, 765, 220, 251],
+      ['legwear', 'legwear.png', 418, 524, 188, 283],
+      ['handwear-r', 'handwear_r.png', 275, 258, 197, 318],
+      ['bottomwear', 'bottomwear.png', 376, 423, 283, 296],
+      ['topwear', 'topwear.png', 436, 219, 180, 223],
+      ['neck', 'neck.png', 505, 186, 52, 70],
       ['face', 'face.png', 440, 64, 138, 166],
       ['mouth', 'mouth.png', 505, 198, 24, 8],
       ['handwear-l', 'handwear_l.png', 579, 263, 172, 335],
@@ -36,9 +35,6 @@ window.LIVE2D_SETS = {
       ['front hair', 'front_hair.png', 427, 52, 157, 142],
       ['headwear', 'headwear.png', 437, 29, 143, 65],
       ['__eyelid', 'eyelid.png', 463, 144, 96, 40],
-      ['eyes_closed', 'eyes_closed.png', 412, 24, 215, 242],
-      ['mouth_open', 'mouth_open.png', 412, 24, 215, 242],
-      ['mouth_smile', 'mouth_smile.png', 412, 24, 215, 242],
     ]
   }
 };

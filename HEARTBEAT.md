@@ -1626,4 +1626,10 @@ live2d_v2 质量门 G1 静止合成 PASS / G3 露出检查 PASS / G4 装配审�
 ## 2026-09-13 补记：微笑差分触发器
 
 说话结束（点击秘书舰后 1.6s） mouth_smile 差分保持 2.2s，前后 300ms 线性淡入淡出。
-无 mouth_smile 差分的包零影响。E2E 224/0。
+无 mouth_smile 差分的包零影响。E2E 224/0。## 2026-09-13 回滚：live2d_v2 层包与差分退出生产环境
+
+**决策**：用户确认——Live2D 新层包暂不进生产版本，先以独立 demo 页面评审效果。
+956a1f6 / 658b65a 两笔提交的全部游戏内变更（27 层资产、live2d.js、
+secretary-live2d.js 差分逻辑、_shot_homeport.html）由 revert 撤销；
+HEARTBEAT 日志保留。生产回到 a4be515（V0.303）状态。
+评审用 demo 移至 ArtPipeline/live2d_v2/demo/（不进游戏仓库）。

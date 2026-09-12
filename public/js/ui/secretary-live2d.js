@@ -51,14 +51,11 @@ window.SecretaryL2D = (function () {
   function html(id) {
     const s = setOf(id);
     if (!s) return null;
-    const D = s.deltas || {};
     const parts = s.layers.map(L => {
       const name = L[0];
       const pos = `left:${L[2]}px;top:${L[3]}px;width:${L[4]}px;height:${L[5]}px;`;
       const img = `<img src="${s.dir}${L[1]}" alt="" draggable="false">`;
-      // 表情差分（整头交换）：跟随头部，初始透明，由 --dx-<tag> 控制透明度
-      if (D[name]) return `<div class="l2d-node hl hdx" style="${pos}opacity:var(--dx-${name},0)">${img}</div>`;
-      // 眼睑 / 嘴：外层跟随头部，内层自己做缩放（旧包无 deltas 时的兼容路径）
+      // 眼睑 / 嘴：外层跟随头部，内层自己做缩放
       if (name === s.eyelid) return `<div class="l2d-node hl hel" style="${pos}">${img}</div>`;
       if (name === s.mouth) return `<div class="l2d-node hl hm" style="${pos}">${img}</div>`;
       const cls = name === s.neck ? 'hn' : (s.head.indexOf(name) >= 0 ? 'hl' : 'hb');
@@ -114,16 +111,12 @@ window.SecretaryL2D = (function () {
     });
     frame.addEventListener('mouseleave', () => { mx = 0; my = 0; });
 
-    /* 说一句话：点击秘书舰时嘴动一会儿，结束后微笑 2.2s（有 smile 差分时） */
+    /* 说一句话：点击秘书舰时嘴动一会儿 */
     let talkUntil = 0;
-    frame.addEventListener('click', () => {
-      talkUntil = performance.now() + CFG.talkDur;
-      smileUntil = talkUntil + 2200;
-    });
+    frame.addEventListener('click', () => { talkUntil = performance.now() + CFG.talkDur; });
 
     let raf = null;
     let blinkSeq = 0, blinking = false, nextBlink = performance.now() + 900 + Math.random() * 2000;
-    let smileUntil = 0;   // 说话结束后短暂微笑（mouth_smile 差分）
     const t0 = performance.now();
 
     function loop(now) {
@@ -143,7 +136,7 @@ window.SecretaryL2D = (function () {
       const br = 1 + Math.sin(t * CFG.breatheSpd) * CFG.breatheAmp;
       stage.style.setProperty('--bt', `scaleY(${br.toFixed(5)})`);
 
-      // 眨眼：有差分层时整头交换渐显（闭眼差分），否则退回眼睑贴片缩放
+      // 眨眼：一次开合 145ms，sin 曲线让它快闭快开
       if (!blinking && now > nextBlink) { blinking = true; blinkSeq = now; }
       if (blinking) {
         const d = (now - blinkSeq) / CFG.blinkDur;
@@ -151,41 +144,17 @@ window.SecretaryL2D = (function () {
           blinking = false;
           nextBlink = now + CFG.blinkGapMin + Math.random() * (CFG.blinkGapMax - CFG.blinkGapMin);
           stage.style.setProperty('--lid', '0');
-          if (s.deltas && s.deltas.eyes_closed)
-            stage.style.setProperty('--dx-' + s.deltas.eyes_closed, '0');
         } else {
-          const v = Math.sin(d * Math.PI).toFixed(3);
-          stage.style.setProperty('--lid', v);
-          if (s.deltas && s.deltas.eyes_closed)
-            stage.style.setProperty('--dx-' + s.deltas.eyes_closed, v);
+          stage.style.setProperty('--lid', Math.sin(d * Math.PI).toFixed(3));
         }
       }
 
-      // 口型：说话时嘴部动作——有差分层时交替显示张嘴差分，否则退回嘴部拉伸；
-      // 说话结束后微笑差分保持 2.2s 渐隐（前后 300ms 淡入淡出）
+      // 口型：说话时嘴部纵向拉伸
       if (now < talkUntil) {
-        if (s.deltas && s.deltas.mouth_open) {
-          const open = Math.sin(t * CFG.mouthSpd) > 0 ? '1' : '0';
-          stage.style.setProperty('--dx-' + s.deltas.mouth_open, open);
-        } else {
-          const v = 1 + Math.abs(Math.sin(t * CFG.mouthSpd)) * CFG.mouthAmp;
-          stage.style.setProperty('--mouth', v.toFixed(2));
-        }
-      } else {
-        if (smileUntil && now >= smileUntil) smileUntil = 0;
-        if (s.deltas && s.deltas.mouth_open &&
-            stage.style.getPropertyValue('--dx-' + s.deltas.mouth_open) !== '0')
-          stage.style.setProperty('--dx-' + s.deltas.mouth_open, '0');
-        if (s.deltas && s.deltas.mouth_smile) {
-          let v = 0;
-          if (now < smileUntil) {
-            const remain = smileUntil - now;
-            v = remain > 300 ? 1 : remain / 300;
-          }
-          stage.style.setProperty('--dx-' + s.deltas.mouth_smile, v.toFixed(2));
-        }
-        if (stage.style.getPropertyValue('--mouth') !== '1')
-          stage.style.setProperty('--mouth', '1');
+        const v = 1 + Math.abs(Math.sin(t * CFG.mouthSpd)) * CFG.mouthAmp;
+        stage.style.setProperty('--mouth', v.toFixed(2));
+      } else if (stage.style.getPropertyValue('--mouth') !== '1') {
+        stage.style.setProperty('--mouth', '1');
       }
 
       raf = requestAnimationFrame(loop);
