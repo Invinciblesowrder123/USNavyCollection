@@ -106,11 +106,9 @@ const SortieUI = (() => {
     </div>`;
   }
 
-  /* 出击中的海域信息条：血条 + 索敌 + 油弹 */
+  /* 出击中的海域信息条：血条 + 索敌 + 油弹；战役用「阶 / 波次 / 战果」代替海域血条 */
   function mapTopbar(map, so) {
-    const mp = Game.state.mapProgress[map.id];
-    const total = mp.gauge + mp.kills;
-    const pct = mp.cleared ? 100 : Math.round(mp.gauge / total * 100);
+    const hist = Sortie.isHistoricMap(map);
     const fleet = Game.state.fleet[so.fleetIdx] || [];
     let minFuel = 1, minAmmo = 1;
     for (const uid of fleet) {
@@ -121,11 +119,29 @@ const SortieUI = (() => {
     }
     /* 士气档位（方向三）：出击中可见，决定「继续进击 / 撤退休整」 */
     const mr = Sortie.fleetMorale(so.fleetIdx);
-    return `<div class="map-topbar">
-      <div class="map-gauge">
+    let left;
+    if (hist) {
+      const wave = so.wave || 1;
+      const reward = Progression.historicRewardState(map.id);
+      const marks = [
+        reward.firstClear ? '<span class="ok">常规阶已通关</span>' : '常规阶未通关',
+        reward.hard ? '<span class="ok">强敌阶已通关</span>' : '强敌阶未通关'
+      ].join(' ｜ ');
+      left = `<div class="map-gauge hist">
+        <div class="gauge-head"><span>${so.hard ? '强敌阶' : '常规阶'}${so.hard ? ` · 第 ${wave} 波` : ''}</span><b>${map.date || ''}</b></div>
+        <div class="hist-marks">${marks}</div>
+      </div>`;
+    } else {
+      const mp = Game.state.mapProgress[map.id];
+      const total = mp.gauge + mp.kills;
+      const pct = mp.cleared ? 100 : Math.round(mp.gauge / total * 100);
+      left = `<div class="map-gauge">
         <div class="gauge-head"><span>海域血条</span><b>${mp.cleared ? '★ 已攻略' : `${mp.kills} / ${total} 次击破`}</b></div>
         <div class="gauge-bar"><div class="gauge-fill${mp.cleared ? ' full' : ''}" style="width:${pct}%"></div></div>
-      </div>
+      </div>`;
+    }
+    return `<div class="map-topbar">
+      ${left}
       <div class="map-stat">索敌 <b>${Game.fleetLos(so.fleetIdx)}</b></div>
       <div class="map-stat">油 <b class="${minFuel < 0.5 ? 'red' : ''}">${Math.round(minFuel * 100)}%</b> ｜ 弹 <b class="${minAmmo < 0.5 ? 'red' : ''}">${Math.round(minAmmo * 100)}%</b></div>
       <div class="map-stat">士气 <b class="${mr.counts.red ? 'red' : ''}">${mr.avg}</b> <span class="dim">（闪 ${mr.counts.flash} ｜ 偏低 ${mr.counts.low} ｜ 红脸 ${mr.counts.red}）</span></div>
@@ -237,6 +253,90 @@ const SortieUI = (() => {
       <div class="obj-list">${rows}</div>`;
   }
 
+  /* ============================================================
+   * 历史战役模式 UI（V0.303）—— 页签 / 详情 / 史实匹配度自检 / 奖励预览
+   * 数值与判定全部来自 Sortie.intel（引擎侧同源），UI 只排版，不重算（禁止事项 6）
+   * ============================================================ */
+  const typeZh = t => SHIP_TYPE_ZH[t] || t;
+  /* 史实匹配度自检：逐条列出玩家自己能核对的条件；禁入命中给红色警示（Gate 3 + 坑 #22） */
+  function histRuleHtml(it) {
+    const h = it && it.historic;
+    if (!h) return '';
+    const rows = h.rows.map(r => `<div class="hist-rule-row">${r.ok ? '<span class="ok">✓</span>' : '<span class="red">✗</span>'} ${Util.esc(r.text)} <span class="dim">（${Util.esc(r.now)}）</span></div>`).join('');
+    const verdict = h.match
+      ? `<span class="ok">✓ 编成符合史实：本场命中 / 回避 ×${h.bonus.hit}（与索敌、触接的乘区相乘）</span>`
+      : `<span class="red">✗ 编成与史实不符：无加成。加成是条件不是门槛，照常能打</span>`;
+    const ban = h.banHit
+      ? `<div class="hist-ban">⚠ 禁入舰种在场：${Util.esc(h.banned.map(typeZh).join('、'))} —— 史实加成归零（仍可正常出击）</div>`
+      : '';
+    const hard = h.waves.length
+      ? `<div class="dim">强敌阶：敌军拥有第二梯队（第一波击破后将询问「迎击 / 收兵」）；入口需提督 Lv.${h.hardAdmReq} + 常规阶首通${h.hardUnlocked ? '（已开放）' : '（未开放）'}。</div>`
+      : '';
+    return `<div class="hist-rule"><div><b>史实编成规则</b>：${Util.esc(h.rule)}</div>${ban}${rows}<div>${verdict}</div>
+      <div class="dim">${Util.esc(h.tip)}</div>${hard}</div>`;
+  }
+  /* 奖励预览（4 层）+ 已领取标记（口径与发放同源：Progression.historicRewardState ← 全局账本） */
+  function histRewardHtml(m) {
+    const got = Progression.historicRewardState(m.id);
+    const row = (label, r, claimed, note) =>
+      `<div class="hist-rw-row">${claimed ? '<span class="eq-rarity-tag eq-r5">已领取</span>' : '<span class="dim">○</span>'} <b>${label}</b>：${Util.esc(Sortie.rewardText(r))}<span class="dim">（${note}）</span></div>`;
+    return `<div class="md-rows hist-rewards"><div><b>奖励</b></div>
+      ${row('首通', m.rewards.firstClear, got.firstClear, '首次击破 BOSS，一次性')}
+      ${row('史实重演', m.rewards.histForm, got.histForm, '以史实编成 S 胜，一次性')}
+      ${row('强敌阶首通', m.rewards.hard.firstClear, got.hard, '第二波 S 胜，一次性')}
+      ${row('重复通关', m.rewards.repeat, false, '可重复，小额资源')}
+    </div>`;
+  }
+  /* 战役列表（左列）：名称 / 日期 / 史实背景两行 / 通关与解锁态 */
+  function histListPanel(selId) {
+    return `<div class="hist-list">
+      <div class="hist-list-head">历史战役 <span class="dim">（独立于 25 张常规海域，不占海域进度）</span></div>
+      ${(typeof HISTORY_BATTLES !== 'undefined' ? HISTORY_BATTLES : []).map(b => {
+      const got = Progression.historicRewardState(b.id);
+      return `<button class="hist-card${b.id === selId ? ' sel' : ''}" data-battle="${b.id}">
+        <div class="hc-top"><b>${b.id}</b> ${Util.esc(b.name)} <span class="dim">${b.date}</span></div>
+        <div class="hc-sub">${Util.esc(b.histRule.tip)}</div>
+        <div class="hc-tags">
+          ${got.firstClear ? '<span class="eq-rarity-tag eq-r5">常规阶已通关</span>' : '<span class="eq-rarity-tag">常规阶未通关</span>'}
+          ${got.hard ? '<span class="eq-rarity-tag eq-r5">强敌阶已通关</span>' : ''}
+          <span class="dim">提督 Lv.${b.admReq} 起可出击</span>
+        </div>
+      </button>`;
+    }).join('')}
+    </div>`;
+  }
+  /* 战役详情（右列）：简报（含强敌阶简报）/ 史实背景 / 掉落 / 奖励 / 强敌阶入口 / 出击 */
+  function histDetailPanel(m, fleetIdx) {
+    const st = Game.state;
+    const fidx = fleetIdx || 1;
+    const gate = Sortie.historicGate(m, false);
+    const hardGate = Sortie.historicGate(m, true);
+    const got = Progression.historicRewardState(m.id);
+    const canGo = gate.ok && !st.sortie && (st.fleet[fidx] || []).length > 0;
+    return `<div class="map-detail hist-detail">
+      <div class="md-title">${m.id} ${Util.esc(m.name)} <span class="map-stars">${'★'.repeat(m.stars || 0)}</span>
+        <span class="md-eo">历史战役</span> <span class="dim">${m.date}</span></div>
+      <div class="md-desc">史实背景：${Util.esc(m.histRule.tip)}</div>
+      ${briefBox({ brief: m.brief })}
+      <div class="md-rows">
+        <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
+      </div>
+      ${histRewardHtml(m)}
+      <div class="hist-hard-box">
+        <div class="hh-head">强敌阶</div>
+        <div class="sb-body">${briefHtml(m.hard.brief)}</div>
+        ${hardGate.ok
+        ? (got.hard
+          ? `<button class="btn btn-sm" data-start-hard disabled>强敌阶已通关（可重打）</button>`
+          : `<button class="btn btn-red btn-sm" data-start-hard ${st.sortie || !(st.fleet[fidx] || []).length ? 'disabled' : ''}>强敌阶出击</button>`)
+        : `<div class="md-lock">🔒 ${Util.esc(hardGate.msg)}</div>`}
+      </div>
+      ${gate.ok
+        ? `<button class="btn btn-gold md-btn" data-start ${canGo ? '' : 'disabled'}>出击（常规阶）</button>`
+        : `<div class="md-lock">🔒 ${Util.esc(gate.msg)}</div>`}
+    </div>`;
+  }
+
   function intelRows(m, fidx) {
     const it = Sortie.intel(fidx, m.id);
     if (!it) return '';
@@ -247,6 +347,8 @@ const SortieUI = (() => {
     let html = '';
     /* 出击前轮换提醒（方向三）：置顶，因为它决定「现在打还是先休整」 */
     if (it.moraleAdvice) html += `<div class="md-morale ${it.moraleAdvice.level}">⚠ ${Util.esc(it.moraleAdvice.text)}</div>`;
+    /* 历史战役（V0.303）：史实匹配度自检紧随其后 —— 它决定本场是否有加成（坑 #22：出击前可见） */
+    if (it.historic) html += histRuleHtml(it);
     html += `<div><b>舰队能力</b>：制空 <b>${s.air}</b> ｜ 索敌 <b>${s.los}</b> ｜ 对潜 <b>${s.asw}</b> ｜ 速力 ${speedTxt} ｜ 夜战火力 <b>${s.night}</b></div>`;
     /* 士气档位（方向三）：修正数值由 battle.js 的档位表给出，UI 不硬编码 */
     const mr = it.morale;
@@ -303,6 +405,10 @@ const SortieUI = (() => {
     </div>`;
   }
 
+  /* 简报渲染：转义 + 换行 + 行内 **强调** → <b>（战役简报用 ** 标重点，渲染器负责转粗体） */
+  const briefHtml = t => Util.esc(String(t || ''))
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+
   /* 作战简报：放在右列「BOSS掉落」与「出击按钮」之间（用户 2026-09-12 指定）。
    * 注：V0.301 曾把它移出右列，因为"长文案撑高右列 → 连带拉伸左侧地图"；
    * 该根因现已修掉（`.area-map` 用 aspect-ratio:5/4 固定高度，高度只由自身宽度决定），
@@ -311,7 +417,7 @@ const SortieUI = (() => {
     if (!m.brief) return '';
     return `<div class="sortie-brief">
       <div class="sb-head">作战简报</div>
-      <div class="sb-body">${m.brief.replace(/\n/g, '<br>')}</div>
+      <div class="sb-body">${briefHtml(m.brief)}</div>
     </div>`;
   }
 
@@ -371,9 +477,29 @@ const SortieUI = (() => {
     const pickMap = no => (areaMaps(no).find(m => !mapLocked(m) && !st.mapProgress[m.id].cleared) || areaMaps(no)[0]);
     let selArea = nos.find(no => areaMaps(no).some(m => !mapLocked(m) && !st.mapProgress[m.id].cleared)) || nos[0];
     let selMap = pickMap(selArea).id;
+    /* 页签（V0.303）：常规海域 / 历史战役。战役列表与常规海域共用同一套编成自检与详情布局 */
+    let selTab = 'areas';
+    let selBattle = (typeof HISTORY_BATTLES !== 'undefined' && HISTORY_BATTLES[0]) ? HISTORY_BATTLES[0].id : null;
 
     function draw() {
       const sel = MAPS.find(m => m.id === selMap);
+      const battles = (typeof HISTORY_BATTLES !== 'undefined' ? HISTORY_BATTLES : []);
+      const selB = battles.find(b => b.id === selBattle) || battles[0] || null;
+      const body = selTab === 'hist' && selB
+        ? `<div class="sortie-mapview">
+            <div class="sortie-mapside">
+              ${histListPanel(selB.id)}
+              ${intelBox(selB, selFleet)}
+            </div>
+            ${histDetailPanel(selB, selFleet)}
+          </div>`
+        : `<div class="sortie-mapview">
+            <div class="sortie-mapside">
+              ${areaMapPanel(selArea, sel.id)}
+              ${intelBox(sel, selFleet)}
+            </div>
+            ${mapDetailPanel(sel, selFleet)}
+          </div>`;
       root.innerHTML = `<div class="panel">
         <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0;border:none;padding:0">出击 —— 选择海域</h3>
@@ -387,17 +513,20 @@ const SortieUI = (() => {
           </div>
         </div>
         <div class="area-tabs">
-          ${nos.map(no => `<button class="${no === selArea ? 'active' : ''}" data-area="${no}"><b>${no}</b> ${AREA_ZH[no]}</button>`).join('')}
+          <button class="${selTab === 'areas' ? 'active' : ''}" data-tab="areas">常规海域</button>
+          <button class="${selTab === 'hist' ? 'active' : ''}" data-tab="hist">战役</button>
+          ${selTab === 'areas' ? nos.map(no => `<button class="${no === selArea ? 'active' : ''}" data-area="${no}"><b>${no}</b> ${AREA_ZH[no]}</button>`).join('') : ''}
         </div>
-        <div class="sortie-mapview">
-          <div class="sortie-mapside">
-            ${areaMapPanel(selArea, sel.id)}
-            ${intelBox(sel, selFleet)}
-          </div>
-          ${mapDetailPanel(sel, selFleet)}
-        </div>
-        <div class="hint">消耗规则（wiki）：每个战斗点消耗燃料20%、弹药20%（进入夜战弹药改为30%）；资源点/补给点不消耗油弹。弹药&lt;50%时伤害按残弹率/50减半，0%时无法炮击。</div>
+        ${body}
+        <div class="hint">消耗规则（wiki）：每个战斗点消耗燃料20%、弹药20%（进入夜战弹药改为30%）；资源点/补给点不消耗油弹。弹药&lt;50%时伤害按残弹率/50减半，0%时无法炮击。${selTab === 'hist' ? '历史战役与 25 张常规海域完全隔离：不占海域进度、不计入海域血条与常规出击统计；史实编成规则只决定加成，不决定能否通关。' : ''}</div>
       </div>`;
+
+      root.querySelectorAll('[data-tab]').forEach(b => {
+        b.addEventListener('click', () => { selTab = b.dataset.tab; Game.save(); draw(); });
+      });
+      root.querySelectorAll('[data-battle]').forEach(b => {
+        b.addEventListener('click', () => { selBattle = b.dataset.battle; Game.save(); draw(); });
+      });
 
       root.querySelectorAll('[data-fleet]').forEach(b => {
         b.addEventListener('click', () => {
@@ -428,22 +557,31 @@ const SortieUI = (() => {
           draw();
         });
       });
+      /* 出击：常规海域 / 战役常规阶 / 战役强敌阶共用同一条路径（只有 mapId 与 hard 标记不同） */
+      const launch = (mapId, hard) => {
+        if (lowSupply) {
+          const ok = confirm(`第${['', '一', '二', '三', '四'][selFleet]}舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！\n弹药<50%伤害减半，0%无法炮击。建议先补给再出击！\n\n仍然出击？`);
+          if (!ok) return;
+        }
+        const r = hard ? Sortie.startHard(mapId, selFleet) : Sortie.start(mapId, selFleet);
+        if (!r.ok) { UI.toast(r.msg); return; }
+        /* 油弹警告 + 士气轮换提醒（均为提示，不拦截出击） */
+        const notes = [r.warn, r.advice && r.advice.text].filter(Boolean);
+        if (notes.length) UI.toast(notes.join('\n'), 5200);
+        const daPo = Sortie.daPoShips();
+        if (daPo.length) UI.toast(`警告：${daPo.map(u => UI.esc(Game.shipDef(Game.state.ships[u]).zh)).join('、')} 大破出击，进击有轰沉风险！`);
+        Game.save();
+        UI.go('sortie');
+      };
       const startBtn = root.querySelector('[data-start]');
       if (startBtn) {
-        startBtn.addEventListener('click', () => {
-          if (lowSupply) {
-            const ok = confirm(`第${['', '一', '二', '三', '四'][selFleet]}舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！\n弹药<50%伤害减半，0%无法炮击。建议先补给再出击！\n\n仍然出击？`);
-            if (!ok) return;
-          }
-          const r = Sortie.start(selMap, selFleet);
-          if (!r.ok) { UI.toast(r.msg); return; }
-          /* 油弹警告 + 士气轮换提醒（均为提示，不拦截出击） */
-          const notes = [r.warn, r.advice && r.advice.text].filter(Boolean);
-          if (notes.length) UI.toast(notes.join('\n'), 5200);
-          const daPo = Sortie.daPoShips();
-          if (daPo.length) UI.toast(`警告：${daPo.map(u => UI.esc(Game.shipDef(Game.state.ships[u]).zh)).join('、')} 大破出击，进击有轰沉风险！`);
-          Game.save();
-          UI.go('sortie');
+        startBtn.addEventListener('click', () => launch(selTab === 'hist' ? selBattle : selMap, false));
+      }
+      const startHardBtn = root.querySelector('[data-start-hard]');
+      if (startHardBtn) {
+        startHardBtn.addEventListener('click', () => {
+          if (!confirm('强敌阶：第一波击破后敌军第二梯队将压上，残弹、耐久与士气全部继承，不做任何补给。\n确定发起强敌阶出击？')) return;
+          launch(selBattle, true);
         });
       }
     }
@@ -459,39 +597,58 @@ const SortieUI = (() => {
     const def = Sortie.nodeDef(map, so.node);
 
     function renderNode() {
-      /* 航空战点横幅：文案与判据全部来自 game 层（Sortie.nodeBanner + Battle.fleetStats），UI 不另算 */
+      const hist = Sortie.isHistoricMap(map);
+      const wave = so.wave || 1;
+      /* 当前节点的实际敌编成键：强敌阶第二波时期使用 waves 指定的第二波模板
+       * （与 engine 的 prepareBattle 同源判据，UI 不另算） */
+      const waveKey = (hist && map.hard && so.hard && wave >= 2 &&
+        typeof History !== 'undefined' && History && typeof History.wavesFor === 'function')
+        ? History.wavesFor(map, so.node) : null;
+      const enemyKey = waveKey || def.enemy;
+      const enemyDef = (def.type === 'battle' || def.type === 'boss') ? Sortie.enemyFleet(enemyKey) : null;
+      /* 节点横幅：文案与判据全部来自 game 层（Sortie.nodeBanner + Battle.fleetStats），UI 不另算；
+       * 强敌阶第二波使用独立横幅（战役可在 hard.waveBanner 覆写）。 */
       const fs = Game.battleFleetStats(so.fleetIdx) || { airWing: false, carriers: 0 };
-      const banner = Sortie.nodeBanner(def, { airWing: !!fs.airWing, hasCarrier: (fs.carriers || 0) > 0 });
+      const banner = Sortie.nodeBanner(def, {
+        airWing: !!fs.airWing, hasCarrier: (fs.carriers || 0) > 0,
+        wave, waveBanner: (map.hard && map.hard.waveBanner) || ''
+      });
       const airHint = def.mode === 'air'
         ? (fs.airWing
           ? `<span class="dim">｜ 航空战力：航母 ${fs.carriers} 艘（制空 ${fs.air}）——将展开航母对决</span>`
           : `<span class="dim">｜ 舰队无航空战力：敌机将直接轰炸，仅有对空炮火还击（单次伤害封顶 60%）</span>`)
         : '';
+      const enemyHint = enemyDef
+        ? `<span class="dim">｜ 敌军：${enemyDef.ships.length} 舰（${enemyDef.formation}）${waveKey ? ` · <b style="color:#ffb0b0">第二梯队（${enemyKey}）</b>` : ''}</span>`
+        : '';
+      const modeHint = def.mode === 'night'
+        ? `<span class="dim">｜ 无昼战，直接夜战：驱逐/轻巡的夜战火力是关键</span>`
+        : def.mode === 'sub'
+          ? `<span class="dim">｜ 潜艇伏击：需对潜舰艇（DD/CL）；低速大目标更易被雷击</span>`
+          : def.mode === 'air'
+            ? airHint
+            : def.type === 'whirlpool'
+              ? `<span class="dim">｜ 燃料 -min(${def.lossBase || 200}, 10%)；编入电探可减半</span>`
+              : def.type === 'resource'
+                ? `<span class="dim">｜ 可获得：${(def.reward || []).map(r => RES_NAME[r] || r).join('、')}</span>`
+                : def.type === 'supply' ? `<span class="dim">｜ 恢复一半油弹</span>` : '';
+      /* 战斗/BOSS 节点同时给出敌军规模与（强敌阶第二波的）梯队提示 —— 不搞突然袭击 */
+      const hint = (def.type === 'battle' || def.type === 'boss') ? modeHint + enemyHint : modeHint;
       root.innerHTML = `
         <div class="panel">
           <div class="map-head">
-            <h3>${map.id} ${map.name} <span class="map-stars">${'★'.repeat(map.stars || 0)}</span></h3>
+            <h3>${map.id} ${map.name} <span class="map-stars">${'★'.repeat(map.stars || 0)}</span>
+              ${hist ? `<span class="md-eo">${so.hard ? '强敌阶' : '常规阶'}${so.hard ? ` · 第 ${wave} 波` : ''}</span>` : ''}</h3>
             <button class="btn btn-red btn-sm" data-act="retreat">撤退返回</button>
           </div>
           ${mapTopbar(map, so)}
           <div class="map-board-wrap">${mapBoard(map, so)}</div>
-          ${banner ? `<div class="map-banner" data-banner="${def.mode || def.type}">${UI.esc(banner)}</div>` : ''}
+          ${banner ? `<div class="map-banner${wave >= 2 ? ' wave' : ''}" data-banner="${wave >= 2 ? 'histWave' : (def.mode || def.type)}">${UI.esc(banner)}</div>` : ''}
           <div class="map-nodeinfo">
-            <b>当前节点 ${so.node}</b>：${def.mode ? NODE_MODE_ZH[def.mode] : (NODE_TYPE_ZH[def.type] || def.type)}            ${def.mode === 'night'
-              ? `<span class="dim">｜ 无昼战，直接夜战：驱逐/轻巡的夜战火力是关键</span>`
-              : def.mode === 'sub'
-                ? `<span class="dim">｜ 潜艇伏击：需对潜舰艇（DD/CL）；低速大目标更易被雷击</span>`
-                : def.mode === 'air'
-                  ? airHint
-                  : def.type === 'whirlpool'
-                  ? `<span class="dim">｜ 燃料 -min(${def.lossBase || 200}, 10%)；编入电探可减半</span>`
-                  : def.type === 'battle' || def.type === 'boss'
-                    ? `<span class="dim">｜ 敌军：${(ENEMY_FLEETS[def.enemy] || { ships: [], formation: '未知' }).ships.length} 舰（${(ENEMY_FLEETS[def.enemy] || { formation: '未知' }).formation}）</span>`
-                    : def.type === 'resource'
-                      ? `<span class="dim">｜ 可获得：${(def.reward || []).map(r => RES_NAME[r] || r).join('、')}</span>`
-                      : def.type === 'supply' ? `<span class="dim">｜ 恢复一半油弹</span>` : ''}
+            <b>当前节点 ${so.node}</b>：${def.mode ? NODE_MODE_ZH[def.mode] : (NODE_TYPE_ZH[def.type] || def.type)}            ${hint}
           </div>
-          ${map.brief ? `<div class="map-brief"><b>作战简报</b><br>${map.brief.replace(/\n/g, '<br>')}</div>` : ''}
+          ${map.brief ? `<div class="map-brief"><b>作战简报</b><br>${briefHtml(map.brief)}</div>` : ''}
+          ${hist && so.hard && map.hard.brief ? `<div class="map-brief hist"><b>强敌阶简报</b><br>${briefHtml(map.hard.brief)}</div>` : ''}
           ${nodeAction()}
         </div>`;
       root.querySelector('[data-act="retreat"]').addEventListener('click', () => {
@@ -565,6 +722,46 @@ const SortieUI = (() => {
       sortieActive(root);
     }
 
+    /* 强敌阶二波制（V0.303）：第一波击破后弹出「敌增援接近 —— 迎击 / 收兵」
+     *   · 复用既有「追击选择」面板体系（同一 UI.modal + 引擎分支风格），不新建消息/演出系统
+     *   · 迎击：先按 histContinue 结算第一波（只落消耗与履历，不发奖不打标记）→ 发起第二波
+     *   · 收兵：直接走常规结算（强敌阶不标记通关，零惩罚 —— P0-2） */
+    function waveChoiceNeeded(prep) {
+      const map = Sortie.currentMap();
+      const so = Game.state.sortie;
+      return !!(map && so && Sortie.isHistoricMap(map) && map.hard && so.hard && (so.wave || 1) < 2 && prep.isBoss);
+    }
+    function openWaveChoice(prep, done) {
+      const map = Sortie.currentMap();
+      const wb = (map.hard && map.hard.waveBanner) || '';
+      const html = `
+        <span class="modal-close" data-close>×</span>
+        <h3>敌增援接近</h3>
+        <div class="hint" style="margin:6px 0">${UI.esc(wb)}<br>
+          <span class="dim">迎击将立即发起第二波：<b>残弹、耐久与士气全部继承，不做任何补给</b>（弹药 &lt;50% 时伤害按残弹率/50 减半）。
+          收兵则按第一波正常结算，<b>零惩罚</b>（强敌阶不计为通关，可随时重打）。</span></div>
+        <div class="btn-row">
+          <button class="btn btn-red" data-wave>迎击（第二波）</button>
+          <button class="btn" data-retire>收兵</button>
+        </div>`;
+      let decided = false;
+      const m = UI.modal(html, () => { if (!decided) { decided = true; done(); } });
+      m.root.querySelector('[data-retire]').addEventListener('click', () => {
+        if (decided) return; decided = true; m.close(); done();
+      });
+      m.root.querySelector('[data-wave]').addEventListener('click', () => {
+        if (decided) return; decided = true; m.close();
+        prep.histContinue = true;                       // 第一波：只落消耗与履历
+        const r1 = Sortie.settleBattle(prep);
+        if (!r1.ok) { UI.toast(r1.msg); done(); return; }
+        const prep2 = Sortie.startHardWave(prep);
+        if (!prep2 || !prep2.ok) { UI.toast((prep2 && prep2.msg) || '第二波发起失败'); done(); return; }
+        UI.toast('第二梯队进入战场——残弹、耐久与士气全部继承，本波不补给。', 4600);
+        Game.save();
+        doBattle(prep2);
+      });
+    }
+
     /* 出击战斗：昼战演出 → 追击选择（夜战突入/战斗结束，wiki 战斗流程）→ 统一结算 */
     function doBattle(prep) {
       renderBattle(root, prep, () => {
@@ -579,9 +776,14 @@ const SortieUI = (() => {
         autoNight: !!prep.result.forceNight,   // 夜战节点：跳过追击选择，自动夜战突入
         nightAvailable: () => prep.result.mySide.some(s => s.alive) && prep.result.enemySide.some(s => s.alive),
         doNight: () => { Sortie.continueNight(prep); },
+        /* 强敌阶 BOSS：结算前插入「迎击 / 收兵」（决定是收兵结算还是续战第二波） */
+        beforeFinish: done => {
+          if (!waveChoiceNeeded(prep)) { done(); return; }
+          openWaveChoice(prep, done);
+        },
         finish: () => {
           const r = Sortie.settleBattle(prep);
-          if (r.ok) { prep.drop = r.drop; prep.cleared = r.cleared; prep.admExp = r.admExp; }
+          if (r.ok) { prep.drop = r.drop; prep.cleared = r.cleared; prep.admExp = r.admExp; prep.histReward = r.histReward; }
           else UI.toast(r.msg);
         }
       });
@@ -1264,15 +1466,32 @@ const SortieUI = (() => {
 
     function showResult() {
       bf.classList.remove('night');
-      const res = opts.gains ? { gains: opts.gains, adm: opts.adm } : Progression.applyBattleResult(1, r.result, isPractice);
+      const histMap = isSortie ? Sortie.currentMap() : null;
+      const isHistSortie = !!(histMap && Sortie.isHistoricMap(histMap));
+      /* 战役：经验照给，但**不推进常规任务计数**（周常「出击 X 次」不含战役，坑 #20） */
+      const res = opts.gains ? { gains: opts.gains, adm: opts.adm }
+        : Progression.applyBattleResult(1, r.result, isPractice, { noQuest: isHistSortie });
       const gains = res.gains || [];
       const admExp = r.admExp || (res.adm ? res.adm.exp : 0);
       const rankLabel = r.result.perfect ? '完全胜利' : { S: '胜利', A: '胜利', B: '战术胜利', C: '战术败北', D: '败北', E: '败北E' }[r.result.rank] || '败北';
+      /* 历史战役结算摘要（V0.303）：史实加成是否生效 / 阶与波次 / 新奖励 —— 数值来自引擎结算结果 */
+      const histLine = (isHistSortie && r.histReward !== undefined) ? (() => {
+        const so = Game.state.sortie || {};
+        const RW = { firstClear: '常规阶首通', histForm: '史实重演', hard: '强敌阶首通' };
+        const parts = [
+          `史实编成：${r.histMatch ? '<span class="ok">匹配（命中 / 回避 ×1.05）</span>' : '<span class="red">不匹配（无加成；加成条件是可选挑战）</span>'}`,
+          `${so.hard ? '强敌阶' : '常规阶'}${so.hard ? ` · 第 ${so.wave || 1} 波` : ''}`
+        ];
+        if (r.histReward && r.histReward.granted.length) parts.push(`<span class="ok">新奖励：${r.histReward.granted.map(k => RW[k] || k).join('、')}（一次性）</span>`);
+        if (r.histReward && r.histReward.repeat) parts.push('<span class="dim">重复通关小额奖励</span>');
+        return `<div class="hint hist-result">${parts.join(' ｜ ')}</div>`;
+      })() : '';
       root.querySelector('#battleLog').insertAdjacentHTML('beforeend',
         `<div class="line" style="margin-top:8px">
           <span class="big-rank">${r.result.rank} ${rankLabel}</span>
           ${r.drop ? `<span style="color:var(--gold)"> 掉落新舰娘：${UI.esc(Game.shipDef(r.drop).zh)}${r.drop.locked ? '（已自动上锁）' : ''}！</span>` : ''}
-          <div class="hint">${gains.map(g => { const s = st.ships[g.uid]; return `${UI.esc(Game.shipDef(s).zh)} EXP+${g.exp}${g.ups ? ` 升级Lv.${s.lv}！` : ''}`; }).join(' ｜ ')}${admExp ? ` ｜ 提督EXP+${admExp}` : ''}</div>
+          <div class="hint">${gains.map(g => { const s = st.ships[g.uid]; return `${s ? UI.esc(Game.shipDef(s).zh) : g.uid} EXP+${g.exp}${g.ups ? ` 升级Lv.${s.lv}！` : ''}`; }).join(' ｜ ')}${admExp ? ` ｜ 提督EXP+${admExp}` : ''}</div>
+          ${histLine}
         </div>`);
       const nav = document.createElement('div');
       nav.className = 'btn-row';
@@ -1297,11 +1516,23 @@ const SortieUI = (() => {
     let nightChosen = false;
     let decided = false;
     let finished = false;
-    const finishBattle = () => {
+    let deciding = false;
+    const doFinish = () => {
       if (finished) return;
       finished = true;
       if (opts.finish) opts.finish();
       showResult();
+    };
+    const finishBattle = () => {
+      if (finished || deciding) return;
+      /* beforeFinish（V0.303）：强敌阶二波制的「迎击 / 收兵」插在这里 ——
+       * 它可以在结算前拦下流程（如迎击 → 立刻渲染第二波战斗），也可以调用 done() 放行常规结算。 */
+      if (opts.beforeFinish) {
+        deciding = true;
+        opts.beforeFinish(() => { deciding = false; doFinish(); });
+        return;
+      }
+      doFinish();
     };
     const finalize = () => {
       /* 夜战节点：不做追击选择，自动夜战突入 */

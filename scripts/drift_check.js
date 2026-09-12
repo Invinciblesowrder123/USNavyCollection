@@ -12,10 +12,16 @@
  *   node scripts/drift_check.js > scripts/battle_digest.baseline.txt   # 存基线
  *   node scripts/drift_check.js --against scripts/battle_digest.baseline.txt   # 与基线对拍
  *   node scripts/drift_check.js --against <另一个 public/js 目录>              # 与另一份代码对拍
- *   USNC_NO_TOUCH=1 node scripts/drift_check.js --against scripts/battle_digest.baseline_v0301.txt
- *       —— 关闭航空触接阶段（opts.touch=false，不消耗随机数）后与 V0.301 基线对拍。
- *          这是「V0.302 除了新增触接判定之外，一位都没动」的证明手段：
- *          触接是唯一新增的随机数消费者，把它关掉必须逐位回到 V0.301。
+ *   node scripts/drift_check.js --no-touch --against scripts/battle_digest.baseline_v0301.txt
+ *       —— 关闭航空触接（V0.302 唯一新增的随机数消费者）后与 V0.301 基线对拍。
+ *   node scripts/drift_check.js --no-hist --no-waves --against scripts/battle_digest.baseline_v0302.txt
+ *       —— 关闭史实编成加成（_histHit）与二波制场景后与 V0.302 基线对拍（= npm run drift:v0302）。
+ *   三个开关一起给（npm run drift:archive）= 关掉 V0.302 + V0.303 全部新机制，必须逐位回到 V0.301。
+ *   方法论：把本版新增的机制全部关掉，摘要必须**逐位**回到上一版基线 ——
+ *   「除了新增机制，一位都没动」由此证明，而不是靠跑两次看数字像不像。
+ *
+ * 场景构成：9 组常规场景（V0.301 起）+ --no-hist/--no-waves 未开启时追加的 3 组 V0.303 场景
+ *   （2 组史实编成加成 / 1 组二波制残弹场景）。关掉开关后回到 9 行，才能与旧基线逐位对上。
  *
  * 退出码：0 = 一致（或已打印摘要），1 = 存在差异 / 出错。
  * 注意：这是验证脚本，不是单元断言，不接入 `npm run sim`（跑统计才出结论的检查不塞进常规套件）。
@@ -42,8 +48,9 @@ function loadEngineAt(root) {
   const equipMod = require(P('data', 'equipment.js'));
   const shipsMod = require(P('data', 'ships.js'));
   const mapsMod = require(P('data', 'maps.js'));
+  const histMod = require(P('data', 'history.js'));
   const questsMod = require(P('data', 'quests.js'));
-  Object.assign(global, equipMod, shipsMod, mapsMod, questsMod);
+  Object.assign(global, equipMod, shipsMod, mapsMod, histMod, questsMod);
   Object.assign(global, require(P('core', 'utils.js')));
   Object.assign(global, require(P('core', 'state.js')));
   Object.assign(global, require(P('game', 'battle.js')));
@@ -84,12 +91,19 @@ function hashStr(h, s) { for (let i = 0; i < s.length; i++) h = (h * 31 + s.char
 /* USNC_NO_TOUCH=1 / --no-touch：关闭航空触接阶段（该阶段是 V0.302 唯一新增的随机数消费者）。
  * 关掉之后必须逐位回到 V0.301 基线 —— 这是「其余逻辑一位未动」的硬证明。 */
 const NO_TOUCH = process.env.USNC_NO_TOUCH === '1' || args.includes('--no-touch');
+/* V0.303 的两个新开关（坑 #18）：--no-hist 关掉史实编成加成乘区；--no-waves 关掉二波制场景。
+ * 两个一起给（= npm run drift:v0302）时，摘要必须逐位回到 V0.302 基线 ——
+ * 这是「除本版新机制外一位未动」的硬证明（与 V0.302 的 --no-touch 同一套方法论）。 */
+const NO_HIST = process.env.USNC_NO_HIST === '1' || args.includes('--no-hist');
+const NO_WAVES = process.env.USNC_NO_WAVES === '1' || args.includes('--no-waves');
 function run(name, fleet, enemyKey, opts, n) {
-  const en = ENEMY_FLEETS[enemyKey];
-  const base = NO_TOUCH ? Object.assign({}, opts, { touch: false }) : opts;
+  const ef = (typeof History !== 'undefined' && History.enemy(enemyKey)) || ENEMY_FLEETS[enemyKey];
+  const base = Object.assign({}, opts);
+  if (NO_TOUCH) base.touch = false;
+  if (NO_HIST) base.historic = false;      // 显式关掉史实乘区（防"默认开启"这类回退）
   let ranks = '', h = 5381, killed = 0, myDmg = 0, logLen = 0;
   for (let i = 0; i < n; i++) {
-    const r = Battle.battle(fleet, en.ships, '单纵阵', en.formation, Object.assign({ fleetIdx: 1 }, base));
+    const r = Battle.battle(fleet, ef.ships, '单纵阵', ef.formation, Object.assign({ fleetIdx: 1 }, base));
     ranks += r.rank;
     killed += r.enemyKilled;
     myDmg += r.mySide.reduce((a, s) => a + s.dealt, 0);
@@ -113,6 +127,25 @@ const lines = [
   run('slowBB-vs-F18-sub', slowBB, 'F18', { allowNight: true, sub: true }, 80),
   run('dd-vs-F20b-sub', ddOnly, 'F20b', { allowNight: true, sub: true }, 80)
 ];
+/* ---- V0.303 新机制场景（只在开关关闭时追加；关掉后摘要长度回到 9 行 = V0.302 基线）---- */
+if (!NO_HIST) {
+  const histFleet = mkFleet(['enterprise', 'essex', 'saratoga', 'iowa', 'fletcher', 'baltimore'], 110, 1);
+  lines.push(run('hist-H1A-air-match', histFleet, 'H1A',
+    { allowNight: true, airMode: true, historic: true, histHit: 1.05, histEvd: 1.05 }, 80));
+  lines.push(run('hist-H1X-air-boss', histFleet, 'H1X',
+    { allowNight: true, airMode: true, historic: true, histHit: 1.05, histEvd: 1.05 }, 80));
+}
+if (!NO_WAVES) {
+  /* 二波制场景：第二波的实质是「带着第一波打剩的残弹与耐久再打一场」——
+   * 这里直接以 40% 残弹进入第二波敌编成，复现该随机数流位置。 */
+  const waveFleet = mkFleet(['enterprise', 'essex', 'saratoga', 'iowa', 'fletcher', 'baltimore'], 110, 1);
+  for (const uid of waveFleet) {
+    const s = Game.state.ships[uid];
+    if (s) { s.supply = { fuel: 0.6, ammo: 0.4 }; s.hp = Math.max(1, Math.floor(Game.shipStats(uid).hpMax * 0.6)); }
+  }
+  lines.push(run('waves-H1X2-second', waveFleet, 'H1X2',
+    { allowNight: true, airMode: true, historic: true, histHit: 1.05, histEvd: 1.05 }, 80));
+}
 const out = lines.join('\n') + '\n';
 
 if (!against) {

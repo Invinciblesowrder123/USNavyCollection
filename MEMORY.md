@@ -230,6 +230,48 @@ sim **1571** / 迁移 32 / E2E **178**（0 JS 错误）；对拍零漂移。**�
 4.3 作战目标 **12 → 14 个 / 6 → 8 图**（`3-4-cv2` ≥2 空母、`3-5-dd4` ≥4 驱逐舰，均为编成型；守 ≤15 上限）。
 sim **1581** / 迁移 32 / E2E **178**（0 JS 错误）；对拍零漂移。
 
+## V0.303 历史战役模式（2026-09-12）—— 新增的长期约定
+
+- **数据隔离（坑 #16）**：战役数据在 `public/js/data/history.js`（`HISTORY_BATTLES`），**绝不进 `MAPS`**。
+  引擎唯一接入点 `Sortie.resolveMap(id)`（MAPS → `History.byId`）。`simulate.js` 里所有按 `MAPS` 遍历的断言因此一条都不用改。
+  sim 有「把战役塞进 MAPS → 隔离判据变红」的负向验证守着（不是恒真式）。
+- **`History` API**：`list / byId / isBattleId / enemy / enemyKeys / ENEMY_BY_KEY / matchRule / ruleText / ruleCheck / wavesFor / waveEnemyKeys / usedNodeModes`。
+  `matchRule(rule, fleetTypes)` 是**纯函数**：`require:[{types,min}]`（组内「或」、组间「与」）+ `ban:[舰种]`（禁入优先），
+  返回 `{ok, hits, banned, banHit}`。规则**只决定加成、不决定通关**（P0-3 安全侧）。
+- **史实加成乘区（坑 #17）**：`battle.js::HIST_HIT = 1.05`，走**独立字段** `_histHit` / `_histEvd`，
+  在 `hitMods()` 内与 `_reconHit`、`_touchHit` **相乘**（1.03 × 1.15 × 1.05 = **1.243725，+24.37%**）。
+  `opts.historic === false`（默认）时**不读不写任何字段**。
+  接入方式：`prepareBattle` 用 `History.matchRule` 判定后，把结论经 `opts.historic/histHit/histEvd` 传给引擎（引擎与数据解耦）。
+- **二波制（坑 #18）**：`sortie.startHardWave(prevPrep, opts)`。
+  `hard.waves = { X: ['H1X','H1X2'] }` —— key = **BOSS 节点 id**，`[0]` 必须等于 `defs[boss].enemy`（sim 有交叉断言）。
+  「迎击」= 先 `settleBattle(prep)` 且 `prep.histContinue = true`（只落消耗与履历、不发奖不打标记）→ 再 `startHardWave`；
+  「收兵」= 直接 `settleBattle`（不写 hardWin、零惩罚）。
+  **`opts.waves === false` 时整个分支跳过且不消耗随机数** —— 这是 drift 三基线能回到 V0.302 的前提。
+- **二波制的一个刻意不对称（已公开披露，别当 bug "修"）**：迎击路径下参战舰 `record.sorties +2`
+  （第一波 + 第二波各一次结算），提督经验按「道中档 + BOSS 档」两次结算；与常规图一次出击 +1 的口径不同。
+- **奖励与荣誉（坑 #21）**：一次性奖励靠**全局账本** `st.stats.historic`（键 `H1:firstClear` / `H1:histForm` / `H1:hard`），
+  发放前查账本、发放即记账。荣誉走 `Progression.HONORS`（+6 个 `hist_*`），
+  栅栏是 `c.histFinal = BOSS 节点 且（非强敌阶 或 wave>=2）`。
+  **规则：任何"按层发放"的奖励/荣誉，触发条件必须同时锚定「节点类型」与「阶段（第几波）」，只锚定其一必然提前发放**
+  （本版就踩过两次：道中 S 胜发"史实重演"、第一波 S 胜授"强敌阶"荣誉）。
+- **奖励词表新增 `item` 字段**：消耗品奖励（如 `dc_team` 应急修理要员）走 `createEquip`，自动上锁规则已覆盖。
+  `Progression.grantRewardBundle(reward)` 是任务与战役**共用**的发放通道（资源 + equip + item），新奖励别另写一套。
+- **存档 v6**：`ships[].record.historic[battleId] = { clearAt, histWin, hardWin }` + `st.stats.historic`。
+  迁移器 `migrateV5ToV6` 是 historic 键的**唯一补写点**；`normalizeSave` 依然不补新键（坑 #3 / #19）。
+- **统计隔离（坑 #20）**：战役不写 `mapProgress`、不计入 `state.stats.sortie/win/sWin/sink`、不推任务计数
+  （UI 路径传 `applyBattleResult(..., { noQuest: true })`）；但参战舰 `record.sorties` **照记**。
+  这个不对称由「双向断言 + 5 组负向验证」守着。
+- **`History` 与浏览器内置 `History API` 同名**：`typeof History !== 'undefined'` 在浏览器**恒真**，
+  所有读取点必须用**方法级守卫**（`typeof History.byId === 'function'`）。新增读取点时照做。
+- **三基线怎么跑**：`battle_digest.baseline.txt`（当前，12 组）/ `..._v0302.txt`（9 组）/ `..._v0301.txt`（9 组）；
+  `npm run drift` / `drift:v0302`（`--no-hist --no-waves`）/ `drift:archive`（再叠 `--no-touch`）。
+  **以后每加一个"会消耗随机数"的机制**：给它 `opts.xxx === false` 开关，把新增场景用开关 gate 掉，
+  并保证关掉后逐位回到上一版基线（本次 `--no-hist --no-waves` 已按此模式落地）。
+- **UI 文案里的 `**强调**`**：简报统一走 `ui/sortie.js::briefHtml()`（转义 + 换行 + `**x**` → `<b>x</b>`）。
+  新增简报别直接 `.replace(/\n/g,'<br>')`（会把 `**` 漏给玩家；E2E 有 `hist:noMarkdownLeak` 断言守着）。
+- **截图页 `_shot_air.html` 需要 `#modal-root` / `#sub-modal-root`**：没有这两个容器时 `UI.modal` 静默失败，
+  弹窗类用例会截出"什么都没发生"的空画面（本次踩过，已补上）。
+
 ## 反遗忘检查清单
 
 - [ ] 新开会话 → 先读 MEMORY.md + HEARTBEAT.md 最新条目

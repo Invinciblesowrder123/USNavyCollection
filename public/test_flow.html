@@ -15,6 +15,7 @@
 <script src="js/data/ships.js"></script>
 <script src="js/data/live2d.js"></script>
 <script src="js/data/maps.js"></script>
+<script src="js/data/history.js"></script>
 <script src="js/data/quests.js"></script>
 <script src="js/core/state.js"></script>
 <script src="js/game/battle.js"></script>
@@ -431,7 +432,7 @@
       R(document.querySelector('#screen').innerHTML.includes('航向侦察'), 'recon:panel');
 
       /* ===== 方向二：舰历 ===== */
-      R(typeof Progression.recordSummary === 'function' && Progression.HONORS.length >= 6 && Progression.HONORS.length <= 8, 'record:honorCount');
+      R(typeof Progression.recordSummary === 'function' && Progression.HONORS.length === 14, 'record:honorCount');
       /* 取一艘真正打过仗的舰（前面的流程会 unshift 维斯塔尔，fleet[1][0] 未必参战过） */
       const rUid = Object.keys(Game.state.ships).find(u => Game.state.ships[u].record && Game.state.ships[u].record.sorties > 0) || Game.state.fleet[1][0];
       const rSum = Progression.recordSummary(rUid);
@@ -618,6 +619,185 @@
       R(h35.indexOf('混合全部特殊节点') >= 0, 'spread:brief35');
       R(h35.indexOf('威胁评估') >= 0 && h35.indexOf('四类特殊节点同时出现') >= 0, 'spread:threatNote35');
       UI.go('sortie');
+
+      /* ============================================================
+       * V0.303：历史战役模式（页签 / 详情 / 匹配度自检 / 锁定态 / 出击 / 二波制）
+       * 放在最后：本段会切到「战役」页签并真实驱动一场 BOSS 战，不应影响前面的海域布局断言。
+       * ============================================================ */
+      const scrEl = document.querySelector('#screen');
+      const openHist = bid => {
+        SortieUI.mapList(scrEl);
+        const tb = scrEl.querySelector('[data-tab="hist"]');
+        if (tb) tb.click();
+        if (bid) { const c = scrEl.querySelector('[data-battle="' + bid + '"]'); if (c) c.click(); }
+      };
+      openHist(null);
+      R(scrEl.querySelectorAll('[data-battle]').length === 2, 'hist:tabListsBothBattles',
+        'n=' + scrEl.querySelectorAll('[data-battle]').length);
+      R(!!scrEl.querySelector('.hist-list .hist-card.sel'), 'hist:firstCardSelectedByDefault');
+      R(!!scrEl.querySelector('.sortie-mapside > .hist-list'), 'hist:listInLeftColumn');
+      R(!!scrEl.querySelector('.sortie-mapside > .sortie-intel'), 'hist:intelBoxReused');
+      R(!scrEl.querySelector('.map-detail .sortie-intel'), 'hist:intelNotInDetailColumn');
+      R(!!scrEl.querySelector('.hist-detail > .sortie-brief'), 'hist:briefInDetailColumn');
+      R(!!scrEl.querySelector('.hist-detail .hist-hard-box'), 'hist:hardTierSection');
+      R(!!scrEl.querySelector('.hist-detail .hist-rewards'), 'hist:rewardPreview');
+      R(!!scrEl.querySelector('.hist-rule') && scrEl.querySelector('.hist-rule').textContent.indexOf('史实编成规则') >= 0,
+        'hist:ruleSelfCheck');
+      R(!!scrEl.querySelector('.hist-rule') && scrEl.querySelector('.hist-rule').textContent.indexOf('编成含') >= 0,
+        'hist:ruleConditionsListed');
+      /* 简报里的 **强调** 必须被渲染成粗体，不能把 markdown 标记漏给玩家 */
+      R(scrEl.innerHTML.indexOf('**') < 0, 'hist:noMarkdownLeak');
+      /* 匹配度自检与引擎同源（DOM 文本结论必须与 Sortie.intel → History.matchRule 一致） */
+      const verifyMatch = tag => {
+        const it = Sortie.intel(1, 'H1');
+        const el = scrEl.querySelector('.hist-rule');
+        const tx = el ? el.textContent : '';
+        const mv = !!(it && it.historic && it.historic.match);
+        R(!!it && !!el && (mv ? tx.indexOf('编成符合史实') >= 0 : tx.indexOf('编成与史实不符') >= 0),
+          tag, 'match=' + mv);
+      };
+      verifyMatch('hist:selfCheckMatchesEngine');
+      /* 改编成 → 面板实时刷新 */
+      const fleetBak = Game.state.fleet[1].slice();
+      Game.state.fleet[1] = fleetBak.filter(u => {
+        const s = Game.state.ships[u];
+        const t = s && ShipData[s.id] && ShipData[s.id].type;
+        return t !== 'CV' && t !== 'CVL' && t !== 'CVB';
+      });
+      openHist('H1');
+      R(Sortie.intel(1, 'H1').historic.match === false, 'hist:selfCheckLiveAfterFleetChange');
+      verifyMatch('hist:selfCheckLiveDomMatchesEngine');
+      Game.state.fleet[1] = fleetBak;
+      openHist('H1');
+      verifyMatch('hist:selfCheckRestored');
+      /* 强敌阶锁定态：DOM 必须与引擎门槛同口径 */
+      const ledFirst = !!(Game.state.stats.historic && Game.state.stats.historic['H1:firstClear']);
+      const gateH1 = Sortie.historicGate(History.byId('H1'), true);
+      R(gateH1.ok === ledFirst, 'hist:hardGateMatchesLedger');
+      R(ledFirst === !!scrEl.querySelector('[data-start-hard]'), 'hist:hardLockDomMatchesGate',
+        'gate=' + gateH1.ok + ' btn=' + !!scrEl.querySelector('[data-start-hard]'));
+      /* H2：禁入型史实规则必须渲染出来（含战列舰 → 红色警示文案） */
+      openHist('H2');
+      const h2r = scrEl.querySelector('.hist-rule');
+      R(!!h2r && h2r.textContent.indexOf('禁入') >= 0, 'hist:h2BanRuleRendered',
+        h2r ? h2r.textContent.replace(/\s+/g, ' ').slice(0, 80) : '(无)');
+      R(!!scrEl.querySelector('.hist-card.sel') && scrEl.querySelector('.hist-card.sel').dataset.battle === 'H2',
+        'hist:cardSelectionFollows');
+
+      /* ---- 战役出击 → 二波「迎击 / 收兵」（同步驱动：跳过演出 → 追击选择 → 二波选择） ---- */
+      const mkH = (id, lv, eqs) => {
+        const s = Game.createShip(id, lv);
+        for (const e of s.equipped.slice()) Game.destroyEquip(e);
+        s.equipped = [];
+        for (const eid of (eqs || [])) {
+          if (s.equipped.length >= ShipData[id].slots.length) break;
+          const ne = Game.createEquip(eid); ne.locked = false; s.equipped.push(ne.uid);
+        }
+        if (!eqs) Game.equipDefaults(s.uid);
+        s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60;
+        return s.uid;
+      };
+      const buildHF = () => {
+        const CVF = ['f6f5', 'f6f5', 'f6f5', 'f6f5'];
+        Game.state.fleet[1] = [
+          mkH('enterprise', 120, CVF), mkH('essex', 120, CVF), mkH('saratoga', 120, CVF),
+          mkH('iowa', 120, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+          mkH('fletcher', 120, ['gun5in_38', 'torp_mk15', 'torp_mk15', 'sonar_qc']),
+          mkH('baltimore', 120, ['gun8in_55', 'gun8in_55', 'radar_sg', 'ap_mk8'])
+        ];
+      };
+      /* 把 BOSS 第一波的昼战推到「二波选择」弹窗出现为止（返回弹窗上的「迎击」按钮） */
+      const reachWaveModal = () => {
+        Sortie.returnHome();
+        buildHF();
+        Game.state.admiral.level = 60;
+        Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+        Game.state.stats.historic['H1:firstClear'] = Date.now();
+        const r = Sortie.startHard('H1', 1);
+        if (!r.ok) return null;
+        Game.state.sortie.node = 'X';                 // 直达 BOSS（A 点与本次机制无关）
+        UI.go('sortie');
+        const adv = scrEl.querySelector('[data-act="advance"]');
+        if (!adv) return null;
+        adv.click();
+        const sk = scrEl.querySelector('#fxSkip');
+        if (!sk) return null;
+        sk.click();                                   // 跳过昼战演出 → 追击选择
+        const endBtn = document.querySelector('#modal-root [data-end]');
+        if (endBtn) endBtn.click();                   // 「战斗结束」（不走夜战，流程可预期）
+        return document.querySelector('#modal-root [data-wave]');
+      };
+      localStorage.setItem('usnc_form_fixed', '单纵阵');
+      /* 收兵：按第一波正常结算、强敌阶不标记通关、零惩罚 */
+      const retireBtn = reachWaveModal();
+      R(!!retireBtn, 'hist:waveChoiceAppears');
+      const waveModalH3 = document.querySelector('#modal-root h3');
+      R(!!waveModalH3 && waveModalH3.textContent.indexOf('敌增援接近') >= 0, 'hist:waveChoiceTitle',
+        waveModalH3 ? waveModalH3.textContent : '(无)');
+      R(!!document.querySelector('#modal-root [data-wave]') && !!document.querySelector('#modal-root [data-retire]'),
+        'hist:waveChoiceButtons');
+      R(!!Game.state.sortie && Game.state.sortie.wave === 1, 'hist:waveStillOneBeforeChoice');
+      R(document.querySelector('#modal-root').textContent.indexOf('残弹') >= 0, 'hist:waveChoiceExplainsResupply');
+      document.querySelector('#modal-root [data-retire]').click();
+      const retireLog = (scrEl.querySelector('#battleLog') || {}).textContent || '';
+      R(retireLog.indexOf('史实编成') >= 0, 'hist:resultHistSummary', retireLog.slice(-100));
+      R(!Game.state.stats.historic['H1:hard'], 'hist:retireNoHardMark');
+      R(!!scrEl.querySelector('#battleLog [data-back]'), 'hist:resultBackButton');
+      const back1 = scrEl.querySelector('#battleLog [data-back]');
+      if (back1) back1.click();
+      document.querySelector('#modal-root').innerHTML = '';
+      /* 迎击：第二波立即发起，残弹 / 耐久 / 士气继承（不做补给） */
+      let intercept = null;
+      for (let attempt = 0; attempt < 3 && !intercept; attempt++) {
+        const wb = reachWaveModal();
+        if (!wb) continue;
+        const uid0 = Game.state.fleet[1][0];
+        const before = { ammo: Game.state.ships[uid0].supply.ammo, morale: Game.state.ships[uid0].morale };
+        wb.click();
+        if (Game.state.sortie && Game.state.sortie.wave === 2) {
+          intercept = {
+            before,
+            after: { ammo: Game.state.ships[uid0].supply.ammo, morale: Game.state.ships[uid0].morale },
+            log: (scrEl.querySelector('#battleLog') || {}).textContent || ''
+          };
+        }
+      }
+      R(!!intercept, 'hist:waveAdvancedToTwo');
+      R(!!intercept && intercept.after.ammo <= intercept.before.ammo, 'hist:waveNoResupply',
+        intercept ? intercept.before.ammo + '→' + intercept.after.ammo : '');
+      R(!!intercept && intercept.log.indexOf('第一波击破') >= 0 && intercept.log.indexOf('继承') >= 0,
+        'hist:wave2LogLine', intercept ? intercept.log.replace(/\s+/g, ' ').slice(0, 120) : '');
+      R(!!intercept && scrEl.innerHTML.indexOf('第二梯队') >= 0, 'hist:wave2EnemyHint');
+      /* 收尾：第二波也跳过演出，确认能出结算并可返回母港（不报错） */
+      if (intercept) {
+        const sk2 = scrEl.querySelector('#fxSkip');
+        if (sk2) sk2.click();
+        const end2 = document.querySelector('#modal-root [data-end]');
+        if (end2) end2.click();
+        const back2 = scrEl.querySelector('#battleLog [data-back]');
+        if (back2) back2.click();
+        document.querySelector('#modal-root').innerHTML = '';
+        Sortie.returnHome();
+      }
+      /* 第二波入场横幅（DOM 级）：独立横幅 + 强敌阶简报 */
+      buildHF();
+      Sortie.returnHome();
+      Game.state.stats.historic['H1:firstClear'] = Date.now();
+      const stW2 = Sortie.startHard('H1', 1);
+      if (stW2.ok) {
+        Game.state.sortie.node = 'X';
+        Game.state.sortie.wave = 2;
+        UI.go('sortie');
+        const wbEl = scrEl.querySelector('.map-banner.wave');
+        R(!!wbEl && /撤退/.test(wbEl.textContent), 'hist:wave2Banner', wbEl ? wbEl.textContent : '(无)');
+        R(scrEl.innerHTML.indexOf('第二梯队') >= 0, 'hist:wave2NodeInfo');
+        R(scrEl.innerHTML.indexOf('强敌阶简报') >= 0, 'hist:hardBriefVisible');
+        R(scrEl.innerHTML.indexOf('**') < 0, 'hist:noMarkdownLeakInBattle');
+        R(scrEl.innerHTML.indexOf('强敌阶') >= 0 && scrEl.innerHTML.indexOf('第 2 波') >= 0, 'hist:hardTierTopbar');
+      }
+      Sortie.returnHome();
+      localStorage.removeItem('usnc_form_fixed');
+      document.querySelector('#modal-root').innerHTML = '';
 
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {

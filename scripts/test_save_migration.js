@@ -85,6 +85,32 @@ function v4Save() {
   };
 }
 
+/* v5 → v6：舰历新增历史战役标记 record.historic + 全局账本 stats.historic（V0.303） */
+function v5Save() {
+  return {
+    saveVersion: 5, version: 5,
+    admiral: { name: '提督', level: 42, exp: 0 },
+    resources: { fuel: 900, ammo: 900, steel: 900, baux: 900, screws: 12, devMats: 20 },
+    ships: {
+      s1: {
+        uid: 's1', id: 'enterprise', kai: 1, lv: 80, hp: 60, morale: 49, equipped: [], modern: {}, supply: { fuel: 1, ammo: 1 },
+        record: {
+          sorties: 31, expeditions: 5, sWin: 20, taiha: 2, failures: 3, perfect: 9, bossKills: 12, lastBoss: '深海战列栖姬',
+          firstClear: { '1-1': 1700000000000, '1-2': 1700000000001 },
+          objectives: { '1-2-s': 1700000000002 },
+          honors: [{ id: 'first_sortie', at: 1700000000003 }], remodelAt: [1700000000004]
+        }
+      },
+      s2: { uid: 's2', id: 'fletcher', kai: 0, lv: 30, hp: 20, morale: 50, equipped: [], modern: {}, supply: { fuel: 1, ammo: 1 } }
+    },
+    equipment: { e1: { uid: 'e1', id: 'gun5in_30', star: 1 } },
+    fleet: { 1: ['s1', 's2'], 2: [], 3: [], 4: [] },
+    library: { ships: { enterprise: true, fletcher: true }, equips: { gun5in_30: true } },
+    stats: { sink: 12, sortie: 40, win: 33, sWin: 20, bossSWin: { '1-1': 3 }, objectives: { '1-2-s': 1700000000002 } },
+    mapProgress: {}
+  };
+}
+
 console.log('\n== 存档迁移专项测试 ==');
 
 /* v1 旧档 → 当前版本 */
@@ -165,6 +191,52 @@ check('v4 迁移后的 record 结构与新建结构一致',
     firstClear: { '1-1': 1700000000000 }, honors: [{ id: 'first_sortie', at: 1700000000001 }], remodelAt: [1700000000002]
   })));
 check('v4 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV4)) === JSON.stringify(fromV4));
+
+/* v5 → v6：补 record.historic（V0.303），且不动既有履历数值与账本 */
+const fromV5 = Game.migrateSave(v5Save());
+check('v5 档升级到当前版本（v6）', fromV5.saveVersion === 6 && fromV5.version === 6 && CUR === 6);
+check('v5 档补齐 record.historic 为空对象',
+  fromV5.ships.s1.record.historic && typeof fromV5.ships.s1.record.historic === 'object' &&
+  Object.keys(fromV5.ships.s1.record.historic).length === 0,
+  JSON.stringify(fromV5.ships.s1.record.historic));
+check('v5 档补齐全局战役账本 stats.historic 为空对象',
+  fromV5.stats && fromV5.stats.historic && typeof fromV5.stats.historic === 'object' &&
+  Object.keys(fromV5.stats.historic).length === 0,
+  JSON.stringify(fromV5.stats && fromV5.stats.historic));
+check('v5 档迁移不覆盖既有履历数值',
+  fromV5.ships.s1.record.sorties === 31 && fromV5.ships.s1.record.sWin === 20 &&
+  fromV5.ships.s1.record.objectives['1-2-s'] === 1700000000002 &&
+  fromV5.ships.s1.record.firstClear['1-1'] === 1700000000000 &&
+  fromV5.ships.s1.record.honors.length === 1);
+check('v5 档迁移不覆盖既有全局统计与作战目标账本',
+  fromV5.stats.sortie === 40 && fromV5.stats.objectives['1-2-s'] === 1700000000002);
+check('v5 档资源与舰队无损',
+  fromV5.resources.fuel === 900 && fromV5.resources.screws === 12 && fromV5.resources.devMats === 20 &&
+  JSON.stringify(fromV5.fleet[1]) === JSON.stringify(['s1', 's2']) &&
+  fromV5.ships.s1.lv === 80 && fromV5.ships.s1.kai === 1);
+check('v5 迁移后的 record 结构与新建结构一致',
+  JSON.stringify(fromV5.ships.s1.record) === JSON.stringify(Object.assign(Game.defaultRecord(), {
+    sorties: 31, expeditions: 5, sWin: 20, taiha: 2, failures: 3, perfect: 9, bossKills: 12, lastBoss: '深海战列栖姬',
+    firstClear: { '1-1': 1700000000000, '1-2': 1700000000001 },
+    objectives: { '1-2-s': 1700000000002 },
+    honors: [{ id: 'first_sortie', at: 1700000000003 }], remodelAt: [1700000000004]
+  })));
+check('v5 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV5)) === JSON.stringify(fromV5));
+/* 全链路：v1 旧档一路迁到 v6，也必须带齐 historic（链路无缺口） */
+check('v1 旧档一路迁移到 v6 同样带齐 record.historic',
+  fromV1.ships.s40.record.historic && Object.keys(fromV1.ships.s40.record.historic).length === 0 &&
+  JSON.stringify(fromV1.ships.s40.record) === JSON.stringify(Game.defaultRecord()));
+check('v6 档的战役账本已存在（新档同形状）',
+  (() => {
+    const s = Game.migrateSave({
+      saveVersion: 6, version: 6,
+      resources: { fuel: 1, ammo: 1, steel: 1, baux: 1, screws: 0, devMats: 10 },
+      ships: { s1: { uid: 's1', id: 'mahan', record: Game.defaultRecord() } },
+      equipment: {}, fleet: { 1: [], 2: [], 3: [], 4: [] },
+      stats: { sortie: 1, historic: { 'H1:firstClear': 1700000000000 } }
+    });
+    return s.stats.historic['H1:firstClear'] === 1700000000000;
+  })());
 
 /* 损坏存档 */
 const damaged = Game.migrateSave({ saveVersion: CUR, resources: null, fleet: null, ships: null, equipment: null, library: null });

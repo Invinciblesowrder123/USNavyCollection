@@ -24,19 +24,59 @@ const Sortie = (() => {
     return true;
   }
 
+  /* ============ 地图查找（V0.303：**唯一接入点**）============
+   * 常规海域 → MAPS；历史战役 → History.byId。战役数据刻意不进 MAPS 数组（坑 #16）：
+   * simulate.js 里 25 图的简报覆盖 / 威胁推导 / BOSS 可达等断言全部按 MAPS 遍历，
+   * 混进去要么把断言全改范围，要么被当成普通图校验出假红。 */
+  function resolveMap(id) {
+    const m = MAPS.find(x => x.id === id);
+    if (m) return m;
+    /* 注意：浏览器里 `History` 是内置对象（History API），`typeof History !== 'undefined'` 恒真 ——
+     * 因此这里必须做**方法级**守卫，否则未加载 data/history.js 时会调用 undefined。 */
+    if (typeof History !== 'undefined' && History && typeof History.byId === 'function') return History.byId(id);
+    return null;
+  }
+  /* 该图是否为历史战役（判据：有 histRule —— 与 MAPS 记录天然互斥） */
+  function isHistoricMap(map) { return !!(map && map.histRule); }
+
+  /* 战役入口门槛（出击前可见：UI 与引擎同源，禁止 UI 另算）
+   *  - 常规阶：提督等级 ≥ battle.admReq
+   *  - 强敌阶：提督等级 ≥ battle.hard.admReq **且** 常规阶已首通（防刷账本 firstClear） */
+  function historicGate(map, hard) {
+    const G = GameRef();
+    const st = G.state;
+    if (!isHistoricMap(map)) return { ok: false, msg: '非历史战役' };
+    const need = hard ? (map.hard && map.hard.admReq) : map.admReq;
+    const lv = st.admiral ? st.admiral.level : 1;
+    if (need && lv < need) return { ok: false, msg: `提督等级不足！需要 Lv.${need}（当前 Lv.${lv}）`, reason: 'admReq' };
+    if (hard) {
+      const cleared = !!(st.stats && st.stats.historic && st.stats.historic[map.id + ':firstClear']);
+      if (!cleared) return { ok: false, msg: '强敌阶尚未开放！需先完成常规阶首通。', reason: 'unlock' };
+    }
+    return { ok: true };
+  }
+
   function currentMap() {
     const st = GameRef().state;
     if (!st.sortie) return null;
-    return MAPS.find(m => m.id === st.sortie.mapId);
+    return resolveMap(st.sortie.mapId);
   }
 
-  function start(mapId, fleetIdx) {
+  function start(mapId, fleetIdx) { return startInternal(mapId, fleetIdx, false); }
+  /* 强敌阶出击入口（独立函数，保持 start(mapId, fleetIdx) 签名不变 —— 任务书任务 1.2） */
+  function startHard(mapId, fleetIdx) { return startInternal(mapId, fleetIdx, true); }
+
+  function startInternal(mapId, fleetIdx, hard) {
     const G = GameRef();
     const st = G.state;
-    const map = MAPS.find(m => m.id === mapId);
+    const map = resolveMap(mapId);
     if (!map) return { ok: false, msg: '海域不存在' };
-    /* BOSS海域（EO）：需先击破同区域4号图（wiki：1-5 等需击破前图开放） */
-    if (map.need) {
+    const hist = isHistoricMap(map);
+    if (hist) {
+      const gate = historicGate(map, hard);
+      if (!gate.ok) return gate;
+    } else if (map.need) {
+      /* BOSS海域（EO）：需先击破同区域4号图（wiki：1-5 等需击破前图开放） */
       const needMp = st.mapProgress[map.need];
       if (!needMp || !needMp.cleared) {
         return { ok: false, msg: `「${map.id}」为 BOSS 海域！需先击破 ${map.need} 才能出击！` };
@@ -72,8 +112,16 @@ const Sortie = (() => {
       : null;
     /* 士气轮换提醒（方向三）：只提示不拦截（P0-2），随出击结果一并返回给 UI */
     const advice = moraleAdvice(fleetIdx);
-    st.sortie = { mapId, fleetIdx, node: map.start, path: [map.start], finished: false, nightDisabled: false, daPoSeen: false };
-    return { ok: true, warn, advice };
+    st.sortie = {
+      mapId, fleetIdx, node: map.start, path: [map.start], finished: false, nightDisabled: false, daPoSeen: false,
+      /* 历史战役（V0.303）：historic = 战役 id（常规图为 null）；hard = 强敌阶；wave = 第几波；
+       * histSunk = 本次出击累计沉没数（「全程无舰沉没」荣誉的判据） */
+      historic: hist ? map.id : null,
+      hard: !!hard,
+      wave: 1,
+      histSunk: 0
+    };
+    return { ok: true, warn, advice, historic: hist ? map.id : null, hard: !!hard };
   }
 
   /* 当前舰队中处于大破状态的僚舰（非旗舰） */
@@ -209,22 +257,85 @@ const Sortie = (() => {
         break;
       }
     }
-    const enemyKey = def.enemy || 'F01';
-    const enemyFleet = ENEMY_FLEETS[enemyKey];
+    /* ---- 历史战役（V0.303）：二波制敌编成 + 史实编成加成 ----
+     * 二波制：强敌阶 BOSS 的第二波敌编成由 hard.waves 指定（键 = BOSS 节点 id）。
+     * 史实加成：matchRule 判定放在**这里**（舰队与规则都在手，是唯一的判定点），
+     * 引擎只接收结论 → opts.historic / opts.histHit / opts.histEvd（引擎与数据解耦）。 */
+    const hist = isHistoricMap(map);
+    let enemyKey = def.enemy || 'F01';
+    if (hist && so.hard && so.wave >= 2) {
+      const wk = (typeof History !== 'undefined' && History && typeof History.wavesFor === 'function')
+        ? History.wavesFor(map, so.node) : null;
+      if (wk) enemyKey = wk;
+    }
+    const BA = BattleRef();
+    const enemyFleet = (BA && BA.enemyFleet) ? BA.enemyFleet(enemyKey)
+      : ((typeof ENEMY_FLEETS !== 'undefined' && ENEMY_FLEETS) ? ENEMY_FLEETS[enemyKey] : null);
+    if (!enemyFleet) return { ok: false, msg: `敌编成数据缺失：${enemyKey}` };
     const isBoss = def.type === 'boss';
+    let histMatch = false, histHit = 1, histEvd = 1;
+    if (hist) {
+      histMatch = History.matchRule(map.histRule, fleetTypes(so.fleetIdx)).ok;
+      if (histMatch) { histHit = map.bonus.hit; histEvd = map.bonus.evd; }
+    }
     const result = Battle.battle(fleet, enemyFleet.ships, formation, enemyFleet.formation, {
       allowNight: false, fleetIdx: so.fleetIdx,
       sub: def.mode === 'sub',            // 潜艇点：敌潜艇速力打击修正 + 60% 耐久封顶
       nightOnly: def.mode === 'night',    // 夜战点：跳过昼战直接夜战
-      airMode: def.mode === 'air'         // 航空战点：无航空战力时进入被动防空分支（单次轰炸伤害封顶 60%）
+      airMode: def.mode === 'air',        // 航空战点：无航空战力时进入被动防空分支（单次轰炸伤害封顶 60%）
+      historic: hist,                     // 历史战役：史实编成加成乘区（默认 false → 不读不写任何字段）
+      histHit, histEvd
     });
     if (oilerUsed) result.log.unshift('「洋上补给」发动！舰队油弹恢复到100%。');
-    return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, doomed };
+    /* 战报显式说明加成是否生效（Gate 3：操作前知道自己在选什么；这里做结算侧复核） */
+    if (hist) {
+      result.log.unshift(histMatch
+        ? `史实编成加成生效：本场命中与回避 ×${map.bonus.hit}（与索敌、触接的乘区相乘，互不覆盖）。`
+        : `编成与史实不符：本场无史实编成加成（加成条件，不是通关条件）。${History.ruleText(map.histRule)}`);
+    }
+    return {
+      ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, doomed, formation,
+      histMatch, histWave: so.wave, historic: hist ? map.id : null, hard: !!so.hard,
+      histEnemyKey: enemyKey
+    };
   }
 
   /* 夜战突入：在昼战结果上追加夜战并重新结算（消耗弹药30%，参照wiki） */
   function continueNight(prep) {
     prep.result = Battle.battleNight(prep.result);
+    return prep;
+  }
+
+  /* 舰队舰种表（史实规则判定与荣誉 ddCount 的唯一来源） */
+  function fleetTypes(fleetIdx) {
+    const st = GameRef().state;
+    return (st.fleet[fleetIdx] || [])
+      .map(u => st.ships[u] && ShipData[st.ships[u].id] && ShipData[st.ships[u].id].type)
+      .filter(Boolean);
+  }
+
+  /* ============ 强敌阶二波制（V0.303，设计卡 §四）============
+   * 第一波击破后玩家选择「迎击 / 收兵」：
+   *   收兵 → 直接 settleBattle（与常规阶 BOSS 结算一致，不写 hardWin，零惩罚）
+   *   迎击 → 先 settleBattle(prep, { histContinue: true })**只落第一波的消耗与履历、不发奖不打标记**，
+   *          再调本函数发起第二波：残弹 / 耐久 / 士气全部继承，一行业务数值不改
+   *          （难度来源就是引擎已有的弹药补正与耐久继承，失败归因天然可读）。
+   *
+   * 【坑 #18】二波制是新的随机数消费者（第二波战斗会移动 LCG 随机数流位置），必须带开关：
+   *   `opts.waves === false` 时**整个二波分支跳过且不消耗任何随机数**（连 prepareBattle 都不调用）——
+   *   这是 drift 三基线「关掉本版全部新机制 → 逐位回到 V0.302」的前提。默认开启。 */
+  function startHardWave(prevPrep, opts = {}) {
+    const st = GameRef().state;
+    const so = st.sortie;
+    if (!so || !so.historic) return { ok: false, msg: '不在历史战役中' };
+    if (opts.waves === false) return { ok: false, msg: '二波制已关闭（opts.waves === false）', disabled: true };
+    if (so.wave >= 2) return { ok: false, msg: '第二波已经发起' };
+    so.wave = 2;
+    const prep = prepareBattle((prevPrep && prevPrep.formation) || '单纵阵');
+    if (!prep.ok) { so.wave = 1; return prep; }
+    prep.result.log.unshift(
+      `—— 第一波击破（${(prevPrep && prevPrep.result && prevPrep.result.rank) || '?'} 胜）。`
+      + '敌军第二梯队进入战场：残弹、耐久与士气全部继承，本波不进行任何补给。 ——');
     return prep;
   }
 
@@ -283,6 +394,16 @@ const Sortie = (() => {
     if (!result || (result.victory && result.rank !== 'D')) return out;
     const def = nodeDef || {};
     const ships = fleet || [];
+    /* 0) 历史战役·强敌阶第二波战败（V0.303）：**优先归因「弹药见底 / 连续作战」**——
+     *    二波制的难度来源就是残弹继承与弹药补正，不能让既有的「索敌失败」等分支抢占主因
+     *    （坑 #11 的教训：归因误报比没有归因更糟）。 */
+    if (ctx.histWave >= 2) {
+      const list = ships.map(uid => st.ships[uid]).filter(Boolean);
+      const minAmmo = list.length ? Math.min.apply(null, list.map(s => (s.supply ? s.supply.ammo : 1))) : 1;
+      out.push(`连续作战失利：第二梯队来袭时，全队最小残弹率仅 ${Math.round(minAmmo * 100)}%`
+        + '（弹药 <50% 时最终伤害按残弹率/50 减半，这正是强敌阶的主要难度来源）。'
+        + '改进方向：第一波以「收兵」保存实力后再战，或提高昼战输出、缩短第一波耗时。');
+    }
     /* 1) 特殊节点（既有） */
     if (def.mode === 'sub') {
       const noAsw = !ships.some(uid => {
@@ -395,9 +516,19 @@ const Sortie = (() => {
     });
   }
   const OBJ_RES_ZH = { fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土', screws: '改修资材', devMats: '开发资材' };
+  /* 奖励词表文本：资源 + 装备 + **消耗品（`item` 字段，V0.303 新增）** —— 三种都要能显示 */
   function rewardText(r) {
     if (!r) return '';
-    return Object.keys(r).filter(k => OBJ_RES_ZH[k]).map(k => `${OBJ_RES_ZH[k]}+${r[k]}`).join(' ');
+    const parts = Object.keys(r).filter(k => OBJ_RES_ZH[k]).map(k => `${OBJ_RES_ZH[k]}+${r[k]}`);
+    for (const id of [].concat(r.item || [])) {
+      const ed = (typeof EquipmentData !== 'undefined' && EquipmentData[id]) || null;
+      parts.push(`${ed ? ed.zh : id}×1`);
+    }
+    for (const id of [].concat(r.equip || [])) {
+      const ed = (typeof EquipmentData !== 'undefined' && EquipmentData[id]) || null;
+      parts.push(`${ed ? ed.zh : id}×1`);
+    }
+    return parts.join(' ');
   }
 
   /* 战斗结算：油弹/疲劳消耗、hp写回、大破进击轰沉、提督经验、掉落、血条、统计 */
@@ -411,6 +542,16 @@ const Sortie = (() => {
     const fleet = st.fleet[so.fleetIdx];
     const result = prep.result;
     const isBoss = prep.isBoss;
+
+    /* ---- 历史战役上下文（V0.303）----
+     * histBattle  ：战役数据（常规图为 null）——战役**不占海域进度、不计入 25 图统计**（坑 #16/#20）
+     * histContinue：「迎击」路径下的第一波：只落消耗与履历，不发奖、不打标记、不掷掉落
+     * histHard    ：强敌阶；histWave：当前第几波（1/2） */
+    const histBattle = isHistoricMap(map) ? map : null;
+    const histContinue = !!prep.histContinue;
+    const histHard = !!(histBattle && so.hard);
+    const histWave = so.wave || 1;
+    const histMatch = !!prep.histMatch;
 
     /* 消耗：油弹（wiki：普通战斗点 油20%/弹20%，进入夜战 弹30%；节点可覆写 cost，如 1-5 反潜点 油8%/弹0），疲劳-15 */
     let ammoZero = false;
@@ -449,12 +590,13 @@ const Sortie = (() => {
       }
     }
 
-    /* 大破进击的僚舰轰沉 */
+    /* 大破进击的僚舰轰沉（战役内同时累计沉没数 —— 「全程无舰沉没」荣誉的判据） */
     for (const uid of prep.doomed) {
       const s = st.ships[uid];
       if (!s) continue;
       result.log.push(`「${s.id}」大破进击，在战斗后轰沉了……`);
       G.destroyShip(uid);
+      if (histBattle) so.histSunk = (so.histSunk || 0) + 1;
     }
 
     /* 提督经验（参照wiki「提督经验值·出击」：海域S值×评价补正）
@@ -462,8 +604,10 @@ const Sortie = (() => {
      * BOSS：S = BOSS_S；A = BOSS_S - 道中S x0.5；B = BOSS_S - 道中S x0.8；C = 道中S；D·E x0 */
     const admExp = map.admExp || { node: 10, boss: 20 };
     const nodeS = admExp.node, bossS = admExp.boss;
+    /* 「迎击」路径下的第一波按道中档计经验（强敌阶的完整报酬随第二波结算） */
+    const admExpIsBoss = isBoss && !histContinue;
     let admGain = 0;
-    if (isBoss) {
+    if (admExpIsBoss) {
       if (result.rank === 'S') admGain = bossS;
       else if (result.rank === 'A') admGain = bossS - nodeS * 0.5;
       else if (result.rank === 'B') admGain = bossS - nodeS * 0.8;
@@ -477,7 +621,8 @@ const Sortie = (() => {
     /* 掉落（掉落舰自带默认装备直接装备在舰上，不占仓库闲置容量） */
     let drop = null;
     const dropTable = isBoss ? map.bossDrops : map.drops;
-    if (dropTable && dropTable.length && Util.chance(isBoss ? 0.65 : 0.35)) {
+    /* 「迎击」路径下的第一波不掷掉落（避免同一 BOSS 两次开箱）；战役的 BOSS 掉落与常规同表 */
+    if (!histContinue && dropTable && dropTable.length && Util.chance(isBoss ? 0.65 : 0.35)) {
       const weights = {};
       dropTable.forEach(id => weights[id] = RARITY_W[ShipData[id].rarity] || 10);
       const id = Util.weighted(weights);
@@ -485,7 +630,8 @@ const Sortie = (() => {
       G.equipDefaults(drop.uid);   // 掉落舰船自带默认装备
     }
 
-    /* 血条与进度 */
+    /* 血条与进度（**战役不占海域进度** —— 战役 id 不在 st.mapProgress 中，mp 恒为 undefined，
+     * 本段对战役天然不生效。负向验证见 scripts/simulate.js「战役隔离」段） */
     let cleared = false;
     if (isBoss && result.victory && result.rank !== 'D') {
       const mp = st.mapProgress[map.id];
@@ -504,14 +650,19 @@ const Sortie = (() => {
         }
       }
     }
-    /* 战斗进度统计（任务进度由 Progression.applyBattleResult 统一通知，避免双计） */
-    st.stats.sortie++;
-    if (result.victory) st.stats.win++;
-    if (result.rank === 'S') st.stats.sWin++;
-    st.stats.sink += result.enemyKilled;
+    /* 战斗进度统计（任务进度由 Progression.applyBattleResult 统一通知，避免双计）
+     * **战役不计入全局出击/胜场统计**（坑 #20）：战役是独立关卡，不喂养 25 图的周常/月常计数。
+     * 但参战舰队成员的 record.sorties 照记（她确实出过战）—— 这个不对称由断言守着。 */
+    if (!histBattle) {
+      st.stats.sortie++;
+      if (result.victory) st.stats.win++;
+      if (result.rank === 'S') st.stats.sWin++;
+      st.stats.sink += result.enemyKilled;
+    }
 
-    /* 失败归因（P0-5：失败结算要说清原因并指出改进路径；纯函数便于断言） */
-    for (const line of attributionLines({ result, nodeDef: def, fleet, st })) result.log.push(line);
+    /* 失败归因（P0-5：失败结算要说清原因并指出改进路径；纯函数便于断言）
+     * histWave 供「强敌阶二波战败 → 优先归因弹药/连续作战」分支使用（坑 #11 的教训：防误报） */
+    for (const line of attributionLines({ result, nodeDef: def, fleet, st, histWave })) result.log.push(line);
 
     /* 作战目标（方向四）：只做判定 + 一次性奖励 + 战报说明，**不改动上面任何结算数值** */
     const daPoNow = !!so.daPoSeen || (result.myDaPo || 0) > 0;
@@ -526,9 +677,34 @@ const Sortie = (() => {
       result.log.push(`作战目标「${o.cond}」：${o.ok ? '达成' : '未达成'}${got ? `（一次性奖励 ${rewardText(o.reward)}）` : (o.ok ? '（奖励此前已发放）' : '')}`);
     }
 
+    /* ---- 历史战役奖励（V0.303，坑 #21：一次性靠**全局账本**，可重复只给小额）----
+     * 「迎击」路径下的第一波不参与奖励判定（histContinue）——强敌阶的达成在第二波结算。
+     * bossVictory 排除「强敌阶第一波」：那时还没打完，不该发首通/重复奖励。 */
+    let histReward = null;
+    if (histBattle && !histContinue) {
+      const bossVictory = isBoss && result.victory && result.rank !== 'D' && (!histHard || histWave >= 2);
+      histReward = Progression.grantHistoricRewards({
+        battle: histBattle, hard: histHard, wave: histWave,
+        victory: !!result.victory, rank: result.rank, histMatch, bossVictory
+      });
+      const ZH = { firstClear: '常规阶首通', histForm: '史实重演（史实编成 S 胜）', hard: '强敌阶首通' };
+      for (const k of histReward.granted) {
+        const rw = k === 'firstClear' ? histBattle.rewards.firstClear
+          : k === 'histForm' ? histBattle.rewards.histForm : histBattle.rewards.hard.firstClear;
+        result.log.push(`战役奖励·${ZH[k]}：${rewardText(rw)}（一次性）`);
+      }
+      if (histReward.repeat) {
+        result.log.push(`战役重复通关奖励：${rewardText(histBattle.rewards.repeat)}`);
+      }
+      if (!histHard && isBoss && result.victory && result.rank !== 'D' && !histMatch) {
+        result.log.push(`（本次编成与史实不符，未取得史实重演奖励。${History.ruleText(histBattle.histRule)}）`);
+      }
+    }
+
     /* 舰历与荣誉（方向二）：出击路径的唯一写入点（含夜战追加后的二次结算，仍只写一次） */
     const enFlag = result.enemySide && result.enemySide[0];
     const flagSunk = !!(enFlag && !enFlag.alive);
+    const histBossVictory = isBoss && result.victory && result.rank !== 'D' && (!histHard || histWave >= 2);
     const honorOut = Progression.recordBattleResult({
       uids: fleet.slice(),
       kind: 'sortie',
@@ -544,7 +720,21 @@ const Sortie = (() => {
       /* 「斩首」只认 BOSS 节点或 5 舰以上的敌方编成，避免"打沉一艘驱逐就叫斩首" */
       bossSunk: flagSunk && (isBoss || (result.enemyTotal || 0) >= 5),
       bossName: flagSunk ? (enFlag.zh || enFlag.name || '') : '',
-      objectives: objResults.filter(o => o.ok).map(o => o.id)
+      objectives: objResults.filter(o => o.ok).map(o => o.id),
+      /* 历史战役（V0.303）：战役标记 + 专属荣誉的触发上下文（仅战役结算时挂载） */
+      historic: histBattle ? histBattle.id : null,
+      hard: histHard,
+      wave: histWave,
+      histMatch,
+      histClear: !!(histBattle && !histContinue && !histHard && histBossVictory),
+      histForm: !!(histBattle && !histContinue && !histHard && histBossVictory && histMatch && result.rank === 'S'),
+      histHard: !!(histBattle && !histContinue && histHard && histWave >= 2 && histBossVictory && result.rank === 'S'),
+      histNoSunk: !histBattle || (so.histSunk || 0) === 0,
+      ddCount: fleetTypes(so.fleetIdx).filter(t => t === 'DD').length,
+      nodeIsBoss: isBoss,
+      /* histFinal = 「本场已是战役的最终结算」（BOSS 节点 且（非强敌阶 或 第二波已打完））：
+       * 荣誉用它挡住「第一波 S 胜就拿强敌阶荣誉」这类提前授勋。 */
+      histFinal: !!(histBattle && !histContinue && isBoss && (!histHard || histWave >= 2))
     });
     /* 战报自动追加：本场 MVP / 斩杀者 / 新获得荣誉（方向二 3.4） */
     if (result.mvpUid && st.ships[result.mvpUid]) {
@@ -570,7 +760,11 @@ const Sortie = (() => {
       if (parts.length) result.log.push(`新获得荣誉：${parts.join('、')}（${names.join('、')}）`);
     }
 
-    return { ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true, admExp: admGain, honors: honorOut };
+    return {
+      ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true,
+      admExp: admGain, honors: honorOut,
+      historic: histBattle ? histBattle.id : null, hard: histHard, wave: histWave, histReward, histMatch
+    };
   }
 
   /* ============ 出击前情报室（方向一） ============
@@ -596,10 +790,14 @@ const Sortie = (() => {
     air: '桅顶瞭望：机群临空。这是航母之间的战斗。',
     airNoWing: '舰队没有航空母舰。全舰队，对空战斗配置——',
     airNoPlanes: '航空母舰未搭载舰载机。全舰队，对空战斗配置——',
-    whirlpool: '罗盘开始打转。洋流正在拖拽舰队。'
+    whirlpool: '罗盘开始打转。洋流正在拖拽舰队。',
+    /* 强敌阶第二波入场（V0.303）：独立横幅；具体战役可用 hard.waveBanner 覆写（不逐图硬编码） */
+    histWave: '敌增援接近——第二梯队进入战场。'
   };
-  /* 取本节点进入横幅；ctx.airWing / ctx.hasCarrier 一律来自 Battle.fleetStats（UI 不得另算） */
+  /* 取本节点进入横幅；ctx.airWing / ctx.hasCarrier 一律来自 Battle.fleetStats（UI 不得另算）；
+   * ctx.wave >= 2 时返回第二波入场横幅（ctx.waveBanner 优先）。 */
   function nodeBanner(def, ctx = {}) {
+    if (ctx.wave >= 2) return ctx.waveBanner || NODE_BANNER.histWave;
     if (!def) return '';
     if (def.mode === 'night') return NODE_BANNER.night;
     if (def.mode === 'sub') return NODE_BANNER.sub;
@@ -610,12 +808,15 @@ const Sortie = (() => {
     if (def.type === 'whirlpool') return NODE_BANNER.whirlpool;
     return '';
   }
-  /* 全海域实际用到的节点 mode（含 type:'whirlpool'）—— 供文案覆盖度断言使用 */
+  /* 全部用到的节点 mode（含 type:'whirlpool'）—— 常规海域 + 历史战役，供文案覆盖度断言使用 */
   function usedNodeModes() {
     const s = new Set();
     for (const m of MAPS) for (const d of Object.values(m.defs || {})) {
       if (d.mode) s.add(d.mode);
       if (d.type === 'whirlpool') s.add('whirlpool');
+    }
+    if (typeof History !== 'undefined' && History && History.usedNodeModes) {
+      for (const k of History.usedNodeModes()) s.add(k);
     }
     return [...s];
   }
@@ -694,15 +895,17 @@ const Sortie = (() => {
     return out;
   }
 
-  /* 出击前情报汇总：舰队能力 + 威胁对位 + 特殊攻击清单 */
+  /* 出击前情报汇总：舰队能力 + 威胁对位 + 特殊攻击清单 + 历史战役匹配自检 */
   function intel(fleetIdx, mapId) {
     const G = GameRef();
     const B = BattleRef();
-    const map = MAPS.find(m => m.id === mapId);
+    /* 常规海域与历史战役走同一查找点（resolveMap）—— 战役页签因此无需另写一套情报逻辑 */
+    const map = resolveMap(mapId);
     if (!map || !B) return null;
     const stats = B.fleetStats(fleetIdx);
     const speed = G.fleetSpeed(fleetIdx);
-    /* 对手制空：取该图所有战斗/BOSS节点中最高的敌制空（保守估计，用于判断能否取得航空优势） */
+    /* 对手制空：取该图所有战斗/BOSS节点中最高的敌制空（保守估计，用于判断能否取得航空优势）
+     * 敌编成查找走 Battle.enemyAirPower → Battle.enemyFleet（常规 ENEMY_FLEETS + 战役同一入口） */
     let enemyAir = 0;
     for (const d of Object.values(map.defs || {})) {
       if ((d.type === 'battle' || d.type === 'boss') && d.enemy) {
@@ -718,8 +921,34 @@ const Sortie = (() => {
         ? '已携带舰侦：索敌成功时「T字不利」概率由 10% 降至 5%'
         : '未携带舰侦：「T字不利」概率 10%。舰侦（SBD VS-2，开发·空母系）在索敌成功时可把它降到 5%（占用舰战槽）'
     };
+    /* 历史战役（V0.303）：史实匹配度自检 —— 判定与结算同源（History.matchRule / ruleCheck），UI 不得另算 */
+    let historic = null;
+    if (isHistoricMap(map)) {
+      const types = fleetTypes(fleetIdx);
+      const rl = History.ruleCheck(map.histRule, types);
+      const hardReq = (map.hard && map.hard.admReq) || map.admReq;
+      const led = (G.state.stats && G.state.stats.historic) || {};
+      historic = {
+        id: map.id, name: map.name, date: map.date,
+        admReq: map.admReq, hardAdmReq: hardReq,
+        rule: History.ruleText(map.histRule),
+        tip: map.histRule.tip,
+        match: rl.ok,
+        banHit: rl.banHit,
+        banned: rl.banned,
+        rows: rl.rows,
+        bonus: map.bonus,
+        admOk: (G.state.admiral ? G.state.admiral.level : 1) >= (map.admReq || 1),
+        hardAdmOk: (G.state.admiral ? G.state.admiral.level : 1) >= (hardReq || 1),
+        hardUnlocked: !!led[map.id + ':firstClear'],
+        cleared: Progression.historicRewardState(map.id),
+        /* 强敌阶第二波存在性（简报必须点明「敌军拥有第二梯队」，P0-6 不搞突然袭击） */
+        waves: (map.hard && map.hard.waves) ? Object.keys(map.hard.waves) : []
+      };
+    }
     return {
       mapId: map.id,
+      historic,
       stats: {
         air: stats.air, los: G.fleetLos(fleetIdx), asw: stats.asw, aswCapable: stats.aswCapable,
         night: stats.night, speed
@@ -787,7 +1016,7 @@ const Sortie = (() => {
   function sortieConsumption(mapId, fleetIdx) {
     const G = GameRef();
     const st = G.state;
-    const map = MAPS.find(m => m.id === mapId);
+    const map = resolveMap(mapId);
     if (!map) return { fuel: 0, ammo: 0 };
     let fuel = 0, ammo = 0;
     for (const uid of st.fleet[fleetIdx] || []) {
@@ -809,8 +1038,11 @@ const Sortie = (() => {
   }
 
   return {
-    start, advance, prepareBattle, continueNight, settleBattle, moveToNext, currentMap, nextNodes,
+    start, startHard, advance, prepareBattle, continueNight, settleBattle, moveToNext, currentMap, nextNodes,
     atBoss, retreat, returnHome, nodeDef, sortieConsumption, daPoShips, flagshipDaPo,
+    /* 历史战役（V0.303）：唯一接入点 + 门槛 + 二波制 */
+    resolveMap, isHistoricMap, historicGate, startHardWave, fleetTypes,
+    enemyFleet: key => { const B = BattleRef(); return (B && B.enemyFleet) ? B.enemyFleet(key) : null; },
     /* 出击前情报室（方向一）+ 失败归因 */
     intel, threatCheck, requiredLos, fleetHasRadar, fleetHasAswShip, attributionLines,
     THREAT_INFO, THREAT_KEYS,

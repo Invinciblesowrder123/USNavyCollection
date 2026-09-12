@@ -10,7 +10,7 @@
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
-  const CURRENT_SAVE_VERSION = 5;
+  const CURRENT_SAVE_VERSION = 6;
   const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
@@ -71,7 +71,7 @@ const Game = (() => {
     sortie: null,                       // {mapId, fleetIdx, node, path[]}
     practice: { date: '', fleets: [] },
     improve: { date: '', count: 0 },    // 改修工厂每日次数
-    stats: { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {} },
+    stats: { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {}, historic: {} },
     lastSave: Date.now()
   };
 
@@ -195,6 +195,7 @@ const Game = (() => {
       lastBoss: '',      // 最近击沉的敌旗舰名
       firstClear: {},    // mapId -> 首次通关时间戳（只写一次）
       objectives: {},    // 作战目标 id -> 首次达成时间戳（海域作战目标，方向四）
+      historic: {},      // battleId -> { clearAt, histWin, hardWin }（历史战役标记，V0.303）
       honors: [],        // [{id, at}] 荣誉（幂等，同 id 不重复）
       remodelAt: []      // 改造纪念时间戳（按 kai 阶段依次追加）
     };
@@ -211,6 +212,7 @@ const Game = (() => {
     if (!Array.isArray(out.remodelAt)) out.remodelAt = [];
     if (!out.firstClear || typeof out.firstClear !== 'object') out.firstClear = {};
     if (!out.objectives || typeof out.objectives !== 'object') out.objectives = {};
+    if (!out.historic || typeof out.historic !== 'object') out.historic = {};
     return out;
   }
 
@@ -448,7 +450,7 @@ const Game = (() => {
     state.sortie = null;
     state.practice = { date: '', fleets: [] };
     state.improve = { date: '', count: 0 };
-    state.stats = { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {} };
+    state.stats = { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {}, historic: {} };
     state.lastSave = Date.now();
     for (const sid of STARTER_IDS) {
       const s = createShip(sid, 10);
@@ -585,8 +587,24 @@ const Game = (() => {
     return save;
   }
 
-  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5 };
+  /* v5 -> v6：舰历新增「历史战役标记」（V0.303）+ 全局防刷账本 st.stats.historic。
+   * 只补键，不动任何已有数值。注意：本函数是 historic 键的**唯一补写点** ——
+   * normalizeSave 依然不补新字段（坑 #3 / #19：补了就绕过迁移器，迁移测试失效）。 */
+  function migrateV5ToV6(data) {
+    const save = cloneSave(data);
+    for (const k in save.ships || {}) {
+      const s = save.ships[k];
+      if (!s) continue;
+      s.record = normalizeRecord(s.record);
+    }
+    if (!save.stats || typeof save.stats !== 'object') save.stats = {};
+    if (!save.stats.historic || typeof save.stats.historic !== 'object') save.stats.historic = {};
+    save.saveVersion = 6;
+    save.version = 6;
+    return save;
+  }
 
+  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5, 5: migrateV5ToV6 };
   function normalizeSave(save) {
     if (!save.resources || typeof save.resources !== 'object') {
       save.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 };

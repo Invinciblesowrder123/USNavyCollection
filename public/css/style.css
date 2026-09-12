@@ -1287,3 +1287,79 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .lib-name { font-size: 12px; line-height: 1.35; word-break: break-all; }
 .lib-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
 
+
+
+/* ============================================================
+ * 历史战役模式（V0.303）—— 战役页签 / 列表 / 史实匹配度自检 / 奖励预览 / 二波横幅
+ * 说明：全部复用既有 .sortie-mapview / .sortie-mapside / .map-detail / .sortie-intel 骨架，
+ * 只补战役专有的卡片与自检行样式，保证 1440px / 1080px 下不破版。
+ * ============================================================ */
+.hist-rule .ok, .hist-rule .red, .hist-list .ok, .hist-list .red,
+.hist-detail .ok, .hist-detail .red, .hist-result .ok, .hist-result .red { }
+.hist-rule .ok, .hist-list .ok, .hist-detail .ok { color: var(--green); }
+.hist-rule .red, .hist-list .red, .hist-detail .red { color: var(--red); }
+
+/* 战役列表（左列，占据常规海域「海图」的位置） */
+.hist-list {
+  flex: 0 0 auto; width: 100%;
+  border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+  background: linear-gradient(180deg, rgba(29,49,79,.55), rgba(18,32,54,.75));
+  display: flex; flex-direction: column; gap: 10px;
+}
+.hist-list-head { font-size: 13px; color: var(--gold); letter-spacing: 1px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.hist-card {
+  text-align: left; cursor: pointer; padding: 12px 14px; border-radius: 8px;
+  border: 1px solid var(--line); color: var(--text);
+  background: linear-gradient(180deg, rgba(29,49,79,.75), rgba(18,32,54,.85));
+  transition: all .12s; display: flex; flex-direction: column; gap: 6px;
+}
+.hist-card:hover { border-color: var(--gold); transform: translateY(-1px); }
+.hist-card.sel { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(255,215,0,.35) inset; }
+.hist-card .hc-top { font-size: 15px; }
+.hist-card .hc-top b { color: var(--gold); margin-right: 6px; }
+.hist-card .hc-sub { font-size: 12px; color: var(--dim); line-height: 1.6; }
+.hist-card .hc-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; }
+
+/* 史实匹配度自检（复用编成自检面板体系，放在 .si-body 内） */
+.hist-rule {
+  margin: 6px 0; padding: 10px 12px; border-radius: 6px;
+  border: 1px solid var(--line); background: rgba(232,194,74,.05);
+  display: flex; flex-direction: column; gap: 4px; font-size: 13px;
+}
+.hist-rule-row { padding-left: 4px; }
+.hist-ban {
+  color: #ffb0b0; border-left: 2px solid var(--red); background: rgba(224,85,85,.12);
+  padding: 5px 9px; border-radius: 4px;
+}
+
+/* 奖励预览 */
+.hist-rewards .hist-rw-row { padding: 2px 0; }
+.hist-rewards .eq-rarity-tag { margin-right: 4px; }
+
+/* 强敌阶区块（详情右列） */
+.hist-hard-box {
+  margin-top: 10px; padding: 10px 12px; border-radius: 6px;
+  border: 1px solid rgba(224,85,85,.45); background: rgba(224,85,85,.07);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.hist-hard-box .hh-head { color: #ffb0b0; letter-spacing: 2px; font-size: 13px; }
+.hist-hard-box .sb-body { font-size: 12px; color: var(--dim); line-height: 1.75; }
+
+/* 出击中：战役信息条（取代海域血条）+ 第二波横幅 + 强敌阶简报 */
+.map-gauge.hist .hist-marks { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.map-banner.wave {
+  background: linear-gradient(90deg, rgba(224,85,85,.22), rgba(224,85,85,.04));
+  border-left-color: var(--red); color: #ffd9d9; font-weight: 700;
+}
+.map-brief.hist { background: rgba(224,85,85,.06); }
+.map-brief.hist b { color: var(--red); }
+.hist-result { margin-top: 4px; }
+
+/* 窄屏（1080px）保护：列表卡片压缩、自检行不溢出 */
+@media (max-width: 1180px) {
+  .hist-list { padding: 10px; }
+  .hist-card { padding: 10px; }
+  .hist-card .hc-top { font-size: 14px; }
+  .hist-rule { font-size: 12px; }
+  .hist-hard-box .sb-body { font-size: 11.5px; }
+}

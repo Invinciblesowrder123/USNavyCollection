@@ -310,8 +310,9 @@ const Progression = (() => {
     const st = G.state;
     if (!canClaim(qid)) return { ok: false, msg: '任务未完成' };
     const q = QUESTS.find(x => x.id === qid);
-    /* 装备仓库上限检查（wiki：闲置装备数满时无法领取含装备奖励的任务；舰娘奖励自带装备直接装备在舰上不占仓库容量；测试模式豁免） */
-    const needEq = (q.reward.equip ? q.reward.equip.length : 0);
+    /* 装备仓库上限检查（wiki：闲置装备数满时无法领取含装备奖励的任务；舰娘奖励自带装备直接装备在舰上不占仓库容量；测试模式豁免）
+     * 消耗品（item 字段）同样占用闲置装备格，故一并计入前置检查 */
+    const needEq = (q.reward.equip ? q.reward.equip.length : 0) + (q.reward.item ? q.reward.item.length : 0);
     if (!G.isTestMode() && needEq > 0 && G.equipCapWouldExceed(needEq)) {
       return { ok: false, msg: `装备仓库已满（${G.equipIdleCount()}/${G.equipCap()}）！请先解体或用掉部分装备后再领取奖励。` };
     }
@@ -322,7 +323,8 @@ const Progression = (() => {
     /* 装备仓库扩充奖励 */
     if (q.reward.equipCap) G.expandEquipCap(q.reward.equipCap);
     const ships = r.ship ? r.ship.map(id => { const s = G.createShip(id, 1); G.equipDefaults(s.uid); return s; }) : [];
-    const eqs = r.equip ? r.equip.map(id => G.createEquip(id)) : [];
+    /* 装备 + 消耗品（`item` 字段，V0.303 新增）走同一入仓通道 */
+    const eqs = [].concat(r.equip || [], r.item || []).map(id => G.createEquip(id));
     return { ok: true, q, ships, eqs };
   }
 
@@ -358,7 +360,25 @@ const Progression = (() => {
     { id: 'air_supreme', name: '制空权确保', desc: '取得制空权确保并 S 胜', kind: 'fleet',
       check: c => c.airKey === 'SURE' && c.rank === 'S' },
     { id: 'mvp', name: 'MVP 之誉', desc: '在单场战斗中拿下 MVP', kind: 'mvp',
-      check: () => true }
+      check: () => true },
+    /* ---- 历史战役专属荣誉（V0.303，6 个）----
+     * 三重栅栏，避免「常规图误触发」与「战斗中提前授勋」：
+     *   ① c.historic 只在战役结算里挂载 → 常规图不可能触发
+     *   ② c.histFinal = BOSS 节点 且（非强敌阶 或 已打完第二波）→ 不能在第一波就授「强敌阶」荣誉
+     *   ③ 全部要求 !c.failed（胜利）
+     * 幂等由 grantHonors 保证（同 id 不重复）。 */
+    { id: 'hist_h1_s', name: '「适任者」', desc: '圣克鲁斯：以史实编成取得 S 胜（常规阶）', kind: 'fleet',
+      check: c => c.historic === 'H1' && !!c.histFinal && !c.hard && !c.failed && c.rank === 'S' && !!c.histMatch },
+    { id: 'hist_h1_hard', name: '「猎火鸡的猎人」', desc: '圣克鲁斯：强敌阶（第二波）S 胜', kind: 'fleet',
+      check: c => c.historic === 'H1' && !!c.histFinal && !!c.hard && !c.failed && c.rank === 'S' },
+    { id: 'hist_h1_nolost', name: '「不沉的大 E」', desc: '圣克鲁斯：全程无舰沉没', kind: 'fleet',
+      check: c => c.historic === 'H1' && !!c.histFinal && !c.failed && !!c.histNoSunk },
+    { id: 'hist_h2_iron', name: '「铁底湾夜刃」', desc: '铁底湾：以史实编成取得 S 胜（常规阶）', kind: 'fleet',
+      check: c => c.historic === 'H2' && !!c.histFinal && !c.hard && !c.failed && c.rank === 'S' && !!c.histMatch },
+    { id: 'hist_h2_hard', name: '「东京快车的终点」', desc: '铁底湾：强敌阶（第二波）S 胜', kind: 'fleet',
+      check: c => c.historic === 'H2' && !!c.histFinal && !!c.hard && !c.failed && c.rank === 'S' },
+    { id: 'hist_h2_suilven', name: '「沙利文姐妹」', desc: '铁底湾：编成含 ≥4 艘驱逐舰且无人沉没', kind: 'fleet',
+      check: c => c.historic === 'H2' && !!c.histFinal && !c.failed && (c.ddCount || 0) >= 4 && !!c.histNoSunk }
   ];
   const HONOR_BY_ID = (() => { const m = {}; for (const h of HONORS) m[h.id] = h; return m; })();
 
@@ -397,6 +417,11 @@ const Progression = (() => {
    *   nodeMode: 'sub'|'night'|null,
    *   airKey: 'SURE'|...|null,
    *   bossSunk, bossName,
+   *   historic: 'H1'|'H2',      // 战役 id（V0.303，仅战役结算时挂载）
+   *   hard, wave, histMatch,    // 强敌阶 / 第几波 / 史实编成是否匹配
+   *   histClear, histForm, histHard,  // 三类战役标记是否本次达成
+   *   histNoSunk,               // 本次出击全程无舰沉没
+   *   ddCount, nodeIsBoss,      // 编成驱逐数 / 本场是否 BOSS 节点
    *   at
    * } */
   function recordBattleResult(ctx) {
@@ -423,6 +448,14 @@ const Progression = (() => {
       /* 作战目标达成记录（方向四）：复用同一 record 结构，只记首次达成时间 */
       for (const oid of (ctx.objectives || [])) {
         if (oid && !r.objectives[oid]) r.objectives[oid] = at;
+      }
+      /* 历史战役标记（V0.303）：clearAt（常规阶首通）/ histWin（史实编成 S 胜）/ hardWin（强敌阶首通）。
+       * 只写首次时间戳，重复达成不覆盖（与 firstClear 同口径）。 */
+      if (ctx.historic) {
+        const hb = r.historic[ctx.historic] || (r.historic[ctx.historic] = {});
+        if (ctx.histClear && !hb.clearAt) hb.clearAt = at;
+        if (ctx.histForm && !hb.histWin) hb.histWin = at;
+        if (ctx.histHard && !hb.hardWin) hb.hardWin = at;
       }
       const ids = [];
       for (const h of HONORS) {
@@ -481,7 +514,68 @@ const Progression = (() => {
     return Object.assign({}, (st.stats && st.stats.objectives) || {});
   }
 
-  function applyBattleResult(fleetIdx, result, isPractice) {
+  /* ============ 奖励词表发放（任务与战役共用同一通道） ============
+   * 资源走 Game.gain；装备与**消耗品**（`item` 字段，V0.303 新增）走 createEquip ——
+   * 消耗品的自动上锁规则（shouldAutoLockEquip 判 `cat === '消耗品'`）已覆盖，无需另加逻辑。 */
+  function grantRewardBundle(reward) {
+    const G = GameRef();
+    if (!reward) return { eqs: [], itemIds: [] };
+    G.gain(reward);
+    const itemIds = [].concat(reward.item || []);
+    const eqs = [].concat(reward.equip || [], itemIds).map(id => G.createEquip(id));
+    return { eqs, itemIds };
+  }
+
+  /* ============ 历史战役奖励（V0.303） ============
+   * 坑 #21：一次性奖励靠**全局账本** `st.stats.historic`（达成即写、发放前先查账本），
+   * 不靠"存档里有没有标记"——标记模式在两个入口同时打到同一奖励时会双发，账本模式不会。
+   * 层级（设计卡 §四）：1 首通 / 2 史实重演（史实编成 S 胜）/ 3 强敌阶首通 / 5 重复通关（可重复，小额）。
+   * 专属荣誉不在这里发 —— 走 recordBattleResult → HONORS（按舰幂等），避免两套授勋路径。
+   * ctx = { battle, hard, wave, victory, rank, histMatch, bossVictory } */
+  function grantHistoricRewards(ctx) {
+    const G = GameRef();
+    const st = G.state;
+    if (!st.stats.historic || typeof st.stats.historic !== 'object') st.stats.historic = {};
+    const led = st.stats.historic;
+    const b = ctx && ctx.battle;
+    const out = { granted: [], eqs: [], repeat: false, items: [] };
+    if (!b || !b.rewards) return out;
+    const key = t => `${b.id}:${t}`;
+    const hadFirst = !!led[key('firstClear')];
+    const grant = (t, reward) => {
+      if (!reward || led[key(t)]) return false;
+      led[key(t)] = Date.now();
+      const r = grantRewardBundle(reward);
+      out.eqs.push(...r.eqs);
+      out.items.push(...r.itemIds);
+      out.granted.push(t);
+      return true;
+    };
+    /* 层1 首通：常规阶 BOSS 击破（非 D 评价），一次性 */
+    if (ctx.bossVictory && !ctx.hard) grant('firstClear', b.rewards.firstClear);
+    /* 层2 史实重演：**常规阶 BOSS 节点**、史实编成匹配、S 胜，一次性
+     * 注意必须挂在 bossVictory 上：否则道中节点打出 S 胜就会提前发奖（冒烟测试抓到的真 bug）。 */
+    if (!ctx.hard && ctx.bossVictory && ctx.histMatch && ctx.victory && ctx.rank === 'S') grant('histForm', b.rewards.histForm);
+    /* 层3 强敌阶首通：第二波 S 胜（硬门槛与荣誉一致） */
+    if (ctx.hard && (ctx.wave || 1) >= 2 && ctx.victory && ctx.rank === 'S') grant('hard', b.rewards.hard.firstClear);
+    /* 层5 重复通关（两阶同档，可重复）：小额资源，不设周回刷取点（禁止事项 10） */
+    if (hadFirst && ctx.bossVictory) { G.gain(b.rewards.repeat); out.repeat = true; }
+    return out;
+  }
+  /* 战役账本快照（UI 展示「哪几层已领取」） */
+  function historicLedger() {
+    const st = GameRef().state;
+    return Object.assign({}, (st.stats && st.stats.historic) || {});
+  }
+  function historicRewardState(battleId) {
+    const led = historicLedger();
+    return { firstClear: !!led[battleId + ':firstClear'], histForm: !!led[battleId + ':histForm'], hard: !!led[battleId + ':hard'] };
+  }
+
+  /* 出击结果经验结算（UI 路径：ship exp + 任务进度通知）
+   * opts.noQuest（V0.303）：历史战役专用 —— 战役**不计入常规任务计数**（周常「出击 X 次」等），
+   * 但舰娘经验照给（她确实出过战）。默认不传 = 既有行为，逐位不变。 */
+  function applyBattleResult(fleetIdx, result, isPractice, opts = {}) {
     const G = GameRef();
     const st = G.state;
     const fleet = st.fleet[fleetIdx];
@@ -528,10 +622,12 @@ const Progression = (() => {
       gains.push({ uid: f, exp, ups });
     }
     if (!isPractice) {
-      notify('sortie', 1);
-      if (result.victory) notify('win', 1);
-      if (result.rank === 'S') notify('s_win', 1);
-      notify('sink', result.enemyKilled);
+      if (!opts.noQuest) {
+        notify('sortie', 1);
+        if (result.victory) notify('win', 1);
+        if (result.rank === 'S') notify('s_win', 1);
+        notify('sink', result.enemyKilled);
+      }
     } else {
       notify('practice', 1);
     }
@@ -579,7 +675,9 @@ const Progression = (() => {
     applyBattleResult, checkDynamic,
     /* 舰历与荣誉（方向二）+ 海域作战目标（方向四） */
     HONORS, HONOR_BY_ID, ensureRecord, grantHonors, recordBattleResult, recordSummary,
-    grantObjectiveRewards, objectiveLedger
+    grantObjectiveRewards, objectiveLedger,
+    /* 历史战役（V0.303）：奖励通道 + 全局防刷账本 */
+    grantRewardBundle, grantHistoricRewards, historicLedger, historicRewardState
   };
 })();
 

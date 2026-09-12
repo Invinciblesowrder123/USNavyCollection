@@ -9,10 +9,13 @@
   <div id="app">
     <main id="screen" style="max-width:1440px;margin:0 auto;padding:12px"></main>
   </div>
+  <div id="modal-root"></div>
+  <div id="sub-modal-root"></div>
   <script src="js/core/utils.js"></script>
   <script src="js/data/equipment.js"></script>
   <script src="js/data/ships.js"></script>
   <script src="js/data/maps.js"></script>
+  <script src="js/data/history.js"></script>
   <script src="js/data/quests.js"></script>
   <script src="js/core/state.js"></script>
   <script src="js/game/battle.js"></script>
@@ -102,6 +105,68 @@
         SortieUI.mapList(scr);
         var a2b = scr.querySelector('[data-area="2"]'); if (a2b) a2b.click();
         var m21 = scr.querySelector('[data-map="2-1"]'); if (m21) m21.click();
+        return;
+      }
+      if (c === 'hist' || c === 'histH2' || c === 'histHard') {
+        /* 历史战役页签（V0.303）：
+         *   hist     —— 战役列表 + H1 详情 + 史实匹配度自检（史实编成：双航母）
+         *   histH2   —— H2 铁底湾 + 含战列舰编成 → 禁入舰种红色警示 + 强敌阶锁定态
+         *   histHard —— 提督 Lv.20（常规阶可出击、但尚未首通）→ 强敌阶锁定态显示解锁条件 */
+        Game.state.admiral.level = (c === 'histHard') ? 20 : 60;
+        var histFleet = (c === 'histH2')
+          ? [mk('iowa', 90, ['gun16in_50', 'gun16in_50', 'ap_mk8']),
+             mk('fletcher', 80, ['gun5in_38', 'torp_mk15', 'torp_mk15']),
+             mk('benson', 75, ['gun5in_38', 'torp_mk15'])]
+          : [mk('enterprise', 95, ['f6f5', 'f6f5', 'f6f5', 'sbdvs2']),
+             mk('essex', 90, ['f6f5', 'f6f5', 'tbf', 'sbdvs2']),
+             mk('iowa', 90, ['gun16in_50', 'gun16in_50', 'ap_mk8']),
+             mk('fletcher', 80, ['gun5in_38', 'torp_mk15', 'torp_mk15'])];
+        Game.state.fleet[1] = histFleet;
+        SortieUI.mapList(scr);
+        var tabH = scr.querySelector('[data-tab="hist"]'); if (tabH) tabH.click();
+        if (c === 'histH2') { var b2 = scr.querySelector('[data-battle="H2"]'); if (b2) b2.click(); }
+        return;
+      }
+      if (c === 'histWave') {
+        /* 强敌阶第二波入场（V0.303）：H1 强敌阶，强制推进到 BOSS 第二波，看独立横幅 */
+        Game.state.admiral.level = 60;
+        Game.state.fleet[1] = [mk('enterprise', 95, ['f6f5', 'f6f5', 'f6f5', 'sbdvs2']),
+                               mk('essex', 90, ['f6f5', 'f6f5', 'sbdvs2', 'sbdvs2']),
+                               mk('iowa', 90, ['gun16in_50', 'gun16in_50', 'ap_mk8'])];
+        /* 先在账本里造出「常规阶首通」，解锁强敌阶入口 */
+        Game.state.stats.historic['H1:firstClear'] = Date.now();
+        var stH = Sortie.startHard('H1', 1);
+        if (!stH.ok) { scr.innerHTML = '<pre style="color:#f88">' + stH.msg + '</pre>'; return; }
+        Game.state.sortie.node = 'X';
+        Game.state.sortie.wave = 2;                 // 第二波：横幅与敌军提示应切换
+        SortieUI.sortieActive(scr);
+        return;
+      }
+      if (c === 'histModal' || c === 'histResult') {
+        /* 强敌阶二波制的「迎击 / 收兵」弹窗与收兵后的结算摘要（同步驱动：跳过演出 → 追击选择 → 二波选择） */
+        Game.state.admiral.level = 60;
+        Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+        Game.state.stats.historic['H1:firstClear'] = Date.now();
+        var CVF = ['f6f5', 'f6f5', 'f6f5', 'f6f5'];
+        Game.state.fleet[1] = [mk('enterprise', 110, CVF), mk('essex', 110, CVF), mk('saratoga', 110, CVF),
+          mk('iowa', 110, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+          mk('fletcher', 110, ['gun5in_38', 'torp_mk15', 'torp_mk15']),
+          mk('baltimore', 110, ['gun8in_55', 'gun8in_55', 'radar_sg'])];
+        localStorage.setItem('usnc_form_fixed', '单纵阵');
+        var stHM = Sortie.startHard('H1', 1);
+        if (!stHM.ok) { scr.innerHTML = '<pre style="color:#f88">' + stHM.msg + '</pre>'; return; }
+        Game.state.sortie.node = 'X';
+        SortieUI.sortieActive(scr);
+        var adv = scr.querySelector('[data-act="advance"]');
+        if (adv) adv.click();
+        var sk = scr.querySelector('#fxSkip');
+        if (sk) sk.click();
+        var endB = document.querySelector('#modal-root [data-end]');
+        if (endB) endB.click();
+        if (c === 'histResult') {
+          var retB = document.querySelector('#modal-root [data-retire]');
+          if (retB) retB.click();
+        }
         return;
       }
       var st = Sortie.start('2-3', 1);

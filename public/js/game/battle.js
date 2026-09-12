@@ -246,6 +246,13 @@ const Battle = (() => {
   const TOUCH_MY_HIT = 1.15;                               // 我方触接命中倍率（+15%）
   const TOUCH_EN_RATE = 0.20;                              // 敌方触接固定成功率
   const TOUCH_EN_HIT = 1.10;                               // 敌方触接命中倍率（+10%）
+
+  /* ============ 史实编成加成（V0.303，历史战役模式） ============
+   * 命中/回避各 ×1.05，走**独立乘区** `_histHit` / `_histEvd`，与索敌（_reconHit）、
+   * 触接（_touchHit）相乘，**绝不覆盖**——这是 V0.302 坑 #10 的同型陷阱（本版坑 #17）。
+   * 实测叠加：索敌成功 + 触接成功 + 史实匹配 = 1.03 × 1.15 × 1.05 = **1.243725**（+24.37%）。
+   * `opts.historic === false`（默认）时整个乘区不生效、不读不写任何字段 → 战役外逐位不变。 */
+  const HIST_HIT = 1.05;
   /* 参与触接的机种：舰攻 / 水侦（水爆同槽）/ 舰侦。舰爆、舰战不参与（与设计稿一致） */
   const isTouchPlane = e => !!e && (e.slot === SLOT.ATTACKER || e.slot === SLOT.SEAPLANE || e.cat === '舰侦');
   const touchPlaneValue = e => {
@@ -347,12 +354,13 @@ const Battle = (() => {
   }
 
   /* ============ 命中推定（wiki推定式） ============ */
-  /* 命中乘区（索敌 × 航空触接）——单独抽成纯函数，便于断言「触接没有覆盖索敌」（坑 #10）。
-   * 两个字段都缺省取 1：`x * 1` 在 IEEE754 下精确，因此未启用这两项时逐位不变。 */
+  /* 命中乘区（索敌 × 航空触接 × 史实编成）——单独抽成纯函数，便于断言「新乘区没有覆盖旧乘区」（坑 #10 / #17）。
+   * 三个字段都缺省取 1：`x * 1` 在 IEEE754 下精确，因此未启用时逐位不变。 */
   function hitMods(atk) {
     const recon = (atk && atk._reconHit) || 1;
     const touch = (atk && atk._touchHit) || 1;
-    return { recon, touch, total: recon * touch };
+    const hist = (atk && atk._histHit) || 1;
+    return { recon, touch, hist, total: recon * touch * hist };
   }
   function hitChance(atk, def, formAName, formBName, engMult, isTorpedo) {
     const lvT = Math.sqrt(Math.max(0, atk.lv - 1)) / 50;
@@ -372,6 +380,7 @@ const Battle = (() => {
     const defMorale = moraleMods(def.morale).evd;  // 闪 回避×1.8（红脸无回避惩罚）
     if (defMorale !== 1) evd *= defMorale;
     evd *= (def._reconEvd || 1);                 // 索敌成功回避UP / 失败回避DOWN（wiki：效果甚微）
+    evd *= (def._histEvd || 1);                  // 史实编成加成（V0.303）：独立乘区，未开启时恒为 1（逐位不变）
     let eva = 0.03 + (evd <= 40 ? evd / 80 : evd / (evd + 40));
     /* 残余燃料<80% 被弹率上升 */
     if (def.fuel !== undefined) {
@@ -982,8 +991,16 @@ const Battle = (() => {
     };
   }
   /* 敌军编成制空值（用于出击前情报室估算对手制空；与实际战斗 airPower 同源） */
+  /* 敌编成查找（唯一来源）：常规海域 ENEMY_FLEETS → 历史战役 History.enemies。
+   * 战役数据与 MAPS 隔离（坑 #16），但敌编成的**读取路径只有这一条**，UI / 引擎都不许另写。 */
+  function enemyFleet(enemyKey) {
+    if (typeof ENEMY_FLEETS !== 'undefined' && ENEMY_FLEETS && ENEMY_FLEETS[enemyKey]) return ENEMY_FLEETS[enemyKey];
+    if (typeof History !== 'undefined' && History && typeof History.enemy === 'function') return History.enemy(enemyKey);
+    return null;
+  }
   function enemyAirPower(enemyKey) {
-    const fleet = (typeof ENEMY_FLEETS !== 'undefined' && ENEMY_FLEETS[enemyKey]) ? ENEMY_FLEETS[enemyKey].ships : null;
+    const ef = enemyFleet(enemyKey);
+    const fleet = ef ? ef.ships : null;
     if (!fleet) return 0;
     return airPower(fleet.map((k, i) => makeEnemyShip(k, i)).filter(Boolean));
   }
@@ -1042,6 +1059,19 @@ const Battle = (() => {
 
     /* 演出事件记录器（随日志顺序插入 {event} 对象，供 UI 播放动画；不影响字符串日志兼容） */
     const { ev, evAir, evFlak, pushSnap } = makeEventHelpers(log, sideA, sideB);
+
+    /* ---- 史实编成加成（V0.303，独立乘区）----
+     * 战役内且编成与史实规则匹配时，命中/回避各 ×1.05，走**独立字段** `_histHit` / `_histEvd`，
+     * 在 hitMods() / hitChance() 内与索敌、触接的既有乘区相乘，绝不覆盖（坑 #17）。
+     * `opts.historic === false`（默认）时整个乘区不生效、不读不写任何字段 ——
+     * 常规出击 / 演习 / 远征路径因此逐位不变（drift 三基线守着）。
+     * 「是否匹配」的判定在 sortie 层（History.matchRule）完成，本层只接收结论 opts.histHit —— 引擎与数据解耦。 */
+    if (opts.historic) {
+      const hh = Number(opts.histHit) || 1;
+      const he = Number(opts.histEvd) || hh;
+      if (hh !== 1) for (const s of sideA) s._histHit = hh;
+      if (he !== 1) for (const s of sideA) s._histEvd = he;
+    }
 
     L(`敌军阵型：${formationB}。我军选择：${formationA}。`);
 
@@ -1431,11 +1461,14 @@ const Battle = (() => {
     battle, battleNight, FORMATIONS, ENGAGEMENT, airState, makeEnemyShip, isDaPo, ammoBonus,
     /* 出击前情报室共用接口（禁止在 UI 另写一套算法） */
     buildCombatShip, airPower, fleetStats, enemyAirPower, hasAirSuperiority, specialAttackReport,
+    enemyFleet,
     DAY_SPECIALS, NIGHT_SPECIALS,
     /* 航空线（批次1/2）：航空战力判定 + 被动防空封顶比例 + 航空触接 —— UI 与归因禁止另写一套 */
     hasAirWing, isCarrierType: hasCarrier, PASSIVE_AA_CAP,
     touchRate, touchReport, isTouchPlane, touchPlaneValue, hitMods,
     TOUCH_MAX, TOUCH_AIR_BONUS, TOUCH_MY_HIT, TOUCH_EN_RATE, TOUCH_EN_HIT,
+    /* 史实编成加成（V0.303）：独立乘区常量，UI 展示与归因读这里，不硬编码 */
+    HIST_HIT,
     /* 士气档位（UI 徽记与文案读同一张表） */
     MORALE_TIERS, moraleTier, moraleMods, moraleBadge,
     /* 交战形态权重（方向五：侦察引导航向） */

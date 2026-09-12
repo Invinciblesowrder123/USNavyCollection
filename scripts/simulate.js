@@ -32,6 +32,9 @@ Object.assign(global, {
   DEEP_TEMPLATES: mapsMod.DEEP_TEMPLATES, ENEMY_FLEETS: mapsMod.ENEMY_FLEETS,
   MAPS: mapsMod.MAPS, EXPEDITIONS: mapsMod.EXPEDITIONS
 });
+/* 历史战役数据（V0.303）：与 MAPS 隔离的独立文件，同样注入全局（浏览器里由 index.html 的 script 标签提供） */
+const histMod = require('../public/js/data/history.js');
+Object.assign(global, { HISTORY_BATTLES: histMod.HISTORY_BATTLES, History: histMod.History });
 const questsMod = require('../public/js/data/quests.js');
 Object.assign(global, { QUESTS: questsMod.QUESTS, addQuestReward: questsMod.addQuestReward });
 Object.assign(global, require('../public/js/core/utils.js'));
@@ -1569,7 +1572,13 @@ assert('连续通关不刷新首通时间戳（只写一次）',
   const nBeforeBad = rec0.honors.length;
   Progression.grantHonors(uid0, ['not_a_real_honor']);
   assert('荣誉表外的 id 一律不写入', rec0.honors.length === nBeforeBad);
-  assert('荣誉数量 6–8 个（首版）', Progression.HONORS.length >= 6 && Progression.HONORS.length <= 8, 'n=' + Progression.HONORS.length);
+  /* 首版 8 个通用荣誉（方向二）+ 6 个历史战役专属荣誉（V0.303）= 14；
+   * 上限断言防止无限膨胀（荣誉只该指向「可用不同打法达成的作战事实」）。 */
+  assert('荣誉数量 14 个（通用 8 + 战役 6）', Progression.HONORS.length === 14, 'n=' + Progression.HONORS.length);
+  const histHonors = Progression.HONORS.filter(h => /^hist_/.test(h.id));
+  assert('战役荣誉恰好 6 个，且在空上下文（常规图结算）下一律不触发（防误触发）',
+    histHonors.length === 6 && histHonors.every(h => h.check({}, {}) === false),
+    'hist=' + histHonors.length);
   assert('荣誉表不含任何数值加成字段',
     Progression.HONORS.every(h => !('bonus' in h) && !('mod' in h) && !('stat' in h) && typeof h.check === 'function'));
 }
@@ -2335,6 +2344,836 @@ section('批次4.3·作战目标扩展（+2，追问「迫使改编成」还是�
   assert('新目标不在道中节点判定（objectiveMet 只看 BOSS）',
     Sortie.objectiveMet(objOf('3-4', '3-4-cv2'), { nodeDef: { type: 'battle' }, result: { rank: 'S' }, fleetTypes: ['CV', 'CV'] }) === false &&
     Sortie.objectiveMet(objOf('3-4', '3-4-cv2'), { nodeDef: { type: 'boss' }, result: { rank: 'S' }, fleetTypes: ['CV', 'CV'] }) === true);
+}
+
+/* ============================================================
+ * V0.303 · 历史战役模式 —— 批次1：引擎与数据
+ *   1.1 数据结构与两场战役  1.2 接入点与统计隔离
+ *   1.3 史实加成乘区        1.4 结算 / 账本 / 存档 v6 / item 通道
+ * ============================================================ */
+section('V0.303·任务1.1 战役数据结构与两场战役');
+{
+  const HB = HISTORY_BATTLES;
+  const undefs = [];
+  const walk = (o, p) => {
+    if (o === undefined) { undefs.push(p); return; }
+    if (o && typeof o === 'object') for (const k in o) walk(o[k], p + '.' + k);
+  };
+  HB.forEach((b, i) => walk(b, 'battle[' + i + ']'));
+  assert('战役数据字段无 undefined（递归扫描）', undefs.length === 0, undefs.slice(0, 8).join(','));
+  assert('战役数量 = 2（H1 圣克鲁斯 / H2 铁底湾，先两场验证观感与数值）',
+    HB.length === 2 && HB[0].id === 'H1' && HB[1].id === 'H2' &&
+    /圣克鲁斯/.test(HB[0].name) && /铁底湾/.test(HB[1].name));
+  assert('战役元数据齐全（id / name / date / stars / admReq）',
+    HB.every(b => typeof b.admReq === 'number' && b.admReq > 0 && /^\d{4}-\d{2}-\d{2}$/.test(b.date)));
+  assert('战役节点链与 BOSS 声明自洽（start/boss 在 nodes 中，edges 连通到 BOSS）', HB.every(b => {
+    if (!b.nodes[b.start] || !b.nodes[b.boss]) return false;
+    const seen = new Set([b.start]); const q = [b.start];
+    while (q.length) { const cur = q.shift(); for (const e of b.edges) if (e[0] === cur && !seen.has(e[1])) { seen.add(e[1]); q.push(e[1]); } }
+    return seen.has(b.boss);
+  }));
+  assert('战役每个节点都有 defs 定义（含 start/boss）',
+    HB.every(b => Object.keys(b.nodes).every(n => !!b.defs[n])));
+  assert('战役 BOSS 节点 type = boss，且 A 点 type = battle', HB.every(b => b.defs[b.boss].type === 'boss' && Object.values(b.defs).some(d => d.type === 'battle')));
+  /* 隔离本体（坑 #16）：战役 id 与常规海域 id 完全不重叠，且战役节点结构不被 MAPS 遍历看到 */
+  assert('战役数据与 MAPS 完全隔离（id 不重叠、MAPS 遍历看不到战役）',
+    !HB.some(b => MAPS.some(m => m.id === b.id)) && !MAPS.some(m => m.histRule) && !MAPS.some(m => !!m.hard),
+    HB.map(b => b.id).join(','));
+  /* 6 个敌编成模板：键唯一 + 模板全部在库 + 编队合法 */
+  const ekeys = History.enemyKeys();
+  assert('战役专属敌编成模板共 6 个且键全局唯一',
+    ekeys.length === 6 && new Set(ekeys).size === 6, ekeys.join(','));
+  assert('战役敌编成引用的深海模板全部在库',
+    ekeys.every(k => History.enemy(k).ships.length > 0 && History.enemy(k).ships.every(s => !!DEEP_TEMPLATES[s])));
+  assert('战役敌编成阵型名合法（与 FORMATIONS 表对得上）',
+    ekeys.every(k => !!Battle.FORMATIONS[History.enemy(k).formation]),
+    ekeys.map(k => History.enemy(k).formation).join(','));
+  /* 强敌阶：第二波模板必须存在、与第一波不同、键是 BOSS 节点 */
+  assert('强敌阶 waves 键为 BOSS 节点、第一波与 defs 一致、第二波存在且不同',
+    HB.every(b => {
+      const w = b.hard && b.hard.waves;
+      if (!w) return false;
+      const ks = Object.keys(w);
+      if (ks.length !== 1 || ks[0] !== b.boss) return false;
+      return w[b.boss][0] === b.defs[b.boss].enemy && w[b.boss][1] !== w[b.boss][0] && !!History.enemy(w[b.boss][1]);
+    }),
+    HB.map(b => JSON.stringify(b.hard.waves)).join(' | '));
+  assert('强敌阶门槛高于常规阶（admReq 递增）且解锁锚定常规首通',
+    HB.every(b => b.hard.admReq > b.admReq && b.hard.unlock === 'firstClear'));
+  /* 掉落表：与常规图同机制，舰船在库 */
+  assert('战役 BOSS 掉落舰全部在库且稀有度 ≥3（掉落表与常规图同机制）',
+    HB.every(b => b.bossDrops.length >= 2 && b.bossDrops.every(id => ShipData[id] && ShipData[id].rarity >= 3)),
+    HB.map(b => b.bossDrops.join('/')).join(' | '));
+  /* 奖励词表结构：三层一次性 + 可重复 + item 通道 */
+  assert('战役奖励词表结构完整（firstClear / histForm / hard / repeat）',
+    HB.every(b => b.rewards.firstClear && b.rewards.histForm && b.rewards.hard && b.rewards.repeat));
+  assert('史实重演奖励含消耗品（item 字段，本版新增通道）且装备 id 在库',
+    HB.every(b => Array.isArray(b.rewards.histForm.item) && b.rewards.histForm.item.length > 0 &&
+      b.rewards.histForm.item.every(id => EquipmentData[id] && EquipmentData[id].cat === '消耗品')),
+    HB.map(b => (b.rewards.histForm.item || []).join('/')).join(' | '));
+  assert('史实重演与强敌阶奖励各自声明的荣誉 id 在 HONORS 表内（数据—荣誉表对齐）',
+    HB.every(b => !!Progression.HONOR_BY_ID[b.rewards.histForm.honor] && !!Progression.HONOR_BY_ID[b.rewards.hard.honor]),
+    HB.map(b => b.rewards.histForm.honor + '/' + b.rewards.hard.honor).join(' | '));
+  /* 设计卡 §四注入量核算：螺丝 26 / devMats 20 / 消耗品 2 */
+  const screwsTotal = HB.reduce((n, b) => n + (b.rewards.firstClear.screws || 0) + (b.rewards.histForm.screws || 0) + (b.rewards.hard.firstClear.screws || 0), 0);
+  const devTotal = HB.reduce((n, b) => n + (b.rewards.hard.firstClear.devMats || 0), 0);
+  assert('奖励注入量与设计卡核算一致（螺丝 26 / devMats 20）',
+    screwsTotal === 26 && devTotal === 20, `screws=${screwsTotal} devMats=${devTotal}`);
+
+  /* --- 任务 1.1 验收断言 3：战役引用舰种在到达门槛前可获得 --- */
+  const buildableTypes = new Set(Object.values(ShipData).filter(d => d.build).map(d => d.type));
+  assert('战役 require 的舰种存在可建造舰（建造自始解锁，P-可获得性）',
+    HB.every(b => (b.histRule.require || []).every(g => (g.types || []).some(t => buildableTypes.has(t)))),
+    HB.map(b => JSON.stringify(b.histRule.require)).join(' | '));
+  assert('战役 require 的舰种总量 ≥ min（不是无法满足的空条件）',
+    HB.every(b => (b.histRule.require || []).every(g =>
+      Object.values(ShipData).filter(d => (g.types || []).includes(d.type)).length >= (g.min || 1))));
+  assert('战役考察维度与设计意图一致（H1 航空 / H2 夜战，且都有对应 mode 节点）',
+    HB[0].defs[HB[0].boss].mode === 'air' && HB[0].defs.A.mode === 'air' &&
+    HB[1].defs[HB[1].boss].mode === 'night' && Object.values(HB[1].defs).some(d => d.type === 'whirlpool'));
+}
+
+section('V0.303·任务1.2 战役流程接入（唯一接入点 resolveMap）与统计隔离');
+{
+  const histShip = (id, lv, equips) => {
+    const s = Game.createShip(id, lv);
+    for (const e of s.equipped.slice()) Game.destroyEquip(e);
+    s.equipped = [];
+    if (equips) {
+      for (const eid of equips) {
+        if (s.equipped.length >= ShipData[id].slots.length) break;
+        const ne = Game.createEquip(eid); ne.locked = false; s.equipped.push(ne.uid);
+      }
+    } else Game.equipDefaults(s.uid);
+    s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60;
+    return s.uid;
+  };
+  const setHistFleet = (ids, lv, equips) => { Game.state.fleet[1] = ids.map(id => histShip(id, lv, equips)); };
+  const refillHist = () => {
+    for (const u of Game.state.fleet[1]) {
+      const s = Game.state.ships[u]; if (!s) continue;
+      s.hp = Game.shipStats(u).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60;
+    }
+  };
+  /* 与 UI 同流程：道中战斗点直接 prepare+settle；BOSS 只 prepare，交由调用方决定结算时机 */
+  const toBoss = () => {
+    let guard = 0;
+    while (guard++ < 12) {
+      const map = Sortie.currentMap();
+      if (!map) return null;
+      const def = Sortie.nodeDef(map, Game.state.sortie.node);
+      if (def.type === 'battle') {
+        const p = Sortie.prepareBattle('单纵阵');
+        if (!p.ok) return null;
+        Sortie.settleBattle(p);
+      } else if (def.type === 'boss') {
+        return Sortie.prepareBattle('单纵阵');
+      }
+      if (!Sortie.moveToNext()) return null;
+    }
+    return null;
+  };
+  const CVF = ['f6f5', 'f6f5', 'f6f5', 'f6f5'];
+  const HIST_FLEET = ['enterprise', 'essex', 'saratoga', 'iowa', 'fletcher', 'baltimore'];
+  const setAirFleet = () => {
+    Game.state.fleet[1] = [
+      histShip('enterprise', 120, CVF), histShip('essex', 120, CVF), histShip('saratoga', 120, CVF),
+      histShip('iowa', 120, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+      histShip('fletcher', 120, ['gun5in_38', 'torp_mk15', 'torp_mk15', 'sonar_qc']),
+      histShip('baltimore', 120, ['gun8in_55', 'gun8in_55', 'radar_sg', 'ap_mk8'])
+    ];
+  };
+
+  Game.newGame();
+  Game.state.admiral.level = 40;
+  Game.gain({ fuel: 999999, ammo: 999999, steel: 999999, baux: 999999, screws: 300, devMats: 300 });
+
+  /* ---- resolveMap：唯一接入点 ---- */
+  assert('resolveMap 常规海域与战役走同一函数',
+    Sortie.resolveMap('1-1') === MAPS.find(m => m.id === '1-1') && Sortie.resolveMap('H1') === History.byId('H1'));
+  assert('resolveMap 对未知 id 返回 null（不抛错）', Sortie.resolveMap('H9') === null);
+  assert('战役图判定与常规图互斥（isHistoricMap）',
+    Sortie.isHistoricMap(History.byId('H1')) === true && Sortie.isHistoricMap(MAPS[0]) === false);
+  assert('未知 id 被拒绝出击', Sortie.start('H9', 1).ok === false && /不存在/.test(Sortie.start('H9', 1).msg));
+  assert('提督等级不足被拒绝（admReq 门槛）',
+    (() => { const lv = Game.state.admiral.level; Game.state.admiral.level = 5; const r = Sortie.start('H1', 1); Game.state.admiral.level = lv; return r.ok === false && r.reason === 'admReq'; })());
+  assert('强敌阶在常规首通前被拒绝（解锁门）',
+    (() => { delete Game.state.stats.historic['H2:firstClear']; const r = Sortie.startHard('H2', 1); return r.ok === false && r.reason === 'unlock'; })());
+
+  /* ---- 战役正常出击 / 结算 / 回港 + 统计隔离（任务 1.2 验收断言 4/5） ---- */
+  setAirFleet();
+  const mpBefore = JSON.stringify(Game.state.mapProgress);
+  const statsBefore = JSON.stringify({ sortie: Game.state.stats.sortie, win: Game.state.stats.win, sWin: Game.state.stats.sWin, sink: Game.state.stats.sink });
+  const libBefore = JSON.stringify(Game.state.library.ships);
+  const questsBefore = JSON.stringify(Game.state.quests);
+  const r1 = Sortie.start('H1', 1);
+  assert('Sortie.start("H1") 正常出击（签名不变、返回 historic 标记）',
+    r1.ok === true && r1.historic === 'H1' && Game.state.sortie.historic === 'H1' && Game.state.sortie.wave === 1);
+  const fleetUids = Game.state.fleet[1].slice();
+  const sortiesBefore = {};
+  for (const u of fleetUids) sortiesBefore[u] = Game.state.ships[u].record.sorties;
+  refillHist();
+  const prepB = toBoss();
+  assert('战役 BOSS 节点可 prepareBattle（敌编成取自 History.enemies）',
+    !!prepB && prepB.ok === true && prepB.isBoss === true && prepB.result.mySide.length === fleetUids.length);
+  const sB = Sortie.settleBattle(prepB);
+  assert('战役 BOSS 可正常结算', sB.ok === true && !!sB.result && typeof sB.result.rank === 'string');
+  Sortie.returnHome();
+  assert('战役可回港（sortie 置空、无残留）', Game.state.sortie === null && Sortie.currentMap() === null);
+  /* 隔离：25 图统计 / 图鉴海域 / 任务计数 / 进度 一律不受战役影响 */
+  assert('战役不写 mapProgress（深比较逐字节一致）', JSON.stringify(Game.state.mapProgress) === mpBefore);
+  assert('战役不给图鉴登录新海域（图鉴海域数仍为 25）',
+    MAPS.filter(m => Game.state.mapProgress[m.id]).length === 25 && !Game.state.mapProgress['H1']);
+  assert('战役不计入全局出击 / 胜场 / S胜 / 击沉统计',
+    JSON.stringify({ sortie: Game.state.stats.sortie, win: Game.state.stats.win, sWin: Game.state.stats.sWin, sink: Game.state.stats.sink }) === statsBefore);
+  assert('战役不推进任务计数（周常「出击 X 次」不含战役）', JSON.stringify(Game.state.quests) === questsBefore);
+  /* 图鉴：战役结算若掉落，只可能登录战役 BOSS 掉落表内的舰（不会凭空登录别的舰） */
+  const libDiff = Object.keys(Game.state.library.ships).filter(k => !JSON.parse(libBefore)[k]);
+  assert('战役结算只可能登录战役 BOSS 掉落表内的舰',
+    libDiff.length === 0 || libDiff.every(k => History.byId('H1').bossDrops.includes(k)), libDiff.join(','));
+  /* 不对称：舰娘个人 record.sorties 含战役（她确实出过战）；
+   * 若有大破进击导致轰沉，被击沉的舰已从 ships 表移除 —— 单独核对，不算作履历丢失。 */
+  const aliveUids = fleetUids.filter(u => Game.state.ships[u]);
+  const sunkUids = fleetUids.filter(u => !Game.state.ships[u]);
+  const sortiesAfter = aliveUids.map(u => Game.state.ships[u].record.sorties);
+  const sortiesBeforeAlive = aliveUids.map(u => sortiesBefore[u]);
+  assert('参战舰 record.sorties 照记（个人履历含战役，与全局统计不对称）',
+    sortiesAfter.length > 0 && sortiesAfter.every((n, i) => n > sortiesBeforeAlive[i]),
+    JSON.stringify(sortiesBeforeAlive) + ' → ' + JSON.stringify(sortiesAfter) + (sunkUids.length ? `（轰沉 ${sunkUids.length} 艘）` : ''));
+  assert('若有大破进击轰沉，战报里必须显式写明（不静默移除）',
+    sunkUids.length === 0 || prepB.result.log.some(l => typeof l === 'string' && l.includes('轰沉')),
+    'sunk=' + sunkUids.length);
+  assert('未参战舰不因战役产生履历变化',
+    Object.values(Game.state.ships).filter(s => !fleetUids.includes(s.uid)).every(s => s.record.sorties === 0));
+  /* 陷阱保护：战役 id 绝不能出现在 mapProgress / MAPS 中（负向验证见批次3） */
+  assert('mapProgress 的键集合仍恰好等于 25 张常规海域',
+    Object.keys(Game.state.mapProgress).length === 25 && Object.keys(Game.state.mapProgress).every(k => MAPS.some(m => m.id === k)));
+}
+
+section('V0.303·任务1.3 史实加成乘区 _histHit（独立乘区，绝不覆盖既有乘区）');
+{
+  const eqF = ['f6f5', 'f6f5', 'f6f5', 'f6f5'];
+  const mkHist = (ids, lv, equips) => {
+    Game.state.fleet[1] = ids.map(id => {
+      const s = Game.createShip(id, lv);
+      for (const e of s.equipped.slice()) Game.destroyEquip(e);
+      s.equipped = [];
+      if (equips) for (const eid of equips) { if (s.equipped.length >= ShipData[id].slots.length) break; const ne = Game.createEquip(eid); ne.locked = false; s.equipped.push(ne.uid); }
+      else Game.equipDefaults(s.uid);
+      s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60;
+      return s.uid;
+    });
+    return Game.state.fleet[1].slice();
+  };
+  const H1 = History.byId('H1');
+  const en = History.enemy('H1A');
+  const airFleet = mkHist(['enterprise', 'essex', 'saratoga', 'iowa', 'fletcher', 'baltimore'], 110, null);
+  const runAir = opts => Battle.battle(airFleet.slice(), en.ships, '单纵阵', en.formation, Object.assign({ allowNight: false, fleetIdx: 1, airMode: true }, opts));
+  /* 关闭（默认）：**不读不写任何字段** —— 这是「战役外逐位不变」的机制保证 */
+  const rOff = runAir({});
+  assert('opts.historic 缺省（false）时不写入任何 _hist 字段',
+    rOff.mySide.every(s => s._histHit === undefined && s._histEvd === undefined));
+  const rOn = runAir({ historic: true, histHit: 1.05, histEvd: 1.05 });
+  assert('opts.historic 开启且匹配 → _histHit / _histEvd 各为 1.05（独立字段）',
+    rOn.mySide.every(s => s._histHit === 1.05 && s._histEvd === 1.05));
+  /* 乘区叠乘：1.03 × 1.15 × 1.05 = 1.243725 */
+  assert('hitMods 三乘区叠乘 = 1.03 × 1.15 × 1.05 = 1.243725（互不覆盖，+24.37%）',
+    Math.abs(Battle.hitMods({ _reconHit: 1.03, _touchHit: 1.15, _histHit: 1.05 }).total - 1.243725) < 1e-12,
+    String(Battle.hitMods({ _reconHit: 1.03, _touchHit: 1.15, _histHit: 1.05 }).total));
+  assert('未启用史实时乘区与 V0.302 完全一致（缺省 1 → IEEE754 精确）',
+    Battle.hitMods({}).total === 1 && Battle.hitMods({ _reconHit: 1.03 }).total === 1.03 &&
+    Battle.hitMods({ _reconHit: 1.03, _touchHit: 1.15 }).total === 1.03 * 1.15);
+  assert('史实乘区没有覆盖索敌乘区（1.03 仍在，坑 #17 的反向验证）',
+    Battle.hitMods(rOn.mySide[0]).recon !== undefined && rOn.mySide[0]._reconHit !== undefined &&
+    Math.abs(Battle.hitMods(rOn.mySide[0]).total - (rOn.mySide[0]._reconHit || 1) * (rOn.mySide[0]._touchHit || 1) * 1.05) < 1e-12);
+  /* 禁入舰种在场 → 加成为 0（sortie 层判定），此处验证数据侧 matchRule 结论可复用 */
+  const H2 = History.byId('H2');
+  assert('H2 禁入舰种在场时 matchRule 判不匹配 → 乘区落回 1（结算侧只陈述，不惩罚）',
+    History.matchRule(H2.histRule, ['DD', 'DD', 'DD', 'DD', 'CA', 'BB']).ok === false &&
+    History.matchRule(H2.histRule, ['DD', 'DD', 'DD', 'DD', 'CA', 'BB']).banHit === true &&
+    History.matchRule(H2.histRule, ['DD', 'DD', 'DD', 'DD', 'CA', 'CL']).ok === true);
+  /* 引擎级回归：常规路径显式传 historic:false（战役外实际取值）时，乘区不生效、不写字段 */
+  const offSample = (() => {
+    mkHist(['enterprise', 'essex', 'iowa', 'fletcher', 'atlanta', 'baltimore'], 110, null);
+    return Battle.battle(Game.state.fleet[1].slice(), ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+      { allowNight: true, fleetIdx: 1, historic: false, histHit: 1.05, histEvd: 1.05 });
+  })();
+  assert('常规路径显式传 historic:false 时不写入 _hist 字段（传了加参数也不生效）',
+    offSample.mySide.every(s => s._histHit === undefined && s._histEvd === undefined));
+  assert('historic:false 时命中乘区只由索敌 × 触接决定（史实项恒为 1，逐位不变）',
+    offSample.mySide.every(s => {
+      const m = Battle.hitMods(s);
+      return m.hist === 1 && Math.abs(m.total - (s._reconHit || 1) * (s._touchHit || 1)) < 1e-12;
+    }));
+  /* 实战胜率方向：史实加成只应让战役内的我方更强（不是反向） */
+  const airKeyFleet = () => mkHist(['enterprise', 'essex', 'saratoga', 'iowa', 'fletcher', 'baltimore'], 110, eqF);
+  let sOff = 0, sOn = 0;
+  for (let i = 0; i < 60; i++) { airKeyFleet(); if (Battle.battle(Game.state.fleet[1].slice(), en.ships, '单纵阵', en.formation, { allowNight: true, fleetIdx: 1, airMode: true }).rank === 'S') sOff++; }
+  for (let i = 0; i < 60; i++) { airKeyFleet(); if (Battle.battle(Game.state.fleet[1].slice(), en.ships, '单纵阵', en.formation, { allowNight: true, fleetIdx: 1, airMode: true, historic: true, histHit: 1.05, histEvd: 1.05 }).rank === 'S') sOn++; }
+  assert('史实加成方向正确：开启后 S 胜次数不少于关闭（60 场对照，只作方向性检查）',
+    sOn >= sOff - 6, `off=${sOff} on=${sOn}`);
+}
+
+section('V0.303·任务1.4 结算 / 全局账本 / 存档 v6 / item 奖励通道');
+{
+  const H1 = History.byId('H1'), H2 = History.byId('H2');
+  Game.newGame();
+  Game.state.admiral.level = 40;
+  Game.gain({ fuel: 500000, ammo: 500000, steel: 500000, baux: 500000 });
+  Game.state.resources.screws = 0;      /* 明确起点：螺丝 / devMats 从 0 起算，便于核对注入量 */
+  Game.state.resources.devMats = 0;
+  const led = () => Game.state.stats.historic;
+
+  /* ---- 账本制一次性（坑 #21）：重复达成 3 次，一次性层不再入账 ---- */
+  const ctxA = { battle: H1, hard: false, wave: 1, victory: true, rank: 'S', histMatch: true, bossVictory: true };
+  const g1 = Progression.grantHistoricRewards(ctxA);
+  assert('首通 + 史实重演两层一次性奖励在同一次达成中各发一次',
+    g1.granted.length === 2 && g1.granted.includes('firstClear') && g1.granted.includes('histForm'),
+    JSON.stringify(g1.granted));
+  const ledAfter1 = JSON.stringify(led());
+  const later = [0, 1, 2].map(() => Progression.grantHistoricRewards(ctxA));
+  assert('重复达成 3 次：一次性奖励不再入账（账本模式，非"当场标记"）',
+    later.every(g => g.granted.length === 0) && JSON.stringify(led()) === ledAfter1);
+  assert('重复通关只给小额资源（可重复层，不入账本）',
+    later.every(g => g.repeat === true) && led()[H1.id + ':repeat'] === undefined);
+  assert('史实重演奖励经 item 通道入仓（应急修理要员，自动上锁）', (() => {
+    const items = Object.values(Game.state.equipment).filter(e => e.id === 'dc_team');
+    return items.length === 1 && items[0].locked === true;
+  })(), JSON.stringify(Object.values(Game.state.equipment).map(e => e.id)));
+  assert('首通（螺丝+5）与史实重演（螺丝+3）的改修资材均已入账', Game.state.resources.screws === 8,
+    String(Game.state.resources.screws));
+  /* 强敌阶层：必须第二波 S 胜才发 */
+  const gHard1 = Progression.grantHistoricRewards({ battle: H1, hard: true, wave: 1, victory: true, rank: 'S', histMatch: true, bossVictory: false });
+  assert('强敌阶第一波（未打完第二波）不发强敌阶首通奖励',
+    gHard1.granted.length === 0 && led()[H1.id + ':hard'] === undefined);
+  const gHard2 = Progression.grantHistoricRewards({ battle: H1, hard: true, wave: 2, victory: true, rank: 'S', histMatch: true, bossVictory: true });
+  assert('第二波 S 胜 → 强敌阶首通奖励发放一次（devMats +10 / 螺丝 +5）',
+    gHard2.granted.includes('hard') && Game.state.resources.devMats === 10 && Game.state.resources.screws === 13,
+    JSON.stringify(gHard2.granted) + ' devMats=' + Game.state.resources.devMats + ' screws=' + Game.state.resources.screws);
+  assert('三类一次性奖励均已入账（firstClear / histForm / hard）',
+    !!led()[H1.id + ':firstClear'] && !!led()[H1.id + ':histForm'] && !!led()[H1.id + ':hard']);
+  assert('史实重演未达成时（编成不符）不发该层奖励', (() => {
+    const before = JSON.stringify(led());
+    Progression.grantHistoricRewards({ battle: H2, hard: false, wave: 1, victory: true, rank: 'S', histMatch: false, bossVictory: true });
+    const l = led();
+    return !!l[H2.id + ':firstClear'] && l[H2.id + ':histForm'] === undefined;
+  })());
+  assert('史实胜需 S 评价（A 胜不发 histForm）', (() => {
+    delete led()['H1:histForm'];
+    Progression.grantHistoricRewards({ battle: H1, hard: false, wave: 1, victory: true, rank: 'A', histMatch: true, bossVictory: true });
+    return led()['H1:histForm'] === undefined;
+  })());
+  assert('败局不发放任何战役奖励（P0-2 无进度写入）', (() => {
+    const before = JSON.stringify(led());
+    Progression.grantHistoricRewards({ battle: H1, hard: false, wave: 1, victory: false, rank: 'D', histMatch: true, bossVictory: false });
+    return JSON.stringify(led()) === before;
+  })());
+
+  /* ---- 存档 v6：record.historic 三类标记（结构层，与上面账本层分开） ---- */
+  Game.newGame();
+  Game.state.admiral.level = 40;
+  const uidX = Game.createShip('enterprise', 90);
+  Game.state.fleet[1] = [uidX.uid];
+  const rec = uidX.record;
+  assert('新建舰船 / 新档自带 record.historic 空对象（与 defaultRecord 同形状）',
+    JSON.stringify(Game.defaultRecord().historic) === '{}' && JSON.stringify(rec.historic) === '{}');
+  Progression.recordBattleResult({
+    uids: [uidX.uid], kind: 'sortie', rank: 'S', failed: false, historic: 'H1',
+    hard: false, wave: 1, histMatch: true, histClear: true, histForm: true, histHard: false,
+    histNoSunk: true, ddCount: 0, nodeIsBoss: true, histFinal: true
+  });
+  assert('常规阶首通 + 史实胜写入 record.historic[battleId]（clearAt / histWin）',
+    rec.historic['H1'] && rec.historic['H1'].clearAt > 0 && rec.historic['H1'].histWin > 0 && rec.historic['H1'].hardWin === undefined);
+  Progression.recordBattleResult({
+    uids: [uidX.uid], kind: 'sortie', rank: 'S', failed: false, historic: 'H1',
+    hard: true, wave: 2, histMatch: true, histClear: false, histForm: false, histHard: true,
+    histNoSunk: true, ddCount: 0, nodeIsBoss: true, histFinal: true
+  });
+  assert('强敌阶首通写入 hardWin（三个标记同存）',
+    rec.historic['H1'].hardWin > 0 && rec.historic['H1'].clearAt > 0 && rec.historic['H1'].histWin > 0);
+  const firstClearAt = rec.historic['H1'].clearAt;
+  Progression.recordBattleResult({
+    uids: [uidX.uid], kind: 'sortie', rank: 'S', failed: false, historic: 'H1',
+    hard: false, wave: 1, histMatch: true, histClear: true, histForm: true, histHard: false,
+    histNoSunk: true, ddCount: 0, nodeIsBoss: true, histFinal: true
+  });
+  assert('战役标记只记首次时间戳（重打不覆盖）', rec.historic['H1'].clearAt === firstClearAt);
+  assert('战役标记不污染 firstClear / objectives（两套进度体系互不影响）',
+    Object.keys(rec.firstClear).length === 0 && Object.keys(rec.objectives).length === 0);
+
+  /* ---- 战斗粮食 / 消耗品的 item 通道（任务奖励词表复用） ---- */
+  Game.newGame();
+  const rw = Progression.grantRewardBundle({ fuel: 100, screws: 2, item: ['dc_team', 'rations'] });
+  assert('grantRewardBundle 的 item 分支把消耗品入仓（走 createEquip，自动上锁）',
+    rw.itemIds.length === 2 && rw.eqs.length === 2 && Game.state.resources.fuel === 1100 &&
+    Game.state.resources.screws === 2 &&
+    rw.eqs.every(e => EquipmentData[e.id].cat === '消耗品' && e.locked === true),
+    JSON.stringify(rw.eqs.map(e => e.id)));
+  assert('grantRewardBundle 对 equip 字段同样有效（任务与战役共用同一通道）',
+    Progression.grantRewardBundle({ equip: ['gun5in_30'] }).eqs.length === 1);
+  assert('资源上限受控（螺丝 / devMats 不越界）', (() => {
+    for (let i = 0; i < 5; i++) Progression.grantRewardBundle({ screws: 3000, devMats: 3000 });
+    return Game.state.resources.screws === 3000 && Game.state.resources.devMats === 3000;
+  })());
+}
+
+/* ============================================================
+ * V0.303 · 历史战役模式 —— 批次2：强敌阶二波制 + 文案三件套
+ * ============================================================ */
+section('V0.303·任务2.1 强敌阶二波制（waves）');
+{
+  const H1 = History.byId('H1');
+  const histShip2 = (id, lv, equips) => {
+    const s = Game.createShip(id, lv);
+    for (const e of s.equipped.slice()) Game.destroyEquip(e);
+    s.equipped = [];
+    if (equips) for (const eid of equips) { if (s.equipped.length >= ShipData[id].slots.length) break; const ne = Game.createEquip(eid); ne.locked = false; s.equipped.push(ne.uid); }
+    else Game.equipDefaults(s.uid);
+    s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60;
+    return s.uid;
+  };
+  const toBoss2 = () => {
+    let guard = 0;
+    while (guard++ < 12) {
+      const map = Sortie.currentMap();
+      if (!map) return null;
+      const def = Sortie.nodeDef(map, Game.state.sortie.node);
+      if (def.type === 'battle') {
+        const p = Sortie.prepareBattle('单纵阵');
+        if (!p.ok) return null;
+        Sortie.settleBattle(p);
+      } else if (def.type === 'boss') return Sortie.prepareBattle('单纵阵');
+      if (!Sortie.moveToNext()) return null;
+    }
+    return null;
+  };
+
+  /* ---- 断言 15：常规阶 / 无 waves 的图永远单波 ---- */
+  assert('wavesFor：强敌阶 BOSS 节点有第二波，常规阶与无 waves 的图没有',
+    History.wavesFor(H1, 'X') === 'H1X2' && History.wavesFor(H1, 'A') === null &&
+    History.wavesFor(MAPS[0], MAPS[0].boss) === null && History.wavesFor(null, 'X') === null);
+  assert('waveEnemyKeys 覆盖两场战役的第二波模板（4 个键）',
+    History.waveEnemyKeys().length === 4 && History.waveEnemyKeys().every(k => !!History.enemy(k)),
+    History.waveEnemyKeys().join(','));
+  assert('战役常规阶（so.hard=false）即便在 BOSS 节点也不会取第二波敌编成', (() => {
+    Game.newGame(); Game.state.admiral.level = 40;
+    Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+    Game.state.fleet[1] = [histShip2('enterprise', 110, ['f6f5', 'f6f5', 'f6f5', 'f6f5']),
+      histShip2('essex', 110, ['f6f5', 'f6f5', 'f6f5', 'f6f5'])];
+    Game.state.stats.historic['H1:firstClear'] = Date.now();
+    Sortie.start('H1', 1);
+    Game.state.sortie.node = 'X';
+    const p = Sortie.prepareBattle('单纵阵');
+    return p.ok && p.histEnemyKey === 'H1X' && p.histWave === 1;
+  })());
+  assert('常规海域 BOSS 的 prepareBattle 不带任何战役字段（回归保护）', (() => {
+    Game.newGame(); Game.state.admiral.level = 40;
+    Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+    const starter = Game.state.fleet[1].slice();
+    Game.state.mapProgress['1-3'].cleared = true;
+    const r = Sortie.start('1-4', 1);
+    if (!r.ok) return false;
+    Game.state.sortie.node = MAPS.find(m => m.id === '1-4').boss;
+    const p = Sortie.prepareBattle('单纵阵');
+    Sortie.returnHome();
+    return p.ok && p.historic === null && p.hard === false && p.histWave === 1 && p.histMatch === false;
+  })());
+
+  /* ---- 断言 13：迎击 → 第二波，残弹 / 耐久 / 士气全部继承，不做补给 ---- */
+  const setupHard = (fleetSpec) => {
+    Game.newGame(); Game.state.admiral.level = 60;
+    Game.gain({ fuel: 999999, ammo: 999999, steel: 999999, baux: 999999 });
+    Game.state.stats.historic['H1:firstClear'] = Date.now();      // 解锁强敌阶
+    Game.state.fleet[1] = fleetSpec();
+    return Sortie.startHard('H1', 1);
+  };
+  const hardFleet = () => [
+    histShip2('enterprise', 120, ['f6f5', 'f6f5', 'f6f5', 'f6f5']),
+    histShip2('essex', 120, ['f6f5', 'f6f5', 'f6f5', 'f6f5']),
+    histShip2('saratoga', 120, ['f6f5', 'f6f5', 'f6f5', 'f6f5']),
+    histShip2('iowa', 120, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+    histShip2('fletcher', 120, ['gun5in_38', 'torp_mk15', 'torp_mk15', 'sonar_qc']),
+    histShip2('baltimore', 120, ['gun8in_55', 'gun8in_55', 'radar_sg', 'ap_mk8'])
+  ];
+  const rr = setupHard(hardFleet);
+  assert('强敌阶出击入口可用（常规首通 + 等级达标）', rr.ok === true && rr.hard === true);
+  const prepW1 = toBoss2();
+  assert('第一波敌编成为 waves[0]（= defs[boss].enemy）', !!prepW1 && prepW1.histEnemyKey === 'H1X' && Game.state.sortie.wave === 1);
+  /* 迎击：第一波以 histContinue 结算（只落消耗与履历，不发奖不打标记） */
+  const ledBefore = JSON.stringify(Game.state.stats.historic);
+  prepW1.histContinue = true;
+  const c1 = Sortie.settleBattle(prepW1);
+  assert('迎击路径下第一波不参与奖励判定（histReward 为空，账本不变）',
+    c1.ok === true && c1.histReward === null && JSON.stringify(Game.state.stats.historic) === ledBefore);
+  assert('迎击路径下第一波不写 record.historic 标记（hardWin 不落）',
+    Object.values(Game.state.ships).every(s => !s.record.historic['H1'] || s.record.historic['H1'].hardWin === undefined));
+  const snapW1 = Game.state.fleet[1].filter(u => Game.state.ships[u]).map(u => {
+    const s = Game.state.ships[u];
+    return { uid: u, hp: s.hp, ammo: s.supply.ammo, fuel: s.supply.fuel, morale: s.morale };
+  });
+  const prepW2 = Sortie.startHardWave(prepW1);
+  assert('startHardWave 发起第二波：敌编成 = waves[1]，so.wave 推进到 2',
+    prepW2.ok === true && prepW2.histEnemyKey === 'H1X2' && Game.state.sortie.wave === 2);
+  const snapW2 = Game.state.fleet[1].filter(u => Game.state.ships[u]).map(u => {
+    const s = Game.state.ships[u];
+    return { uid: u, hp: s.hp, ammo: s.supply.ammo, fuel: s.supply.fuel, morale: s.morale };
+  });
+  assert('第二波建立战斗时不补给、不重置：残弹 / 耐久 / 士气与第一波结算后完全一致',
+    JSON.stringify(snapW1) === JSON.stringify(snapW2),
+    JSON.stringify(snapW1) + ' vs ' + JSON.stringify(snapW2));
+  assert('第二波战报首行说明「第一波击破 / 残弹继承 / 不补给」（归因可读，难度来源可解释）',
+    /第一波击破/.test(prepW2.result.log[0]) && /继承/.test(prepW2.result.log[0]) && /不/.test(prepW2.result.log[0]),
+    String(prepW2.result.log[0]).slice(0, 60));
+  assert('第二波沿用第一波的阵型（不重新选择、不给"白嫖换阵"的机会）', prepW2.formation === prepW1.formation);
+  const ammoCarry = snapW2.length ? Math.min.apply(null, snapW2.map(x => x.ammo)) : 1;
+  assert('残弹 <50% 时弹药补正真实生效（第二波的实际难度来源）',
+    ammoCarry < 0.5 ? Battle.ammoBonus({ ammo: ammoCarry }) < 1 : true,
+    'minAmmo=' + ammoCarry);
+  assert('startHardWave 幂等保护：已在第二波时再次调用被拒绝', Sortie.startHardWave(prepW1).ok === false);
+  /* 第二波打完 → hardWin 判定（S 才落） */
+  const s2 = Sortie.settleBattle(prepW2);
+  assert('第二波结算：只有 S 胜才落 hardWin（非 S 不标记）',
+    s2.result.rank === 'S'
+      ? (!!Game.state.stats.historic['H1:hard'] && Object.values(Game.state.ships).some(s => s.record.historic['H1'] && s.record.historic['H1'].hardWin))
+      : (!Game.state.stats.historic['H1:hard'] &&
+        Object.values(Game.state.ships).every(s => !s.record.historic['H1'] || s.record.historic['H1'].hardWin === undefined)),
+    'rank=' + s2.result.rank);
+
+  /* ---- 断言 14：收兵 → 与常规阶 BOSS 结算一致，hardWin 不写入 ---- */
+  const rr2 = setupHard(hardFleet);
+  assert('收兵场景：强敌阶二次出击可正常开始', rr2.ok === true);
+  const prepR = toBoss2();
+  const sR = Sortie.settleBattle(prepR);       // 收兵 = 直接常规结算（不发 histContinue）
+  assert('收兵：第一波正常结算（不发奖、不打 hardWin、零惩罚）',
+    sR.ok === true && !Game.state.stats.historic['H1:hard'] &&
+    Object.values(Game.state.ships).every(s => !s.record.historic['H1'] || s.record.historic['H1'].hardWin === undefined),
+    'rank=' + sR.result.rank);
+  assert('收兵后仍可再次发起强敌阶（不阻断，P0-2）',
+    (() => { Sortie.returnHome(); const r = Sortie.startHard('H1', 1); const ok = r.ok; Sortie.returnHome(); return ok; })());
+
+  /* ---- 断言 16：第二波的大破舰照常走既有轰沉保护（不因二波制绕过 P0-4） ---- */
+  setupHard(hardFleet);
+  const prepD = toBoss2();
+  assert('第二波进击检查与既有流程同源：大破僚舰在 prepareBattle 时即被登记为 doomed',
+    (() => {
+      const list = Game.state.fleet[1].filter(u => Game.state.ships[u]);
+      const victim = list[list.length - 1];
+      const vs = Game.state.ships[victim];
+      vs.hp = Math.max(1, Math.floor(Game.shipStats(victim).hpMax * 0.2));   // 人为造成大破
+      const daPo = Sortie.daPoShips();
+      const p = Sortie.prepareBattle('单纵阵');
+      return daPo.includes(victim) && p.doomed.includes(victim);
+    })());
+  Sortie.returnHome();
+
+  /* ---- 断言 21：二波战败的归因必须命中「弹药 / 连续作战」，而不是误报索敌失败 ----
+   * 直接推进到 BOSS 再人为制造「第一波之后的残破状态」（残弹见底 + 全员大破）：
+   * 这正是二波制在真实玩法里的典型场景，且比"用弱船从 S 点打到 BOSS"确定得多。 */
+  setupHard(hardFleet);
+  Game.state.sortie.node = 'X';
+  const prepW = Sortie.prepareBattle('单纵阵');
+  let lost = null;
+  if (prepW && prepW.ok) {
+    prepW.histContinue = true;
+    Sortie.settleBattle(prepW);
+    /* 模拟"第一波打完之后"的真实状态：残弹见底 + 僚舰全员大破（旗舰保住 40%，否则连进击都不允许——
+     * 这本身也印证了「旗舰大破禁进击」在二波制下依然生效） */
+    const uids = Game.state.fleet[1].filter(u => Game.state.ships[u]);
+    uids.forEach((u, i) => {
+      const s = Game.state.ships[u];
+      s.supply.ammo = 0.04; s.supply.fuel = 0.04;
+      s.hp = i === 0 ? Math.max(1, Math.floor(Game.shipStats(u).hpMax * 0.4)) : 1;
+    });
+    const p2 = Sortie.startHardWave(prepW);
+    if (p2 && p2.ok) lost = Sortie.settleBattle(p2);
+  }
+  const attr = lost ? lost.result.log.filter(l => typeof l === 'string') : [];
+  assert('二波战败：归因命中「连续作战 / 弹药」分支（二波制的难度来源可解释）',
+    !!lost && !lost.result.victory && attr.some(l => /连续作战/.test(l) && /残弹率/.test(l)),
+    (lost ? 'rank=' + lost.result.rank + ' ' : '(未战败) ') + attr.filter(l => /连续作战|弹药/.test(l)).join(' || ').slice(0, 160));
+  assert('二波战败：归因给出可执行改进方向（不是只有结论）',
+    !!lost && attr.some(l => /收兵/.test(l)), attr.filter(l => /收兵/.test(l)).join(' || ').slice(0, 120));
+  assert('二波战败的归因排在归因行首位（不被索敌失败等既有分支抢占主因）', (() => {
+    if (!lost) return false;
+    const hmap = Sortie.resolveMap('H1');
+    /* 直接对纯函数下断言：histWave=2 时二波归因必须是 out[0]（
+     * 战报整体里 "制空/索敌" 字样出现在更早的航空战日志中，因此不能拿整份 log 找首个匹配） */
+    const out = Sortie.attributionLines({
+      result: lost.result, nodeDef: hmap.defs.X,
+      fleet: Object.keys(Game.state.ships), st: Game.state, histWave: 2
+    });
+    const outW1 = Sortie.attributionLines({
+      result: lost.result, nodeDef: hmap.defs.X,
+      fleet: Object.keys(Game.state.ships), st: Game.state, histWave: 1
+    });
+    return out.length > 0 && /连续作战/.test(out[0]) && !outW1.some(l => /连续作战/.test(l));
+  })());
+  assert('二波大破僚舰进击 → 既有轰沉流程照常触发（战报里显式写明，不静默移除）',
+    !!lost && attr.some(l => /轰沉/.test(l)),
+    attr.filter(l => /轰沉/.test(l)).length + ' 条轰沉行');
+  assert('二波战败不产生 hardWin / 强敌阶奖励（败局无进度写入）',
+    !Game.state.stats.historic['H1:hard'] &&
+    Object.values(Game.state.ships).every(s => !s.record.historic['H1'] || s.record.historic['H1'].hardWin === undefined));
+
+  /* 旗舰大破时第二波无法发起：既有「旗舰大破禁进击」在二波制下依然生效（P0-4 不被绕过） */
+  assert('旗舰大破时第二波无法发起（既有「旗舰大破禁进击」在二波制下依然生效）', (() => {
+    setupHard(hardFleet);
+    Game.state.sortie.node = 'X';
+    const p = Sortie.prepareBattle('单纵阵');
+    if (!p.ok) return false;
+    p.histContinue = true;
+    Sortie.settleBattle(p);
+    Game.state.ships[Game.state.fleet[1][0]].hp = 1;      // 人为造成旗舰大破
+    const p2 = Sortie.startHardWave(p);
+    const ok = p2.ok === false && /旗舰大破/.test(p2.msg || '') && Game.state.sortie.wave === 1;
+    Sortie.returnHome();
+    return ok;
+  })());
+  Sortie.returnHome();
+}
+
+section('V0.303·任务2.3 文案三件套（简报 / 第二波横幅 / 归因分支）');
+{
+  const HB = HISTORY_BATTLES;
+  assert('H1 简报含「制空」维度关键字，H2 简报含「夜战」维度关键字',
+    HB[0].brief.includes('制空') && HB[1].brief.includes('夜战'));
+  assert('两场战役简报均为两段军事简报体（含换行、长度达标、无 undefined）',
+    HB.every(b => b.brief.split('\n').length >= 2 && b.brief.length > 60 && !/undefined/.test(b.brief)));
+  assert('强敌阶简报必须点明「第二梯队」（P0-6：不搞突然袭击）',
+    HB.every(b => /第二梯队/.test(b.hard.brief) && /迎击/.test(b.hard.brief) && /收兵/.test(b.hard.brief)));
+  assert('第二波入场横幅逐战役独立、且非空（H1 翔鹤·瑞鹤 / H2 雾岛炮击队）',
+    /撤退/.test(HB[0].hard.waveBanner) && /雾岛/.test(HB[1].hard.waveBanner));
+  assert('nodeBanner 在 wave>=2 时返回第二波横幅（覆盖节点自身的 mode 文案）',
+    Sortie.nodeBanner({ mode: 'air' }, { wave: 2, waveBanner: '测试横幅' }) === '测试横幅' &&
+    Sortie.nodeBanner({ mode: 'air' }, { wave: 1, airWing: true }) === Sortie.NODE_BANNER.air &&
+    Sortie.nodeBanner({ mode: 'air' }, { wave: 1, airWing: true }) !== Sortie.NODE_BANNER.histWave &&
+    Sortie.nodeBanner({ mode: 'air' }, { wave: 2 }) === Sortie.NODE_BANNER.histWave);
+  assert('文案表覆盖全部用到的 mode（常规海域 + 历史战役，含战役的 air/night/whirlpool）',
+    Sortie.usedNodeModes().every(m => typeof Sortie.NODE_BANNER[m] === 'string' && Sortie.NODE_BANNER[m].length > 0),
+    Sortie.usedNodeModes().join(','));
+  assert('战役用到 whirlpool（H2 的 W 点）且 type 已进入覆盖度检查',
+    Sortie.usedNodeModes().includes('whirlpool') && Sortie.NODE_BANNER.whirlpool.length > 0);
+  /* 第二波横幅"在第一波结算之后产生"：wave 只在 startHardWave 内推进，且首行引用第一波战果 */
+  assert('第二波横幅的状态（so.wave=2）只能由 startHardWave 推进 —— 空出击时为 1',
+    (() => { Game.newGame(); Game.state.admiral.level = 60; Game.gain({ fuel: 9999, ammo: 9999, steel: 9999, baux: 9999 });
+      Game.state.stats.historic['H1:firstClear'] = Date.now();
+      Sortie.startHard('H1', 1); const w = Game.state.sortie.wave; Sortie.returnHome(); return w === 1; })());
+  assert('归因函数对 wave=1 不产生二波归因行（防误报：常规战败不该说"连续作战"）',
+    (() => {
+      Game.newGame();
+      const out1 = Sortie.attributionLines({
+        result: { victory: false, rank: 'D', mySide: [], enemySide: [], log: [] },
+        nodeDef: { type: 'boss', mode: 'air' }, fleet: [], st: Game.state, histWave: 1
+      });
+      const out2 = Sortie.attributionLines({
+        result: { victory: false, rank: 'D', mySide: [], enemySide: [], log: [] },
+        nodeDef: { type: 'boss', mode: 'air' }, fleet: [], st: Game.state, histWave: 2
+      });
+      return !out1.some(l => /连续作战/.test(l)) && out2.some(l => /连续作战/.test(l));
+    })());
+  assert('归因只在败局输出（胜局不产生任何归因行，保持既有语义）',
+    (() => {
+      const out = Sortie.attributionLines({
+        result: { victory: true, rank: 'S' }, nodeDef: { type: 'boss' }, fleet: [], st: Game.state, histWave: 2
+      });
+      return out.length === 0;
+    })());
+}
+
+section('V0.303·任务3.1 战役荣誉（6 个）与 BOSS 掉落');
+{
+  const IDS = ['hist_h1_s', 'hist_h1_hard', 'hist_h1_nolost', 'hist_h2_iron', 'hist_h2_hard', 'hist_h2_suilven'];
+  assert('6 个战役荣誉全部登记在 HONORS 表内（id 与设计卡一致）', IDS.every(id => !!Progression.HONOR_BY_ID[id]));
+  assert('战役荣誉均为「只展示不加成」型（无任何数值字段）',
+    IDS.every(id => { const h = Progression.HONOR_BY_ID[id]; return typeof h.check === 'function' && !('bonus' in h) && !('mod' in h) && !('stat' in h); }));
+  assert('战役荣誉名称与题材一致（适任者 / 猎火鸡 / 不沉的大 E / 铁底湾夜刃 / 东京快车 / 沙利文姐妹）',
+    /适任者/.test(Progression.HONOR_BY_ID.hist_h1_s.name) &&
+    /猎火鸡/.test(Progression.HONOR_BY_ID.hist_h1_hard.name) &&
+    /大 E/.test(Progression.HONOR_BY_ID.hist_h1_nolost.name) &&
+    /铁底湾/.test(Progression.HONOR_BY_ID.hist_h2_iron.name) &&
+    /东京快车/.test(Progression.HONOR_BY_ID.hist_h2_hard.name) &&
+    /沙利文/.test(Progression.HONOR_BY_ID.hist_h2_suilven.name));
+  /* 奖励表声明的荣誉 id 与荣誉表对齐（数据—代码双向） */
+  assert('战役奖励表声明的荣誉 id 与 HONORS 表一一对应（H1/H2 各一条常规阶 + 一条强敌阶）',
+    HISTORY_BATTLES.every(b => Progression.HONOR_BY_ID[b.rewards.histForm.honor] && Progression.HONOR_BY_ID[b.rewards.hard.honor]) &&
+    HISTORY_BATTLES.map(b => b.rewards.histForm.honor).join(',') === 'hist_h1_s,hist_h2_iron' &&
+    HISTORY_BATTLES.map(b => b.rewards.hard.honor).join(',') === 'hist_h1_hard,hist_h2_hard');
+
+  const fresh = id => { const s = Game.createShip(id, 90); Game.state.fleet[1] = [s.uid]; return s; };
+  const base = extra => Object.assign({
+    kind: 'sortie', rank: 'S', failed: false, historic: 'H1', hard: false, wave: 1, histMatch: true,
+    histClear: true, histForm: true, histHard: false, histNoSunk: true, ddCount: 0,
+    nodeIsBoss: true, histFinal: true
+  }, extra);
+
+  /* ---- 断言 22：幂等 + 只在战役结算触发 ---- */
+  const histHonorsOf = s => s.record.honors.map(h => h.id).filter(id => /^hist_/.test(id));
+  Game.newGame();
+  const s1 = fresh('enterprise');
+  Progression.recordBattleResult(Object.assign({ uids: [s1.uid] }, base({})));
+  const n1 = s1.record.honors.length;
+  assert('战役结算正常授勋（H1 史实编成 S 胜 → 适任者 + 不沉的大 E）',
+    histHonorsOf(s1).length === 2 && histHonorsOf(s1).includes('hist_h1_s') && histHonorsOf(s1).includes('hist_h1_nolost'),
+    JSON.stringify(s1.record.honors.map(h => h.id)));
+  const r2 = Progression.recordBattleResult(Object.assign({ uids: [s1.uid] }, base({})));
+  assert('战役荣誉幂等：重复达成 2 次不重复授勋',
+    s1.record.honors.length === n1 && r2.granted.length === 0,
+    JSON.stringify({ n1, n2: s1.record.honors.length, granted: r2.granted.length }));
+  assert('常规图结算（无 historic 上下文）不触发任何战役荣誉（防误触发）', (() => {
+    const before = histHonorsOf(s1);
+    Progression.recordBattleResult({
+      uids: [s1.uid], kind: 'sortie', rank: 'S', failed: false, airKey: 'SURE',
+      nodeIsBoss: true, histFinal: true, ddCount: 6, histNoSunk: true
+    });
+    /* 常规图的荣誉（如制空权确保）照常授予，但战役荣誉一个都不能冒出来 */
+    return JSON.stringify(histHonorsOf(s1)) === JSON.stringify(before) &&
+      s1.record.honors.some(h => h.id === 'air_supreme');
+  })(), JSON.stringify(s1.record.honors.map(h => h.id)));
+  assert('超范围荣誉 id 不被授予（表外 id 一律忽略，既有机制复用）', (() => {
+    const before = s1.record.honors.length;
+    Progression.grantHonors(s1.uid, ['hist_not_exist']);
+    return s1.record.honors.length === before;
+  })());
+  assert('未打第二波（histFinal=false）时不给强敌阶荣誉（不能在第一波就授勋）', (() => {
+    const s = fresh('iowa');
+    Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, base({ hard: true, histFinal: false, wave: 1 })));
+    return !s.record.honors.some(h => h.id === 'hist_h1_hard');
+  })());
+  assert('强敌阶第二波 S 胜才授「猎火鸡的猎人」（wave=2 且 S 胜）', (() => {
+    const s = fresh('iowa');
+    Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, base({ hard: true, wave: 2, histFinal: true, rank: 'S' })));
+    return s.record.honors.some(h => h.id === 'hist_h1_hard');
+  })());
+  assert('强敌阶第二波非 S 胜不授荣誉（A 胜不授）', (() => {
+    const s = fresh('iowa');
+    Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, base({ hard: true, wave: 2, histFinal: true, rank: 'A' })));
+    return !s.record.honors.some(h => h.id === 'hist_h1_hard');
+  })());
+  assert('常规阶史实荣誉不会因强敌阶达成而授予（适任者只认常规阶）', (() => {
+    const s = fresh('essex');
+    Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, base({ hard: true, wave: 2, histFinal: true, rank: 'S' })));
+    return !s.record.honors.some(h => h.id === 'hist_h1_s');
+  })());
+
+  /* ---- 断言 23：「沙利文姐妹」的「无人沉没」边界 ---- */
+  const suilven = (dd, noSunk) => {
+    Game.newGame();
+    const s = fresh('atlanta');
+    Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, base({
+      historic: 'H2', ddCount: dd, histNoSunk: noSunk, histMatch: true, histForm: false
+    })));
+    return s.record.honors.some(h => h.id === 'hist_h2_suilven');
+  };
+  assert('沙利文姐妹：H2 + ≥4 DD + 无人沉没 → 授勋', suilven(4, true) === true);
+  assert('沙利文姐妹：有舰沉没时不授勋（边界）', suilven(4, false) === false);
+  assert('沙利文姐妹：DD 只有 3 艘时不授勋（边界）', suilven(3, true) === false);
+  assert('沙利文姐妹：恰好 4 艘且无沉没（下边界成立）', suilven(4, true) === true);
+  assert('铁底湾夜刃与沙利文姐妹可同时获得（不同维度，互补）', (() => {
+    Game.newGame();
+    const s = fresh('atlanta');
+    Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, base({ historic: 'H2', ddCount: 4, histNoSunk: true })));
+    return s.record.honors.some(h => h.id === 'hist_h2_iron') && s.record.honors.some(h => h.id === 'hist_h2_suilven');
+  })());
+
+  /* ---- BOSS 掉落（与常规图同机制，强敌阶同表） ---- */
+  assert('战役 BOSS 掉落表非空、舰船在库、与常规图同一份掉落实现（bossDrops 字段）',
+    HISTORY_BATTLES.every(b => Array.isArray(b.bossDrops) && b.bossDrops.length >= 2 && b.bossDrops.every(id => !!ShipData[id])));
+  assert('强敌阶与常规阶共用同一掉落表（无独立 hardDrops 字段，避免两套掉落）',
+    HISTORY_BATTLES.every(b => b.hard.drops === undefined && b.hard.bossDrops === undefined));
+  assert('掉落舰与史实对应（H1 南达科他/大黄蜂 · H2 旧金山/海伦娜）',
+    History.byId('H1').bossDrops.join(',') === 'southdakota,hornet' &&
+    History.byId('H2').bossDrops.join(',') === 'sanfrancisco,helena');
+}
+
+section('V0.303·任务3.3 隔离负向验证（证明隔离断言不是恒真式）');
+{
+  /* 判据函数与正式断言同形 —— 负向验证的意义是证明"实现错了它会变红" */
+  const isoOk = () => !HISTORY_BATTLES.some(b => MAPS.some(m => m.id === b.id)) && !MAPS.some(m => m.histRule) && !MAPS.some(m => !!m.hard);
+  const enemyResolvable = () => MAPS.every(m => Object.values(m.defs || {}).every(d => !d.enemy || !!ENEMY_FLEETS[d.enemy]));
+  const mpOk = () => Object.keys(Game.state.mapProgress).length === MAPS.length &&
+    Object.keys(Game.state.mapProgress).every(k => MAPS.some(m => m.id === k));
+  const statsOk = snap => JSON.stringify({ s: Game.state.stats.sortie, w: Game.state.stats.win, k: Game.state.stats.sink }) === snap;
+
+  assert('基准状态：隔离判据全部为真（否则负向验证没有意义）',
+    isoOk() === true && enemyResolvable() === true && mpOk() === true);
+
+  /* 负向 1：把 H1 塞进 MAPS —— 隔离判据与既有的「敌军模板全部存在」遍历断言必须同时变红 */
+  const mpLen = MAPS.length;
+  MAPS.push(Object.assign({}, History.byId('H1')));
+  assert('负向验证①：战役塞进 MAPS → 隔离判据变红',
+    isoOk() === false, '仍为绿则说明隔离断言是恒真式');
+  assert('负向验证①：战役塞进 MAPS → 既有「敌军模板全部存在」遍历断言失效（战役敌人不在 ENEMY_FLEETS）',
+    enemyResolvable() === false);
+  MAPS.pop();
+  assert('负向验证①后数据已还原',
+    MAPS.length === mpLen && isoOk() === true && enemyResolvable() === true);
+
+  /* 负向 2：让战役结算误写 mapProgress —— 键集合判据必须变红 */
+  Game.state.mapProgress['H1'] = { gauge: 1, cleared: false, kills: 0 };
+  assert('负向验证②：战役误写 mapProgress → 键集合判据变红（图鉴海域数不再等于 25）',
+    mpOk() === false && MAPS.filter(m => Game.state.mapProgress[m.id]).length === 25 + 0);
+  delete Game.state.mapProgress['H1'];
+  assert('负向验证②后数据已还原', mpOk() === true);
+
+  /* 负向 3：全局出击统计被战役污染 —— 统计隔离判据必须变红 */
+  const snap = JSON.stringify({ s: Game.state.stats.sortie, w: Game.state.stats.win, k: Game.state.stats.sink });
+  Game.state.stats.sortie += 1;
+  assert('负向验证③：战役污染全局出击计数 → 统计隔离判据变红', statsOk(snap) === false);
+  Game.state.stats.sortie -= 1;
+  assert('负向验证③后数据已还原', statsOk(snap) === true);
+
+  /* 正向对照：UI 路径（applyBattleResult）在战役里只给经验、不推任务计数 —— 且 noQuest 不是恒真式 */
+  const buildTwo = () => {
+    Game.newGame(); Game.state.admiral.level = 60;
+    Game.gain({ fuel: 9999, ammo: 9999, steel: 9999, baux: 9999 });
+    Progression.initQuests();
+    Game.state.fleet[1] = ['fletcher', 'benson'].map(id => {
+      const s = Game.createShip(id, 50); s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; return s.uid;
+    });
+    return Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F01.ships, '单纵阵', ENEMY_FLEETS.F01.formation, { allowNight: true, fleetIdx: 1 });
+  };
+  const progOf = kind => QUESTS.filter(q => q.cond.kind === kind).map(q => (Game.state.quests[q.id] || {}).progress);
+  const rb = buildTwo();
+  const beforeQ = JSON.stringify(progOf('sortie'));
+  const outNoQ = Progression.applyBattleResult(1, rb, false, { noQuest: true });
+  assert('UI 路径在 noQuest 下：舰娘经验照给，但任务「出击」计数一格不涨（战役隔离）',
+    outNoQ.gains.length > 0 && JSON.stringify(progOf('sortie')) === beforeQ,
+    JSON.stringify({ before: beforeQ, after: progOf('sortie') }));
+  const rc = buildTwo();
+  const beforeQ2 = JSON.stringify(progOf('sortie'));
+  Progression.applyBattleResult(1, rc, false);
+  assert('对照：不传 noQuest 时任务计数照常推进（证明 noQuest 有判别力，不是恒真式）',
+    JSON.stringify(progOf('sortie')) !== beforeQ2,
+    JSON.stringify({ before: beforeQ2, after: progOf('sortie') }));
+
+  /* 负向 5：浏览器里 `History` 是内置对象（History API）——未加载 data/history.js 时若只判
+   * `typeof History !== 'undefined'` 就会去调 undefined。这里用「空对象」复现浏览器语义。 */
+  const savedHistory = global.History;
+  global.History = {};                    // 浏览器语义：History 存在，但没有 byId / wavesFor
+  assert('负向验证⑤：History 存在但无战役方法（浏览器内置对象语义）时 resolveMap 安全降级，不抛错',
+    (() => { try { return Sortie.resolveMap('H1') === null && Sortie.resolveMap('1-1') === MAPS.find(m => m.id === '1-1'); } catch (e) { return false; } })());
+  assert('负向验证⑤：同一情形下 Battle.enemyFleet 安全降级（常规敌编成仍可解析）',
+    (() => { try { return !!Battle.enemyFleet('F01') && Battle.enemyFleet('H1X') === null; } catch (e) { return false; } })());
+  global.History = savedHistory;
+  assert('负向验证⑤后 History 已还原', Sortie.resolveMap('H1') === savedHistory.byId('H1'));
+
+  /* 负向 4：二波制开关 —— 关掉时必须完全跳过分支（不产生战斗、不消耗随机数） */
+  const H1 = History.byId('H1');
+  Game.newGame(); Game.state.admiral.level = 60;
+  Game.gain({ fuel: 9999, ammo: 9999, steel: 9999, baux: 9999 });
+  Game.state.stats.historic['H1:firstClear'] = Date.now();
+  Game.state.fleet[1] = ['fletcher', 'benson', 'mahan', 'kidd'].map(id => {
+    const s = Game.createShip(id, 60); s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60; return s.uid;
+  });
+  Sortie.startHard('H1', 1);
+  Game.state.sortie.node = 'X';
+  const pOff = Sortie.prepareBattle('单纵阵');
+  assert('负向验证④：opts.waves=false 时 startHardWave 直接拒绝（disabled 标记）',
+    (() => { const r = Sortie.startHardWave(pOff, { waves: false }); return r.ok === false && r.disabled === true && Game.state.sortie.wave === 1; })());
+  assert('负向验证④：被拒绝后 so.wave 未被推进到 2（分支完全跳过）', Game.state.sortie.wave === 1);
+  const pOn = Sortie.startHardWave(pOff, { waves: true });
+  assert('负向验证④：开关打开时才真正发起第二波（对照）', pOn.ok === true && Game.state.sortie.wave === 2);
+  Sortie.returnHome();
 }
 
 section('总结');

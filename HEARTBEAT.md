@@ -1492,3 +1492,100 @@ V0.301 当初把简报移出右列的理由是「长文案撑高右列 → 连�
 - 4-1 / 4-5 的 A 点敌军编成含潜水舰，但该图**没有 `mode:'sub'` 节点**：简报写的是「A 点敌军编成含潜水舰」
   （描述编成事实），没有声称节点——这是刻意的措辞，避免暗示潜艇点的速力修正机制。
 - 子批 3c（4-x/5-x 特殊节点铺开）仍未做：这些图现在有简报与威胁维度，但没有特殊节点。
+
+## 2026-09-12 V0.303 历史战役模式 —— 批次1（引擎与数据）
+
+**任务书**：`design/开发任务书_V0.303.md`　│　**方案依据**：`design/设计卡_历史战役模式.md`（用户两轮迭代定稿）
+
+### 开完工固定动作
+
+1. **固化基线**：开工第一步复制 `battle_digest.baseline.txt` → `scripts/battle_digest.baseline_v0302.txt`（改 `battle.js` 前的退路）
+2. **备份**：`backup/2026-09-12_V0.303历史战役/src/`（46 个文件）
+3. 读两份坑清单（V0.302 的 #1~#15 + 本版 #16~#22）
+
+### 交付内容
+
+| 文件 | 改动 |
+|---|---|
+| `public/js/data/history.js` | **新增**（战役数据独立文件，刻意不进 `MAPS`）：`HISTORY_BATTLES`（H1 圣克鲁斯 / H2 铁底湾）+ 6 个战役敌编成模板 + 纯函数 `matchRule / ruleText / ruleCheck / wavesFor / waveEnemyKeys / usedNodeModes` |
+| `public/js/game/sortie.js` | `resolveMap`（**唯一接入点**，MAPS → History）+ `isHistoricMap / historicGate / startHard / fleetTypes / startHardWave`；`prepareBattle` 挂 `opts.historic/histHit/histEvd` 与二波敌编成；`settleBattle` 战役分支（统计隔离 / 账本奖励 / historic ctx）；`intel` 增战役匹配自检 |
+| `public/js/game/battle.js` | `hitMods()` 增 `hist` 乘区（`recon × touch × hist`）；`hitChance` 回避项增 `_histEvd`；`enemyFleet()` 统一敌编成查找（ENEMY_FLEETS → History）；新增 `HIST_HIT` 常量 |
+| `public/js/game/progression.js` | 6 个战役荣誉 + `recordBattleResult` 战役标记；`grantRewardBundle`（含新增的 `item` 通道）/ `grantHistoricRewards` / `historicLedger`；`applyBattleResult` 增 `opts.noQuest` |
+| `public/js/core/state.js` | 存档 **v5 → v6**：`record.historic` + `stats.historic` 迁移器（`normalizeSave` 仍**不**补新键，坑 #3/#19） |
+| `scripts/simulate.js` / `package.json` | 装载 `history.js`；新增 `drift:v0302` |
+| `public/index.html` | 加载 `js/data/history.js`，`?v=` → `20260912d1` |
+
+### 关键数字
+
+- 史实乘区实测叠加：**1.03 × 1.15 × 1.05 = 1.243725（+24.37%）** —— 三个乘区互不覆盖，索敌/触接加成一位未削
+- 奖励注入量核算与设计卡一致：螺丝 **26** / devMats **20** / 消耗品 2
+
+### 测试
+
+| 层 | 结果 |
+|---|---|
+| `npm run sim` | **1585 → 1653** 项全过（新增任务 1.1~1.4 的断言） |
+| `npm run test:migration` | **32 → 42** 项全过（新增 v5 夹具 + v5→v6 十条断言） |
+| `npm run drift` | 9 组**逐位一致**（本批 battle.js 改动在关闭时是精确的 ×1） |
+
+### 冒烟测试抓到的两个真 bug（已修）
+
+均为「奖励 / 荣誉在错误时机发放」，且都靠临时冒烟脚本暴露（正式断言当时还没写）：
+
+1. `grantHistoricRewards` 的「史实重演」层最初只判 `!hard && match && S` → **道中节点打出 S 胜就提前发奖**（账本被写脏）。
+   修法：挂到 `bossVictory` 上。
+2. `hist_h1_hard` 荣誉最初只判 `hard && rank==='S'` → **第一波 S 胜就授「强敌阶」荣誉**。
+   修法：新增 `histFinal`（BOSS 节点 **且**（非强敌阶 **或** 第二波已打完））作为荣誉栅栏，六个战役荣誉统一用它。
+
+> 教训：凡「按层发放」的奖励，触发条件必须同时锚定**节点类型**与**阶段**（第几波），只锚定其一必然提前。
+
+---
+
+## 2026-09-12 V0.303 批次2（强敌阶二波制 + 战役页签 UI + 文案三件套）
+
+| 文件 | 改动 |
+|---|---|
+| `public/js/game/sortie.js` | `startHardWave(prevPrep, opts)`：残弹 / 耐久 / 士气全部继承，第二波战报首行说明来源；`opts.waves === false` 时**整个分支跳过**（坑 #18）；`NODE_BANNER.histWave` + `nodeBanner(def, {wave, waveBanner})`；`attributionLines` 新增「连续作战」分支并**排在归因首位** |
+| `public/js/ui/sortie.js` | 海域选择页新增「**战役**」页签：`histListPanel / histDetailPanel / histRuleHtml / histRewardHtml` + 史实匹配度自检 + 强敌阶入口与锁定态；`mapTopbar` 战役态（阶 / 波次 / 战果取代海域血条）；`renderBattle` 新增 `beforeFinish` 钩子；`openWaveChoice`（**复用既有追击选择面板体系**，不新建消息/演出系统）；`briefHtml`（`**强调**` → `<b>`，防 markdown 泄漏给玩家） |
+| `public/css/style.css` | 战役专有样式（`.hist-list/.hist-card/.hist-rule/.hist-ban/.hist-rewards/.hist-hard-box/.map-banner.wave`）+ 1080px 媒体查询 |
+| `public/_shot_air.html` | 新增 `case=hist / histH2 / histHard / histWave / histModal / histResult`；**补上缺失的 `#modal-root` / `#sub-modal-root`**（此前弹窗类用例根本截不到画面） |
+
+**测试**：`npm run sim` **1653 → 1688** 项全过。
+
+### 顺带修掉的既有隐患
+
+- **`applyBattleResult` 会推进任务计数**：UI 的 `showResult` 走它发经验，因此战役若不做处理会污染「周常出击 X 次」。
+  新增 `opts.noQuest`（默认关 = 既有行为不变），UI 在战役路径上传 `noQuest: true`。
+- **`History` 与浏览器内置 `History API` 同名**：`typeof History !== 'undefined'` 在浏览器**恒真**，
+  只判这一句会去调 `undefined.byId`。所有读取点改为**方法级守卫**（`typeof History.byId === 'function'`）。
+
+---
+
+## 2026-09-12 V0.303 批次3（测试收尾与交付）
+
+- **荣誉与掉落**：6 个战役荣誉的幂等 / 「沙利文姐妹」无人沉没的三向边界 / 常规图不误触发 / 强敌阶不能在第一波授勋 —— 全部断言化
+- **三基线固化**：
+  - `scripts/battle_digest.baseline_v0302.txt`（开工时固化）
+  - `drift:v0302` = `--no-hist --no-waves`，**9 组逐位回到 V0.302**
+  - `drift:archive` 补上 `--no-hist --no-waves`（否则新增的 3 组场景会让它比不过 V0.301 的 9 行基线），**9 组逐位回到 V0.301**
+  - `drift` = 当前基线 **12 组逐位一致**
+- **隔离负向验证（5 组，全部证明隔离判据不是恒真式）**：
+  ① 战役塞进 `MAPS` → 隔离判据与既有「敌军模板全部存在」遍历断言同时变红；
+  ② 战役误写 `mapProgress` → 键集合判据变红；③ 污染全局出击计数 → 统计隔离判据变红；
+  ④ `opts.waves=false` → 分支完全跳过（`so.wave` 不推进）；⑤ 浏览器语义下 `History` 存在但无战役方法 → `resolveMap` / `enemyFleet` 安全降级
+- **E2E 铺满 224 项 / 0 JS 错误**（188 → 224，+36）：页签渲染 / 详情 / 匹配度自检（改编成实时刷新且 DOM 与引擎结论同源）/
+  强敌阶锁定态与引擎门槛一致 / H2 禁入警示 / 出击 / 二波「迎击 · 收兵」/ 结算摘要 / 第二波横幅 / markdown 不泄漏
+- **截图**：`backup/2026-09-12_V0.303历史战役/实测截图/` —— 6 场景 × 1440 / 1080 + 2 张常规海域回归对照
+- **文档**：README / VERSION_HISTORY / MEMORY / `design/开发任务书_V0.303_交付报告.md` 同步；`index.html` `?v=20260912d2`
+
+**最终基线**：sim **1724 / 0**（连跑 12 次全绿）· migration **42 / 0** · E2E **224 / 0 JS 错误** ·
+drift **12 / 9 / 9 逐位一致**。
+
+### 已知问题（主动披露，未修）
+
+1. **二波制的 `record.sorties` 口径**：强敌阶一次完整的「迎击」会给参战舰 `record.sorties +2`、提督经验按「道中档 + BOSS 档」两次结算
+   （第一波以 `histContinue` 只落消耗与履历，第二波才结算奖励）。这是刻意的 —— 她确实打了两场 ——
+   但**与常规图一次出击只 +1 的口径不同**，已在 sim 断言里写明，未做合并。
+2. **战役只有 2 场**：中途岛 / 莱特湾留第二批（届时敌编成模板库已有新基准，且中途岛是二波制机制的招牌战役）。
+3. **子批 3c（4-x / 5-x 特殊节点铺开）**仍未做 —— V0.302 遗留，不属本版本范围。
+4. **未做**（任务书第 9 节已列明理由）：战役专属剧情演出 / 战役专属装备与新舰 / 三波以上 / 编成预设。
