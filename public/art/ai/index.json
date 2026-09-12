@@ -1,0 +1,4 @@
+{
+  "_note": "AI 立绘映射。key = shipId（改造态追加 _kai / _kai2），value = art/ai 下的文件名。无对应条目则回退 art/portraits/<id>.svg 占位立绘。",
+  "fletcher": "fletcher_secretary_a.png"
+}
