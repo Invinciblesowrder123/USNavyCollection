@@ -114,12 +114,16 @@ window.SecretaryL2D = (function () {
     });
     frame.addEventListener('mouseleave', () => { mx = 0; my = 0; });
 
-    /* 说一句话：点击秘书舰时嘴动一会儿 */
+    /* 说一句话：点击秘书舰时嘴动一会儿，结束后微笑 2.2s（有 smile 差分时） */
     let talkUntil = 0;
-    frame.addEventListener('click', () => { talkUntil = performance.now() + CFG.talkDur; });
+    frame.addEventListener('click', () => {
+      talkUntil = performance.now() + CFG.talkDur;
+      smileUntil = talkUntil + 2200;
+    });
 
     let raf = null;
     let blinkSeq = 0, blinking = false, nextBlink = performance.now() + 900 + Math.random() * 2000;
+    let smileUntil = 0;   // 说话结束后短暂微笑（mouth_smile 差分）
     const t0 = performance.now();
 
     function loop(now) {
@@ -157,7 +161,8 @@ window.SecretaryL2D = (function () {
         }
       }
 
-      // 口型：说话时嘴部动作——有差分层时交替显示张嘴差分，否则退回嘴部拉伸
+      // 口型：说话时嘴部动作——有差分层时交替显示张嘴差分，否则退回嘴部拉伸；
+      // 说话结束后微笑差分保持 2.2s 渐隐（前后 300ms 淡入淡出）
       if (now < talkUntil) {
         if (s.deltas && s.deltas.mouth_open) {
           const open = Math.sin(t * CFG.mouthSpd) > 0 ? '1' : '0';
@@ -167,9 +172,18 @@ window.SecretaryL2D = (function () {
           stage.style.setProperty('--mouth', v.toFixed(2));
         }
       } else {
+        if (smileUntil && now >= smileUntil) smileUntil = 0;
         if (s.deltas && s.deltas.mouth_open &&
             stage.style.getPropertyValue('--dx-' + s.deltas.mouth_open) !== '0')
           stage.style.setProperty('--dx-' + s.deltas.mouth_open, '0');
+        if (s.deltas && s.deltas.mouth_smile) {
+          let v = 0;
+          if (now < smileUntil) {
+            const remain = smileUntil - now;
+            v = remain > 300 ? 1 : remain / 300;
+          }
+          stage.style.setProperty('--dx-' + s.deltas.mouth_smile, v.toFixed(2));
+        }
         if (stage.style.getPropertyValue('--mouth') !== '1')
           stage.style.setProperty('--mouth', '1');
       }

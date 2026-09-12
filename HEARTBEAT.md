@@ -1623,3 +1623,7 @@ live2d_v2 质量门 G1 静止合成 PASS / G3 露出检查 PASS / G4 装配审�
 
 **备份**：改动前 secretary-live2d.js / style.css 已存 ../backup/20260913_l2d_deltas/。
 
+## 2026-09-13 补记：微笑差分触发器
+
+说话结束（点击秘书舰后 1.6s） mouth_smile 差分保持 2.2s，前后 300ms 线性淡入淡出。
+无 mouth_smile 差分的包零影响。E2E 224/0。
