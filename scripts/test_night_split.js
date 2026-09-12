@@ -21,7 +21,10 @@ const shipsMod = require('../public/js/data/ships.js');
 Object.assign(global, {
   SHIP_TYPE_ZH: shipsMod.SHIP_TYPE_ZH, SHIPS: shipsMod.SHIPS, ShipData: shipsMod.ShipData,
   remodelChain: shipsMod.remodelChain, buildPool: shipsMod.buildPool,
-  RARITY_W: shipsMod.RARITY_W, STARTER_IDS: shipsMod.STARTER_IDS
+  RARITY_W: shipsMod.RARITY_W, STARTER_IDS: shipsMod.STARTER_IDS,
+  /* 速力判定（battle.js::buildCombatShip 要用）—— 此前漏注入，脚本自 2026-08-06 起一直是崩的
+   * （不在 npm test / npm run sim 里，所以长期没被发现）。V0.303 复跑时顺手补齐。 */
+  SLOW_CLASSES: shipsMod.SLOW_CLASSES, shipSpeed: shipsMod.shipSpeed
 });
 const mapsMod = require('../public/js/data/maps.js');
 Object.assign(global, {
