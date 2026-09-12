@@ -87,6 +87,14 @@
         var m44 = scr.querySelector('[data-map="4-4"]'); if (m44) m44.click();
         return;
       }
+      if (c === 'brief15') {
+        /* 1-5 夏威夷近海哨戒：作战简报夹在「BOSS掉落」与「出击按钮」之间（用户指定的最终位置） */
+        Game.state.mapProgress['1-4'].cleared = true;   // 解锁 1-5，让出击按钮可见
+        SortieUI.mapList(scr);
+        var a1 = scr.querySelector('[data-area="1"]'); if (a1) a1.click();
+        var m15 = scr.querySelector('[data-map="1-5"]'); if (m15) m15.click();
+        return;
+      }
       var st = Sortie.start('2-3', 1);
       if (!st.ok) { scr.innerHTML = '<pre style="color:#f88">' + st.msg + '</pre>'; return; }
       Game.state.sortie.node = 'A';                      // 2-3 A = 航空战点

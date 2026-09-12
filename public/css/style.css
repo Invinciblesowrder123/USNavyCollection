@@ -973,7 +973,9 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 }
 .map-brief b { color: var(--gold); letter-spacing: 2px; }
 
-/* 作战简报：海域选择页放在「地图下方」的独立框（不再塞进右侧详情列，避免撑高右列） */
+/* 作战简报：海域选择页放在右列「BOSS掉落」与「出击按钮」之间（用户 2026-09-12 指定）。
+ * 注：V0.301 曾把它移到地图下方，理由是"长文案撑高右列→连带拉伸左侧地图"；
+ * 该根因已随 .area-map 改 aspect-ratio 而消失，右列再长也不影响地图高度。 */
 .sortie-brief {
   padding: 10px 12px;
   background: rgba(232, 194, 74, 0.06);
@@ -982,6 +984,8 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
   border-radius: 6px;
   font-size: 12px; line-height: 1.75; color: var(--text);
 }
+/* 右列（340px 窄条）内的简报：字号与内边距收一档，长文案不至于挤成太多行 */
+.map-detail .sortie-brief { padding: 8px 10px; font-size: 11.5px; line-height: 1.7; }
 .sortie-brief .sb-head {
   color: var(--gold); font-weight: bold; letter-spacing: 2px; margin-bottom: 3px;
 }
@@ -1128,9 +1132,9 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .spot-btn.sel .spot-name { color: var(--gold); }
 .spot-prog { font-size: 10px; color: var(--dim); text-shadow: 0 1px 3px #000; }
 
-/* 编成自检 box（出击前情报）：放在**地图下方**、作战简报之后（与简报同列）。
+/* 编成自检 box（出击前情报）：放在**地图下方**（左列，紧接地图）。
  * 从右侧详情列（固定 340px 宽）搬来 —— 那堆长行在窄列里会被压成十几行；
- * 地图下方有约两倍宽度，同样内容排布舒展得多，右列回归「海域信息卡 + 出击入口」。
+ * 地图下方有约两倍宽度，同样内容排布舒展得多，右列则专注「海域信息卡 + 作战简报 + 出击入口」。
  * 字号比右列版本略放大（11.5 → 12px）、行距 1.85。 */
 .sortie-intel {
   margin-top: 10px; padding: 10px 14px;

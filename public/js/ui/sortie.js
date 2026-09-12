@@ -288,10 +288,10 @@ const SortieUI = (() => {
     return html;
   }
 
-  /* 编成自检 box：放在**地图下方**（与作战简报同列），不再塞进右侧详情列。
+  /* 编成自检 box：放在**地图下方**（左列），不塞进右侧详情列。
    * 原因：右列只有约 330px 宽，这堆行（作战目标 / 舰队能力 / 士气 / 威胁对位 / 航向侦察 /
    * 航空触接 / 特殊攻击 ×2 / 威胁评估）会被压成十几行窄条，可读性差；
-   * 地图下方有约两倍宽度，同样内容排布舒展得多。右列回归「海域信息卡 + 出击入口」。
+   * 地图下方有约两倍宽度，同样内容排布舒展得多。右列回归「海域信息卡 + 作战简报 + 出击入口」。
    * 内容一字未改，只是换了容器（判定与数值仍全部来自 Sortie.intel / 引擎，UI 不另算）。 */
   function intelBox(m, fidx) {
     const obj = objectivesHtml(m, fidx);
@@ -303,9 +303,10 @@ const SortieUI = (() => {
     </div>`;
   }
 
-  /* 作战简报：放在地图下方的独立提示框。
-   * 刻意不放进右侧详情列——长文案会把右列撑高，连带把左侧地图拉伸（用户反馈的布局 bug）。
-   * 左列由「地图（固定比例）+ 简报框」组成，右列高度不再影响地图高度。 */
+  /* 作战简报：放在右列「BOSS掉落」与「出击按钮」之间（用户 2026-09-12 指定）。
+   * 注：V0.301 曾把它移出右列，因为"长文案撑高右列 → 连带拉伸左侧地图"；
+   * 该根因现已修掉（`.area-map` 用 aspect-ratio:5/4 固定高度，高度只由自身宽度决定），
+   * 右列再长也不会影响地图，因此放回右列是安全的。 */
   function briefBox(m) {
     if (!m.brief) return '';
     return `<div class="sortie-brief">
@@ -345,6 +346,7 @@ const SortieUI = (() => {
         <div><b>道中掉落</b>：${m.drops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
         <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
       </div>
+      ${briefBox(m)}
       ${locked
         ? `<div class="md-lock">🔒 未解锁！先击破 <b>${m.need}</b> 后开放此 BOSS 海域。</div>`
         : `<button class="btn btn-gold md-btn" data-start ${canGo ? '' : 'disabled'}>出击</button>`}
@@ -390,7 +392,6 @@ const SortieUI = (() => {
         <div class="sortie-mapview">
           <div class="sortie-mapside">
             ${areaMapPanel(selArea, sel.id)}
-            ${briefBox(sel)}
             ${intelBox(sel, selFleet)}
           </div>
           ${mapDetailPanel(sel, selFleet)}

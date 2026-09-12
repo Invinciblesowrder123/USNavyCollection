@@ -1306,3 +1306,66 @@ bio 内容全部复用台词里已埋的真史原料：马里兰的珍珠港→�
   若希望填满，可选做法有两个：① 让右列拉伸到与左列等高、出击按钮贴底；② 把 box 改成横跨两列的整宽两栏。
   当前按用户示意（绿框就在地图正下方、左列宽度）保留现状。
 - 作战简报仍只对有 `brief` 的海域渲染；无简报的图（如 4-4）地图下方直接是编成自检 box。
+
+---
+
+## 2026-09-12 海域选择页：作战简报移到右列「BOSS掉落」与「出击按钮」之间（用户指定）
+
+**反馈（附截图）**：「出击简报可以加在出击按钮和 BOSS 掉落之间。」
+（上一条让「编成自检」下移后，作战简报被留在地图下方；用户要求它回到右列，位置固定为掉落表与出击按钮之间。）
+
+### 为什么现在放回右列是安全的
+
+V0.301 当初把简报移出右列的理由是「长文案撑高右列 → 连带把左侧地图纵向拉伸」。
+**那个根因在 2026-09-12 的布局修复里已经消灭**：`.area-map` 改成
+`flex: 0 0 auto; width: 100%; aspect-ratio: 5/4`——地图高度只由自身宽度决定，
+右列再长也影响不到它。所以这次放回右列没有任何副作用（`layout:mapNotStretched` /
+`layout:mapAspectRatio` 两条断言继续守着这一点）。
+
+### 改动
+
+| 文件 | 改了什么 |
+|---|---|
+| `public/js/ui/sortie.js` | `briefBox` 从 `.sortie-mapside`（左列）移进 `mapDetailPanel`，插在 `md-rows`（掉落表）之后、出击按钮/锁定提示之前；两处函数注释同步更新（写清"为什么现在可以放回右列"） |
+| `public/css/style.css` | 新增 `.map-detail .sortie-brief`（右列 340px 窄条内收一档：padding 8/10、字号 11.5px、行高 1.7）；`.sortie-brief` 基础样式与注释同步 |
+| `public/test_flow.html` | 3 条简报断言按新位置改写 + 保留 7 条自检 box 断言（净 +1） |
+| `public/_shot_air.html` | 新增 `?case=brief15`（1-5 夏威夷近海：直接看简报与出击按钮的相对位置） |
+| `public/index.html` | `?v=20260912c5` → `20260912c6` |
+
+**最终形态（2026-09-12 定稿）**
+- 右列 `.map-detail`（340px）：迷你海图 → 标题 → 海域血条 → 描述 → 出现物品/分支/道中掉落/**BOSS掉落** → **作战简报** → **出击按钮**
+- 左列 `.sortie-mapside`：海域地图（5:4 固定）→ **编成自检** box
+
+### 断言调整（含负向对照）
+
+| 旧断言 | 新断言 |
+|---|---|
+| `layout:briefBelowMap`（简报在 `.sortie-mapside` 内） | `layout:briefInDetailColumn`（简报是 `.map-detail` 的**直接子元素**） |
+| `layout:briefNotInDetailColumn` | `layout:briefNotInMapSide`（不在左列） |
+| `layout:briefAfterMap`（top ≥ 地图 bottom） | `layout:briefAfterDrops`（top ≥ 掉落表 bottom） |
+| `layout:intelAfterBrief` | `layout:briefBeforeStartBtn`（出击按钮 top ≥ 简报 bottom） |
+| — | `layout:mapSideHasMapAndIntelOnly`（左列恰好 2 个子元素，第二个是自检 box） |
+
+**负向对照**：临时把 `briefBox` 放回左列 → E2E 立刻报
+`FAIL layout:briefNotInMapSide / layout:briefBeforeStartBtn / layout:mapSideHasMapAndIntelOnly :: n=3`（183 通过 / 3 失败），
+确认这几条真能抓住位置错误；验证完已还原，并回查 `briefBox` 只剩 1 处调用且位于 `mapDetailPanel` 内。
+
+### 测试
+
+| 层 | 结果 |
+|---|---|
+| `npm run test:e2e` | **186 项通过 / 0 JS 错误**（185 → +1） |
+| `npm run sim` | 1581 项通过（本批未动引擎） |
+| `npm run test:migration` | 32 项通过 |
+| `npm run drift` | 9 组逐位一致 |
+
+### 浏览器实测（Gate 4）
+
+`../backup/2026-09-12_布局_情报框下移/`：
+- `1-5_简报进右列.png`（1080px）：1-5 夏威夷近海 —— 右列顺序 = 掉落表 → **作战简报（金框）** → **出击按钮**；左列 = 地图 + 编成自检
+- `2-3_简报进右列.png`（1440px）：同上，2-3 的长简报在右列窄条里排 3 行，地图仍是 5:4 未被拉伸
+
+### 已知问题 / 未纳入范围
+
+- 右列现在因为多了简报，高度更接近左列，之前"右下留白"的情况有所缓解（但两列仍不等高）。
+- 本地开发服务器在端口 3000 后台运行中（供人工核对），不影响仓库状态。

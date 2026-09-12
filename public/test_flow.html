@@ -346,19 +346,26 @@
         'aspect=' + aspect(box22).toFixed(3));
       R(rectOf('.map-detail').left > rectOf('.area-map').right, 'layout:detailRightOfMap');
       R(Math.abs(box22.top - rectOf('.map-detail').top) <= 1, 'layout:columnsTopAligned');
+      /* ===== 作战简报 / 编成自检 的位置（2026-09-12 用户两次指定后的最终形态） =====
+       * 作战简报：右列 `.map-detail` 内，夹在「BOSS掉落」与「出击按钮」之间。
+       * 编成自检：左列 `.sortie-mapside` 内，紧接地图（右列只有 340px，那堆长行会被压成十几行）。
+       * 简报放回右列之所以安全，是因为地图已改用 aspect-ratio（高度只由自身宽度决定），
+       * 右列再长也不会拉伸地图 —— 上面的 mapNotStretched / mapAspectRatio 断言继续守着这一点。 */
       const briefEl = document.querySelector('#screen .sortie-brief');
-      R(!!briefEl && !!document.querySelector('#screen .sortie-mapside > .sortie-brief'), 'layout:briefBelowMap');
-      R(!!briefEl && !document.querySelector('#screen .map-detail .sortie-brief'), 'layout:briefNotInDetailColumn');
-      R(briefEl.getBoundingClientRect().top >= box22.bottom - 1, 'layout:briefAfterMap');
-      /* ===== 编成自检 box 移到地图下方（用户反馈：右列太窄，这堆长行被压成十几行） =====
-       * 断言的是真实 DOM 位置：box 必须在左列（.sortie-mapside）内、在地图与简报之后，
-       * 且**不得**再出现在右列（.map-detail）里；内容归属也要确认（舰队能力在 box 内）。 */
       const intelEl = document.querySelector('#screen .sortie-intel');
+      R(!!briefEl && !!document.querySelector('#screen .map-detail > .sortie-brief'), 'layout:briefInDetailColumn');
+      R(!!briefEl && !document.querySelector('#screen .sortie-mapside > .sortie-brief'), 'layout:briefNotInMapSide');
+      R(!!briefEl && briefEl.getBoundingClientRect().top >= rectOf('.map-detail .md-rows').bottom - 1,
+        'layout:briefAfterDrops');
+      R(!!briefEl && rectOf('.map-detail .md-btn').top >= briefEl.getBoundingClientRect().bottom - 1,
+        'layout:briefBeforeStartBtn');
       R(!!intelEl && !!document.querySelector('#screen .sortie-mapside > .sortie-intel'), 'layout:intelBelowMap');
       R(!!intelEl && !document.querySelector('#screen .map-detail .sortie-intel'), 'layout:intelNotInDetailColumn');
       R(!!intelEl && intelEl.getBoundingClientRect().top >= box22.bottom - 1, 'layout:intelAfterMap');
-      R(!!intelEl && !!briefEl && intelEl.getBoundingClientRect().top >= briefEl.getBoundingClientRect().bottom - 1,
-        'layout:intelAfterBrief');
+      R(!!intelEl && document.querySelector('#screen .sortie-mapside').children.length === 2 &&
+        document.querySelector('#screen .sortie-mapside').children[1] === intelEl,
+        'layout:mapSideHasMapAndIntelOnly',
+        'n=' + document.querySelector('#screen .sortie-mapside').children.length);
       R(!!intelEl && intelEl.innerHTML.indexOf('舰队能力') >= 0, 'layout:intelContentInBox');
       R(!!intelEl && document.querySelector('#screen .map-detail').innerHTML.indexOf('舰队能力') < 0,
         'layout:intelNotLeftInRightColumn');
