@@ -64,6 +64,22 @@
         var m23 = scr.querySelector('[data-map="2-3"]'); if (m23) m23.click();
         return;
       }
+      if (c === 'nodes35') {
+        /* 3-5 全类型混合节点（毕业考）：B 夜战 / D 航空战 / G 潜艇 / W 漩涡 */
+        Game.state.mapProgress['3-4'].cleared = true;
+        Game.state.mapProgress['3-5'].kills = 3; Game.state.mapProgress['3-5'].gauge = 4;
+        var st35 = Sortie.start('3-5', 1);
+        if (!st35.ok) { scr.innerHTML = '<pre style="color:#f88">' + st35.msg + '</pre>'; return; }
+        Game.state.sortie.node = 'B';
+        SortieUI.sortieActive(scr);
+        return;
+      }
+      if (c === 'brief35') {
+        SortieUI.mapList(scr);
+        var a3 = scr.querySelector('[data-area="3"]'); if (a3) a3.click();
+        var m35 = scr.querySelector('[data-map="3-5"]'); if (m35) m35.click();
+        return;
+      }
       var st = Sortie.start('2-3', 1);
       if (!st.ok) { scr.innerHTML = '<pre style="color:#f88">' + st.msg + '</pre>'; return; }
       Game.state.sortie.node = 'A';                      // 2-3 A = 航空战点

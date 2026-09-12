@@ -561,6 +561,31 @@
       R(cssHasTouch, 'touch:bannerCss');
       UI.go('sortie');
 
+      /* ===== 批次3.2：节点铺开后的地图与简报渲染（3-5 全类型混合 = 毕业考） ===== */
+      Sortie.returnHome();
+      Game.state.mapProgress['3-4'].cleared = true;              // 解锁 3-5（BOSS 海域）
+      Game.state.fleet[2] = airNoCvFleet.slice();
+      const srt35 = Sortie.start('3-5', 2);
+      R(srt35.ok === true, 'spread:start35', JSON.stringify(srt35));
+      if (srt35.ok) {
+        Game.state.sortie.node = 'B';                            // 3-5 B = 夜战点
+        UI.go('sortie');
+        R(document.querySelector('#screen .map-node.mode-night') !== null
+          && document.querySelector('#screen .map-node.mode-air') !== null
+          && document.querySelector('#screen .map-node.mode-sub') !== null
+          && document.querySelector('#screen .map-node.whirlpool') !== null, 'spread:nodeIcons35');
+        const bn35 = document.querySelector('#screen .map-banner');
+        R(!!bn35 && bn35.textContent.indexOf('照明弹') >= 0, 'spread:nightBanner35', bn35 ? bn35.textContent : '(无)');
+        Sortie.returnHome();
+      }
+      UI.go('sortie');
+      document.querySelector('#screen [data-area="3"]').click();
+      document.querySelector('#screen [data-map="3-5"]').click();
+      const h35 = document.querySelector('#screen').innerHTML;
+      R(h35.indexOf('混合全部特殊节点') >= 0, 'spread:brief35');
+      R(h35.indexOf('威胁评估') >= 0 && h35.indexOf('四类特殊节点同时出现') >= 0, 'spread:threatNote35');
+      UI.go('sortie');
+
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {
       window.__errors.push('FATAL ' + e.message + ' ' + (e.stack || '').split('\n')[1]);

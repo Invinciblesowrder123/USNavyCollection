@@ -141,6 +141,8 @@ const ENEMY_FLEETS = {
   F48: { formation: '梯形阵', ships: ['ess3e', 'ess2', 'ess2'] },
   F49: { formation: '梯形阵', ships: ['ess2e', 'ess2e', 'ess2'] },
   F50: { formation: '梯形阵', ships: ['ess3f', 'ess2e', 'ess2e', 'edd3e'] },
+  /* 1-5 A 点夜战点敌军：夜间逼近的水雷战队（水面舰 —— 对潜警戒部队要先过夜战这一关） */
+  F92: { formation: '单纵阵', ships: ['ecl1e', 'edd3e', 'edd3e', 'edd2e'] },
   /* ---- 2-5 萨沃岛近海（wiki 2-5：EO 制空决战，BOSS=空母Wo级flagship×2） ---- */
   F51: { formation: '轮形阵', ships: ['ecv1e', 'ecvl1e', 'edd3e', 'edd3e'] },
   F52: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'edd3e', 'edd3e'] },
@@ -193,7 +195,16 @@ const ENEMY_FLEETS = {
   /* ---- 5-5 莱特湾决战（BOSS海域，need 5-4：大和栖姬） ---- */
   F89: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'edd3e', 'edd3e'] },
   F90: { formation: '单纵阵', ships: ['eclt1e', 'eclt1e', 'edd3e', 'edd3e', 'ecl2e'] },
-  F91: { formation: '轮形阵', ships: ['eB10', 'ebb3e', 'ebb3e', 'ecv1f', 'eca2e', 'edd3e'] }
+  F91: { formation: '轮形阵', ships: ['eB10', 'ebb3e', 'ebb3e', 'ecv1f', 'eca2e', 'edd3e'] },
+  /* ---- V0.302 批次3.2：新增特殊节点（sub/air/night）使用的敌军编成 ---- */
+  /* 2-4 C 点潜艇伏击：哨戒线下的潜水部队 + 重巡护卫 */
+  F93: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'eca2e', 'edd3e'] },
+  /* 2-5 A 点潜艇伏击：萨沃岛近海的潜水警戒线 */
+  F94: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'eca1e', 'edd3e'] },
+  /* 3-2 A 点潜艇伏击：阿留申的潜艇战（基斯卡近海） */
+  F95: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'eca2e', 'edd3e'] },
+  /* 3-5 G 点潜艇伏击：北方海域的混合防线 */
+  F96: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'eca2e', 'edd3e'] }
 };
 
 /* ---------- 海域定义 ----------
@@ -380,6 +391,10 @@ const MAPS = [
   },
   {
     id: '2-4', name: '瓜达尔卡纳尔攻略', desc: '深海飞行场栖姬固守的机场！舰队全力夺取制空权！', stars: 8,
+    brief: '瓜达尔卡纳尔。机场在敌人手里，舰队的每一寸制空都要自己抢回来。\n本海域含航空战节点：没有航空母舰的舰队将暴露在敌机轰炸之下。同时设夜战节点与潜艇伏击点——\n编成要同时照顾制空、夜战火力与对潜（驱逐舰、轻巡洋舰天生具备对潜能力）。',
+    /* threat：asw ← C 点 mode:'sub'；night ← B 点 mode:'night'；los ← A 点 branch.if.los；air ← A/BOSS 敌军含舰载机 */
+    threat: ['air', 'asw', 'los', 'night'],
+    threatNote: '本海域四线并考。索敌≥60 走 B 点夜战线，否则迎击 C 点潜艇伏击。A 点含航空战力敌编成，未携带舰战将丧失制空；夜战点与潜艇点分别要求夜战火力与对潜手段。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 90, boss: 1380 },    // 提督经验（wiki 2-4: 道中+90 / BOSS+1380）
     nodes: {
@@ -389,8 +404,8 @@ const MAPS = [
     defs: {
       S: { type: 'start' },
       A: { type: 'battle', enemy: 'F27' },   // 制空决战（轮形阵空母机动部队）
-      B: { type: 'battle', enemy: 'F28' },
-      C: { type: 'battle', enemy: 'F30' },
+      B: { type: 'battle', enemy: 'F28', mode: 'night' },   // 夜战点：夜战水雷线
+      C: { type: 'battle', enemy: 'F93', mode: 'sub' },     // 潜艇点：哨戒线下的潜水伏击
       D: { type: 'boss', enemy: 'F29' }
     },
     branch: { at: 'A', if: { los: 60 }, to: ['B'] },   // 索敌≥60 走夜战水雷线；否则走哨戒线
@@ -441,16 +456,21 @@ const MAPS = [
   },
   {
     id: '3-2', name: '基斯卡岛近海', desc: '以驱逐舰为主力的高速舰队突入基斯卡岛！收容守备队！', stars: 9,
+    brief: '基斯卡近海。雾散不开，罗盘也读不准，水下的回响比海面的炮声更早报到。\n本海域设潜艇伏击点（A 点）与异常洋流（W 点）：编入驱逐舰、轻巡洋舰应对潜艇；\n电探（雷达）可把洋流造成的燃料损失减半——阿留申的浓雾不看你的航速，只看你的仪表。',
+    /* threat：asw ← A 点 mode:'sub'；radar ← W 点 type:'whirlpool'（本图分支条件是驱逐数，无索敌维） */
+    threat: ['asw', 'radar'],
+    threatNote: '本海域考验对潜与电探。驱逐舰≥5 可走 B 点弹药补给捷径。A 点为潜艇伏击：低速大目标（21 节标准战列等）是潜艇最理想的猎物；W 点异常洋流按持有燃料扣损，编入电探可使损失减半。',
     start: 'S', boss: 'L', gauge: 5,
     admExp: { node: 100, boss: 1600 },   // 提督经验（wiki 3-2: 道中+100 / BOSS+1600）
     nodes: {
       S: { x: 0, y: 260 }, A: { x: 280, y: 80 }, B: { x: 280, y: 440 }, C: { x: 560, y: 260 },
-      H: { x: 760, y: 440 }, L: { x: 820, y: 160 }
+      H: { x: 760, y: 440 }, L: { x: 820, y: 160 }, W: { x: 420, y: 170 }
     },
-    edges: [['S', 'A'], ['S', 'B'], ['A', 'C'], ['B', 'C'], ['C', 'H'], ['C', 'L'], ['H', 'L']],
+    edges: [['S', 'A'], ['S', 'B'], ['A', 'W'], ['W', 'C'], ['B', 'C'], ['C', 'H'], ['C', 'L'], ['H', 'L']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F36' },   // 敌北方游击任务部队（重巡精锐）
+      A: { type: 'battle', enemy: 'F95', mode: 'sub' },   // 潜艇点：阿留申潜艇战
+      W: { type: 'whirlpool', lossBase: 220 },            // 漩涡：基斯卡近海浓雾洋流，只扣燃料，电探减半
       B: { type: 'resource', reward: ['ammo'] },   // 著名弹药补给点
       C: { type: 'battle', enemy: 'F37' },   // 敌北方水雷战队
       H: { type: 'battle', enemy: 'F38' },   // 敌北方水上打击舰队（战列舰）
@@ -470,19 +490,24 @@ const MAPS = [
   },
   {
     id: '3-3', name: '阿图岛方向', desc: '逼近阿图岛！深海战列舰精锐筑成的北方防卫线！', stars: 9,
+    brief: '阿图岛方向。北方的夜很长，长到足够一场夜战打完还剩一半黑暗。\n本海域设夜战节点（D 点）与异常洋流（W 点）：夜战点没有昼战阶段，空母无法攻击，\n火力与雷装兼备的驱逐舰、轻巡洋舰是唯一输出；C 点驻有敌空母机动部队，需舰战争夺制空。',
+    /* threat：air ← C 点含轻空母 Nu 级；los ← A 点 branch.if.los；night ← D 点 mode:'night'；radar ← W 点 whirlpool */
+    threat: ['air', 'los', 'night', 'radar'],
+    threatNote: '本海域四线并考。索敌≥70 走 B 点铝土补给线；C 点敌编成含空母，未携带舰战将丧失制空。D 点为夜战点：需要夜战火力支撑；W 点异常洋流按持有燃料扣损，电探可使损失减半。',
     start: 'S', boss: 'E', gauge: 6,
     admExp: { node: 110, boss: 1800 },   // 提督经验（wiki 3-3: 道中+110 / BOSS+1800）
     nodes: {
       S: { x: 0, y: 280 }, A: { x: 260, y: 280 }, B: { x: 520, y: 120 }, C: { x: 520, y: 440 },
-      D: { x: 780, y: 280 }, E: { x: 980, y: 280 }
+      D: { x: 780, y: 280 }, E: { x: 980, y: 280 }, W: { x: 390, y: 360 }
     },
-    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D'], ['D', 'E']],
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'W'], ['W', 'C'], ['B', 'D'], ['C', 'D'], ['D', 'E']],
     defs: {
       S: { type: 'start' },
       A: { type: 'battle', enemy: 'F40' },
+      W: { type: 'whirlpool', lossBase: 220 },            // 漩涡：北方海域的异常洋流
       B: { type: 'resource', reward: ['baux'] },
       C: { type: 'battle', enemy: 'F41' },   // 空母机动部队
-      D: { type: 'battle', enemy: 'F42' },   // 夜战舰队
+      D: { type: 'battle', enemy: 'F42', mode: 'night' },   // 夜战点：敌夜战舰队
       E: { type: 'boss', enemy: 'F43' }
     },
     branch: { at: 'A', if: { los: 70 }, to: ['B'] },   // 索敌≥70 走铝土补给线；否则迎击空母机动部队
@@ -491,17 +516,23 @@ const MAPS = [
   },
   {
     id: '3-4', name: '基斯卡攻略战', desc: '深海北方栖姬的决战海域！夺回基斯卡岛，击破北方的钢铁要塞！', stars: 10,
+    brief: '基斯卡攻略战。要塞在自己家门口，舰队却在别人的浓雾里航行。\n本海域含航空战节点（C 点）：没有航空母舰的舰队将暴露在敌机轰炸之下，建议编入航母并搭载舰战；\nB 线途经异常洋流（W 点），电探可使燃料损失减半。',
+    /* threat：air ← C 点 mode:'air'（敌军 F45 含轻空母 Nu 级）；los ← S 点 branch.if.los；radar ← W 点 whirlpool */
+    threat: ['air', 'los', 'radar'],
+    threatNote: '本海域考验制空、索敌与电探。索敌≥80 走 A 点燃料补给线；C 点为航空战点：未编入航母的舰队只能以对空炮火被动迎击敌机轰炸。B 线途经异常洋流，编入电探可使燃料损失减半。',
     start: 'S', boss: 'D', gauge: 6,
     admExp: { node: 120, boss: 1990 },   // 提督经验（wiki 3-4: 道中+120 / BOSS+1990）
     nodes: {
-      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
+      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 },
+      D: { x: 820, y: 260 }, W: { x: 560, y: 260 }
     },
-    edges: [['S', 'A'], ['S', 'B'], ['A', 'C'], ['B', 'C'], ['C', 'D']],
+    edges: [['S', 'A'], ['S', 'B'], ['A', 'C'], ['B', 'W'], ['W', 'C'], ['C', 'D']],
     defs: {
       S: { type: 'start' },
       A: { type: 'resource', reward: ['fuel'] },
       B: { type: 'battle', enemy: 'F44' },
-      C: { type: 'battle', enemy: 'F45' },   // 空袭机动部队（制空要求高）
+      W: { type: 'whirlpool', lossBase: 240 },            // 漩涡：北方海域的浓雾洋流
+      C: { type: 'battle', enemy: 'F45', mode: 'air' },   // 航空战点：敌空袭机动部队（制空要求高）
       D: { type: 'boss', enemy: 'F46' }
     },
     branch: { at: 'S', if: { los: 80 }, to: ['A'] },   // 索敌≥80 走燃料补给线；否则直接迎击
@@ -511,6 +542,10 @@ const MAPS = [
   /* ==================== BOSS海域（EO，need 同区域4号图） ==================== */
   {
     id: '1-5', name: '夏威夷近海哨戒', desc: '深海潜水舰队潜伏夏威夷近海！编成对潜警戒部队，扫荡航线上的潜水威胁！', stars: 7,
+    brief: '夏威夷近海。夜间巡逻的水雷战队先一步咬住了舰队，天亮后才是潜艇的猎场。\n本海域设夜战节点：首战没有航空掩护也没有昼战炮击战，火力与雷装兼备的驱逐舰、轻巡洋舰是唯一输出。\n后续 D/E 点为反潜点（不消耗弹药），对潜舰艇（驱逐舰、轻巡洋舰）与深水炸弹是主力。',
+    /* threat：asw ← D/E 点 mode:'sub'；night ← A 点 mode:'night' */
+    threat: ['asw', 'night'],
+    threatNote: '本海域是 EO 对潜哨戒。首点 A 为夜战点：夜战火力（驱逐舰、轻巡洋舰）决定能否站住脚；随后 D/E 为反潜点，未编入对潜舰艇的舰队将被单方面雷击。',
     start: 'S', boss: 'J', gauge: 6, need: '1-4',
     admExp: { node: 130, boss: 2200 },   // 提督经验（wiki 1-5: 道中+130 / BOSS+2200）
     nodes: {
@@ -519,8 +554,8 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'D'], ['D', 'E'], ['E', 'J']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F47', cost: { fuel: 0.08, ammo: 0 } },   // 反潜点不耗弹药（wiki 1-5）
-      D: { type: 'battle', enemy: 'F48', cost: { fuel: 0.08, ammo: 0 } },
+      A: { type: 'battle', enemy: 'F92', mode: 'night', cost: { fuel: 0.08, ammo: 0.08 } },   // 夜战点：水面接敌（夜战按夜战消耗弹药）
+      D: { type: 'battle', enemy: 'F48', cost: { fuel: 0.08, ammo: 0 } },   // 反潜点不耗弹药（wiki 1-5）
       E: { type: 'battle', enemy: 'F49', cost: { fuel: 0.08, ammo: 0 } },
       J: { type: 'boss', enemy: 'F50' }
     },
@@ -529,6 +564,10 @@ const MAPS = [
   },
   {
     id: '2-5', name: '萨沃岛近海', desc: '深海机动部队的制空决战！萨沃岛近海的天空由舰队掌控！', stars: 9,
+    brief: '萨沃岛。夜战成名的海域，如今深海的机动部队把甲板推到了这里。\n本海域既设潜艇伏击点（A 点），也含航空战节点（C 点）：对潜舰艇与舰战缺一不可，\n没有航空母舰的舰队在 C 点将暴露在敌机轰炸之下。',
+    /* threat：asw ← A 点 mode:'sub'；air ← C 点 mode:'air'（敌军 F52 含空母 Wo 级）；los ← A 点 branch.if.los */
+    threat: ['air', 'asw', 'los'],
+    threatNote: '本海域考验对潜、制空与索敌。索敌≥40 走 B 点弹药补给线（2 战到 BOSS），否则连战空袭部队。A 点为潜艇伏击：未编入驱逐舰、轻巡洋舰将被单方面雷击；C 点为航空战点，需要舰战争夺制空。',
     start: 'S', boss: 'D', gauge: 6, need: '2-4',
     admExp: { node: 140, boss: 2400 },   // 提督经验（wiki 2-5: 道中+140 / BOSS+2400）
     nodes: {
@@ -537,9 +576,9 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F51' },
+      A: { type: 'battle', enemy: 'F94', mode: 'sub' },   // 潜艇点：萨沃岛近海的潜水警戒线
       B: { type: 'resource', reward: ['ammo'] },
-      C: { type: 'battle', enemy: 'F52' },
+      C: { type: 'battle', enemy: 'F52', mode: 'air' },   // 航空战点：双空母 Wo 级制空决战
       D: { type: 'boss', enemy: 'F53' }
     },
     branch: { at: 'A', if: { los: 40 }, to: ['B'] },   // 索敌≥40 走弹药补给线；否则连战空袭部队
@@ -548,24 +587,31 @@ const MAPS = [
   },
   {
     id: '3-5', name: '阿留申海域决战', desc: '北方栖姬坐镇的阿留申泊地挡在前方！突入阿留申，击破敌增援主力！', stars: 11,
+    brief: '阿留申决战。区域 3 的毕业考：一夜的水雷战、一片洋流、一条潜水警戒线，最后是一支航母掩护的增援主力。\n本海域混合全部特殊节点 —— 夜战点（B）、航空战点（D）、潜艇伏击点（G）与异常洋流（W）。\n出击前请把编成想清楚：夜战火力、舰战、对潜舰艇与电探，缺哪一样都会在某一环被打断。',
+    /* threat：asw ← G 点 mode:'sub'；night ← B 点 mode:'night'；air ← D 点 mode:'air'；radar ← W 点 whirlpool
+     *（本图分支条件为驱逐数，无索敌维） */
+    threat: ['air', 'asw', 'night', 'radar'],
+    threatNote: '本海域是区域 3 的毕业考，四类特殊节点同时出现。驱逐舰≥5 走下路（W-F-G-K），否则走上路（B-D-H 会遭遇北方栖姬）。B 点为夜战点：需要夜战火力；D 点为航空战点：需要舰战争夺制空；G 点为潜艇伏击：需要对潜能力（驱逐舰、轻巡洋舰天生具备）；W 点异常洋流按持有燃料扣损，电探可使损失减半。',
     start: 'S', boss: 'K', gauge: 7, need: '3-4',
     admExp: { node: 150, boss: 2600 },   // 提督经验（wiki 3-5: 道中+150 / BOSS+2600）
     nodes: {
       S: { x: 0, y: 260 }, B: { x: 250, y: 90 }, D: { x: 500, y: 90 }, H: { x: 750, y: 90 },
-      J: { x: 750, y: 330 }, K: { x: 980, y: 210 }, F: { x: 250, y: 430 }, G: { x: 500, y: 430 }
+      J: { x: 750, y: 330 }, K: { x: 980, y: 210 }, F: { x: 250, y: 430 }, G: { x: 500, y: 430 },
+      W: { x: 125, y: 345 }
     },
-    edges: [['S', 'B'], ['S', 'F'], ['B', 'D'], ['D', 'H'], ['H', 'J'], ['J', 'K'], ['F', 'G'], ['G', 'K']],
+    edges: [['S', 'B'], ['S', 'W'], ['W', 'F'], ['B', 'D'], ['D', 'H'], ['H', 'J'], ['J', 'K'], ['F', 'G'], ['G', 'K']],
     defs: {
       S: { type: 'start' },
-      B: { type: 'battle', enemy: 'F54' },
-      D: { type: 'battle', enemy: 'F55' },   // 空母机动部队（制空高）
+      B: { type: 'battle', enemy: 'F54', mode: 'night' },   // 夜战点：北方水雷战队夜袭
+      W: { type: 'whirlpool', lossBase: 240 },              // 漩涡：下路途经的异常洋流
+      D: { type: 'battle', enemy: 'F55', mode: 'air' },     // 航空战点：空母机动部队（制空高）
       H: { type: 'battle', enemy: 'F56' },   // 北方AL泊地：北方栖姬道中（wiki 3-5 劝退点）
       J: { type: 'resource', reward: ['ammo'] },
       F: { type: 'battle', enemy: 'F57' },
-      G: { type: 'battle', enemy: 'F58' },
+      G: { type: 'battle', enemy: 'F96', mode: 'sub' },     // 潜艇点：混编防线的潜水警戒
       K: { type: 'boss', enemy: 'F59' }      // 敌增援主力：轻巡Tsu级+输送舰队
     },
-    branch: { at: 'S', if: { dd: 5 }, to: ['F'] },   // 驱逐舰≥5 走下路（F-G-K）；否则走上路（B-D-H 遇北方栖姬）
+    branch: { at: 'S', if: { dd: 5 }, to: ['W'] },   // 驱逐舰≥5 走下路（W 洋流 → F → G → K）；否则走上路（B-D-H 遇北方栖姬）
     drops: ['tang', 'barb'],
     bossDrops: ['saratoga', 'intrepid', 'westvirginia', 'harder', 'albacore', 'cleveland']
   },

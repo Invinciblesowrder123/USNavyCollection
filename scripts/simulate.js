@@ -183,11 +183,24 @@ for (const m of MAPS) for (const [nid, def] of Object.entries(m.defs)) {
   }
   if (def.type === 'whirlpool') { whirlNodeN++; assert(`${m.id}-${nid} 漩涡lossBase>0`, (def.lossBase || 0) > 0); }
 }
-assert('夜战节点已落1-4 B点', MAPS.find(m => m.id === '1-4').defs.B.mode === 'night', 'n=' + nightNodeN);
-assert('潜艇节点=2处且都在2-2', subNodeN === 2, 'n=' + subNodeN);
-assert('漩涡节点=1处且在3-1 W', whirlNodeN === 1 && !!MAPS.find(m => m.id === '3-1').defs.W);
+assert('夜战节点已落 1-4 B（首现）', MAPS.find(m => m.id === '1-4').defs.B.mode === 'night', 'n=' + nightNodeN);
+assert('潜艇节点首现于 2-2（A/C 两处）',
+  MAPS.find(m => m.id === '2-2').defs.A.mode === 'sub' && MAPS.find(m => m.id === '2-2').defs.C.mode === 'sub',
+  'n=' + subNodeN);
+assert('漩涡节点首现于 3-1 W', !!MAPS.find(m => m.id === '3-1').defs.W, 'n=' + whirlNodeN);
 assert('航空战点首现于 2-3 A 点（圣克鲁斯=航母对决）',
   airNodeN >= 1 && MAPS.find(m => m.id === '2-3').defs.A.mode === 'air', 'n=' + airNodeN);
+/* 批次3.2 铺开后的节点总数（只增不减的护栏：铺开新图时这里必须同步更新） */
+assert('特殊节点总数：夜战 5 / 潜艇 6 / 航空战 4 / 漩涡 5',
+  nightNodeN === 5 && subNodeN === 6 && airNodeN === 4 && whirlNodeN === 5,
+  `night=${nightNodeN} sub=${subNodeN} air=${airNodeN} whirl=${whirlNodeN}`);
+/* 每个特殊节点都要有对应海域的作战简报（P0-6：机制与文案同批交付） */
+{
+  const noBrief = MAPS.filter(m => Object.values(m.defs).some(d =>
+    d.mode === 'sub' || d.mode === 'night' || d.mode === 'air' || d.type === 'whirlpool'))
+    .filter(m => !(typeof m.brief === 'string' && m.brief.length > 20)).map(m => m.id);
+  assert('所有含特殊节点的海域都写了作战简报（P0-6）', noBrief.length === 0, noBrief.join('、'));
+}
 for (const bid of ['1-4', '2-2', '2-3', '3-1']) {
   const mm = MAPS.find(x => x.id === bid);
   assert(`${bid} 作战简报已配置`, typeof mm.brief === 'string' && mm.brief.length > 20);
@@ -271,22 +284,35 @@ Game.state.mapProgress['1-4'].cleared = true;
 const unLockRes = Sortie.start('1-5', 1);
 assert('1-5 击破1-4后解锁出击', unLockRes.ok === true, JSON.stringify(unLockRes).slice(0, 80));
 if (unLockRes.ok) Sortie.returnHome();
-/* 1-5 反潜点特殊消耗（wiki：A/D/E 不耗弹药，仅油8%） */
+/* 1-5 节点消耗（wiki：D/E 反潜点不耗弹药、仅油8%；A 自 V0.302 起为夜战点，按夜战消耗油弹各8%） */
 const c15 = MAPS.find(m => m.id === '1-5');
-assert('1-5 A点为反潜节点且带 cost', c15.defs.A.type === 'battle' && c15.defs.A.cost && c15.defs.A.cost.ammo === 0 && c15.defs.A.cost.fuel === 0.08, JSON.stringify(c15.defs.A));
+assert('1-5 A点为夜战节点（水面接敌）且带 cost',
+  c15.defs.A.type === 'battle' && c15.defs.A.mode === 'night' &&
+  c15.defs.A.cost && c15.defs.A.cost.fuel === 0.08 && c15.defs.A.cost.ammo > 0,
+  JSON.stringify(c15.defs.A));
+assert('1-5 D/E 仍为反潜节点（油8% / 弹0）',
+  ['D', 'E'].every(n => c15.defs[n].cost && c15.defs[n].cost.ammo === 0 && c15.defs[n].cost.fuel === 0.08),
+  JSON.stringify([c15.defs.D.cost, c15.defs.E.cost]));
 const costPrevFleet = Game.state.fleet[1].slice();
 Game.state.fleet[1] = strongFleet;
 const costStart = Sortie.start('1-5', 1);
 assert('1-5 解锁后可出击（cost测试前置）', costStart.ok === true, JSON.stringify(costStart));
 const costS = Sortie.advance('单纵阵', true);   // S 出发点：无消耗
 Sortie.moveToNext();
-const costA = Sortie.advance('单纵阵', true);   // A 反潜点：油8%/弹0
+const costA = Sortie.advance('单纵阵', true);   // A 夜战点：按夜战消耗
+Sortie.moveToNext();
+const ammoBeforeD = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.ammo));
+const fuelBeforeD = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.fuel));
+const costD = Sortie.advance('单纵阵', true);   // D 反潜点：油8%/弹0
 const ammoAfter = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.ammo));
 const fuelAfter = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.fuel));
 Sortie.returnHome();
 Game.state.fleet[1] = costPrevFleet;
-assert('1-5 反潜点战斗不耗弹药（弹仍为100%）', costS.ok && costA.ok && ammoAfter === 1, `ammo=${ammoAfter}`);
-assert('1-5 反潜点战斗仅耗8%燃料', costS.ok && costA.ok && Math.abs(fuelAfter - 0.92) < 1e-9, `fuel=${fuelAfter}`);
+assert('1-5 反潜点战斗不耗弹药（弹药与进点前一致）',
+  costS.ok && costA.ok && costD.ok && Math.abs(ammoAfter - ammoBeforeD) < 1e-9, `before=${ammoBeforeD} after=${ammoAfter}`);
+assert('1-5 反潜点战斗仅耗8%燃料',
+  costS.ok && costA.ok && costD.ok && Math.abs((fuelBeforeD - fuelAfter) - 0.08) < 1e-9,
+  `before=${fuelBeforeD} after=${fuelAfter}`);
 /* 各栖姬 BOSS 类型正确 */
 const m22 = MAPS.find(m => m.id === '2-2');
 assert('2-2 BOSS为深海潜水栖姬（SS）', DEEP_TEMPLATES[ENEMY_FLEETS[m22.defs[m22.boss].enemy].ships[0]].type === 'SS' && DEEP_TEMPLATES[ENEMY_FLEETS[m22.defs[m22.boss].enemy].ships[0]].boss === true);
@@ -1037,13 +1063,18 @@ assert('fleetSpeed 空舰队不误报全高速', Game.fleetSpeed(3).allFast === 
 assert('能力接口在无 Battle 场景不抛异常（边界）', typeof Game.fleetAir(4) === 'number' && Game.fleetAir(4) === 0);
 
 section('方向一·海域威胁维度声明（任务1.2，双向数据一致性）');
-const mapHasSub = m => Object.values(m.defs).some(d => d.mode === 'sub');
+/* 威胁维度推导（必须与节点/敌军数据同源）：
+ * asw  ← 有 mode:'sub' 节点 **或** 敌军编成含潜水舰（与 air 的「敌军含舰载机」同口径——
+ *        1-5 的对潜点没有标 mode:'sub'（它是"反潜哨戒"而非"潜艇伏击"），但敌军确实是潜艇） */
+const mapHasSub = m => Object.values(m.defs).some(d =>
+  d.mode === 'sub' ||
+  (d.enemy && ENEMY_FLEETS[d.enemy] && ENEMY_FLEETS[d.enemy].ships.some(k => DEEP_TEMPLATES[k] && DEEP_TEMPLATES[k].type === 'SS')));
 const mapHasNight = m => Object.values(m.defs).some(d => d.mode === 'night');
 const mapHasWhirl = m => Object.values(m.defs).some(d => d.type === 'whirlpool');
 const mapHasLos = m => { const b = m.branch ? (Array.isArray(m.branch) ? m.branch : [m.branch]) : []; return b.some(x => x.if && x.if.los); };
 const mapHasAir = m => Object.values(m.defs).some(d => (d.type === 'battle' || d.type === 'boss') && d.enemy && Battle.enemyAirPower(d.enemy) > 0);
 const THREAT_RULES = [['asw', mapHasSub], ['night', mapHasNight], ['radar', mapHasWhirl], ['los', mapHasLos], ['air', mapHasAir]];
-const ANNOTATED = ['1-2', '1-4', '2-2', '2-3', '3-1'];
+const ANNOTATED = ['1-2', '1-5', '1-4', '2-2', '2-3', '2-4', '2-5', '3-1', '3-2', '3-3', '3-4', '3-5'];
 const vocabBad = [], exactBad = [], forwardBad = [];
 let annotatedCount = 0;
 for (const m of MAPS) {
@@ -1058,9 +1089,17 @@ for (const m of MAPS) {
 }
 assert('威胁维度全部来自允许词表', vocabBad.length === 0, vocabBad.join('、'));
 assert('已声明维度的海域：必需维度无遗漏（防剖面漂移）', forwardBad.length === 0, forwardBad.join('、'));
-assert('5 张声明海域的维度与节点类型逐项一致（双向）', exactBad.length === 0, exactBad.join('、'));
-assert('已声明维度的海域数 = 已铺开特殊节点的海域数（防空转）', annotatedCount === 5, 'n=' + annotatedCount);
-assert('5 张图均有威胁说明文案', ANNOTATED.every(id => {
+assert(`${ANNOTATED.length} 张声明海域的维度与节点类型逐项一致（双向）`, exactBad.length === 0, exactBad.join('、'));
+/* 防「空转」：声明数必须等于 ANNOTATED 长度；且**每个含特殊节点的海域都必须被声明**（新增图会立刻被拦住） */
+assert('已声明维度的海域数 = ANNOTATED 长度（防空转）', annotatedCount === ANNOTATED.length, 'n=' + annotatedCount);
+{
+  const specialMaps = MAPS.filter(m => Object.values(m.defs || {}).some(d =>
+    d.mode === 'sub' || d.mode === 'night' || d.mode === 'air' || d.type === 'whirlpool')).map(m => m.id);
+  const missing = specialMaps.filter(id => !ANNOTATED.includes(id));
+  assert('所有含特殊节点的海域都已声明威胁维度（铺开节点必须同步声明）',
+    missing.length === 0, '缺声明：' + missing.join('、'));
+}
+assert(`${ANNOTATED.length} 张图均有威胁说明文案`, ANNOTATED.every(id => {
   const m = MAPS.find(x => x.id === id);
   return (m.threat || []).length > 0 && (m.threatNote || '').length > 20;
 }));
@@ -1990,6 +2029,176 @@ assert('情报室 touch 区块报出「确保 / 优势 / 均势 / 丧失」四�
   [intel23T.touch.rateSure, intel23T.touch.rateSup, intel23T.touch.ratePar, intel23T.touch.rateLost].join(' / '));
 Game.state.fleet[1] = [intelEquipShip('fletcher', 90, 0, ['gun5in_38', 'torp_mk15', 'torp_mk15'])];
 assert('情报室：无触接机时 planes=0（UI 显示「无法触接」提示）', Sortie.intel(1, '2-3').touch.planes === 0);
+
+/* ============================================================
+ * 批次3.1：获取途径交叉校验（设计稿 §3「进引擎测试，硬约束兑现」= P0-3 的自动化守护）
+ * 四条规则都写成**独立纯函数**（返回违规清单），并各做一次**负向验证**（故意破坏数据必须变红）。
+ * 坑 #6：不做恒真式。规则 1 特意**不**把「初始建造池」算在内——因为 CV/CVL 全部可建造，
+ *        那样写会让规则对任何海域都恒真、信息量为零；改为要求「进度序更早的海域必须有 CV/CVL 掉落」，
+ *        建造池的可用性另作一条前置断言单独守。
+ * ============================================================ */
+section('批次3.1·获取途径交叉校验（设计稿 §3 四条规则）');
+const CV_TYPES = ['CV', 'CVL', 'CVB'];
+const typeOf = id => (ShipData[id] && ShipData[id].type) || null;
+/* 进度序更早的海域（drops + bossDrops）能提供的舰种集合；idx 之后的海域与建造池不计入 */
+function typesBeforeMap(idx) {
+  const t = new Set();
+  for (let i = 0; i < idx; i++) for (const id of MAPS[i].drops.concat(MAPS[i].bossDrops || [])) {
+    const ty = typeOf(id);
+    if (ty) t.add(ty);
+  }
+  return t;
+}
+const hasMode = (m, mode) => Object.values(m.defs || {}).some(d => d.mode === mode);
+/* 规则1：含 air 节点的海域，进度序更早的海域必须能取得 CV/CVL（稳定来源：打捞） */
+function rule1_airGain() {
+  const bad = [];
+  MAPS.forEach((m, i) => {
+    if (!hasMode(m, 'air')) return;
+    const early = typesBeforeMap(i);
+    if (!CV_TYPES.some(t => early.has(t))) bad.push(`${m.id} 之前的海域无 CV/CVL 掉落`);
+  });
+  return bad;
+}
+/* 规则2：含 sub 节点的海域，玩家必然持有对潜舰
+ *   —— 实际口径：区域 1 全部海域的 drops 中 DD+CL 合计 ≥ 6（设计稿字面 + 数字护栏） */
+function rule2_subAsw() {
+  const bad = [];
+  const area1 = MAPS.filter(m => m.id[0] === '1');
+  const ddcl = area1.reduce((n, m) => n + m.drops.filter(id => ['DD', 'CL'].includes(typeOf(id))).length, 0);
+  if (ddcl < 6) bad.push(`区域 1 的 drops 中 DD+CL 合计 ${ddcl} < 6`);
+  const starters = (typeof STARTER_IDS !== 'undefined' ? STARTER_IDS : []).filter(id => ['DD', 'CL'].includes(typeOf(id)));
+  if (starters.length < 1) bad.push(`初始舰中无 DD/CL（当前 ${starters.length}）`);
+  /* 每个含 sub 的海域：进度序更早的海域必须已有 DD/CL 打捞来源 */
+  MAPS.forEach((m, i) => {
+    if (!hasMode(m, 'sub')) return;
+    const early = typesBeforeMap(i);
+    if (!early.has('DD') && !early.has('CL')) bad.push(`${m.id} 之前的海域无 DD/CL 掉落`);
+  });
+  return bad;
+}
+/* 规则3：含 whirlpool 的节点，loss 上限字段必须存在且为正（防漏配导致无限扣资源） */
+function rule3_whirlLoss() {
+  const bad = [];
+  for (const m of MAPS) for (const [nid, d] of Object.entries(m.defs || {})) {
+    if (d.type !== 'whirlpool') continue;
+    if (!(typeof d.lossBase === 'number' && isFinite(d.lossBase) && d.lossBase > 0)) {
+      bad.push(`${m.id}-${nid} lossBase 非法（${d.lossBase}）`);
+    }
+  }
+  return bad;
+}
+/* 规则4：每个海域的 boss 必须可达；branch 的每个 to 目标必须是合法出边 */
+function rule4_bossReach() {
+  const bad = [];
+  for (const m of MAPS) {
+    const reach = reachable(m, m.start);
+    if (!reach.has(m.boss)) bad.push(`${m.id} BOSS(${m.boss}) 不可达`);
+    const brs = m.branch ? (Array.isArray(m.branch) ? m.branch : [m.branch]) : [];
+    for (const b of brs) {
+      const out = m.edges.filter(e => e[0] === b.at).map(e => e[1]);
+      if (!(b.to || []).every(t => out.includes(t))) bad.push(`${m.id} 分支 ${b.at}→${JSON.stringify(b.to)} 含非法目标`);
+      if (!out.some(t => !(b.to || []).includes(t))) bad.push(`${m.id} 分支 ${b.at} 无兜底路线`);
+    }
+  }
+  return bad;
+}
+const RULE_CHECKS = [
+  ['规则1 air 海域前的 CV/CVL 获取途径', rule1_airGain],
+  ['规则2 sub 海域的对潜舰保障', rule2_subAsw],
+  ['规则3 whirlpool 的 loss 上限字段', rule3_whirlLoss],
+  ['规则4 全海域 BOSS 可达 / 分支合法', rule4_bossReach]
+];
+for (const [name, fn] of RULE_CHECKS) {
+  const bad = fn();
+  assert(`${name}：无违规`, bad.length === 0, bad.join('；'));
+}
+/* 规则 1 的检查覆盖**全部**含 air 的海域（不是只查首现图 2-3） */
+{
+  const airMaps = MAPS.filter(m => hasMode(m, 'air')).map(m => m.id);
+  assert('规则1 覆盖全部含 air 节点的海域（不只首现图）', airMaps.length >= 1 && airMaps.includes('2-3'), airMaps.join(','));
+  const subMaps = MAPS.filter(m => hasMode(m, 'sub')).map(m => m.id);
+  assert('规则2 覆盖全部含 sub 节点的海域（不只首现图）', subMaps.length >= 1 && subMaps.includes('2-2'), subMaps.join(','));
+}
+/* 前置事实（单独守，不当成恒真）：初始建造池确实含 CV/CVL；CV/CVL 的可获得性不是靠"运气抽卡" */
+assert('前置事实：初始建造池含 CV/CVL（≥1 种）',
+  SHIPS.filter(d => d.buildable !== false && CV_TYPES.includes(d.type)).length >= 1,
+  'n=' + SHIPS.filter(d => d.buildable !== false && CV_TYPES.includes(d.type)).length);
+assert('前置事实：初始舰含 DD（对潜保底）',
+  (typeof STARTER_IDS !== 'undefined' ? STARTER_IDS : []).every(id => typeOf(id) === 'DD'),
+  JSON.stringify(STARTER_IDS));
+
+/* ---- 负向验证：故意破坏数据 → 对应规则必须变红（证明断言不是空转） ---- */
+{
+  /* 规则1：抽掉 2-3 之前所有 CV/CVL 掉落 */
+  const bak = MAPS.slice(0, 7).map(m => [m.drops, m.bossDrops]);
+  for (let i = 0; i < 7; i++) {
+    MAPS[i].drops = (MAPS[i].drops || []).filter(id => !CV_TYPES.includes(typeOf(id)));
+    MAPS[i].bossDrops = (MAPS[i].bossDrops || []).filter(id => !CV_TYPES.includes(typeOf(id)));
+  }
+  const broke = rule1_airGain();
+  for (let i = 0; i < 7; i++) { MAPS[i].drops = bak[i][0]; MAPS[i].bossDrops = bak[i][1]; }
+  assert('负向验证：抽掉 2-3 之前全部 CV/CVL 掉落 → 规则1 变红', broke.length > 0, broke.join('；'));
+  assert('负向验证后数据已还原（规则1 重新无违规）', rule1_airGain().length === 0);
+}
+{
+  /* 规则2：抽掉区域 1 全部 DD/CL 掉落 */
+  const area1 = MAPS.filter(m => m.id[0] === '1');
+  const bak = area1.map(m => m.drops);
+  for (const m of area1) m.drops = m.drops.filter(id => !['DD', 'CL'].includes(typeOf(id)));
+  const broke = rule2_subAsw();
+  area1.forEach((m, i) => { m.drops = bak[i]; });
+  assert('负向验证：抽掉区域1 全部 DD/CL 掉落 → 规则2 变红', broke.length > 0, broke.join('；'));
+  assert('负向验证后数据已还原（规则2 重新无违规）', rule2_subAsw().length === 0);
+}
+{
+  /* 规则3：临时删掉 3-1 W 的 lossBase */
+  const def = MAPS.find(m => m.id === '3-1').defs.W;
+  const bak = def.lossBase;
+  delete def.lossBase;
+  const broke = rule3_whirlLoss();
+  def.lossBase = bak;
+  assert('负向验证：删掉漩涡 lossBase → 规则3 变红', broke.length > 0, broke.join('；'));
+  assert('负向验证后数据已还原（规则3 重新无违规）', rule3_whirlLoss().length === 0);
+}
+{
+  /* 规则4：临时把 1-4 的 C→D 边删掉（BOSS 变不可达），并把某分支目标改成非法节点 */
+  const m = MAPS.find(x => x.id === '1-4');
+  const bakEdges = m.edges, bakBranch = m.branch;
+  m.edges = m.edges.filter(e => !(e[0] === 'C' && e[1] === 'D'));
+  const brokeReach = rule4_bossReach();
+  m.edges = bakEdges;
+  m.branch = { at: 'S', if: { los: 30 }, to: ['ZZ'] };
+  const brokeBranch = rule4_bossReach();
+  m.branch = bakBranch;
+  assert('负向验证：删掉 1-4 的 C→D 边 → 规则4 报「BOSS 不可达」', brokeReach.some(x => x.includes('不可达')), brokeReach.join('；'));
+  assert('负向验证：分支目标改成非法节点 → 规则4 报「含非法目标」', brokeBranch.some(x => x.includes('非法目标')), brokeBranch.join('；'));
+  assert('负向验证后数据已还原（规则4 重新无违规）', rule4_bossReach().length === 0);
+}
+/* 规则3 的运行时兑现：漩涡扣损确实受「双封顶」约束（min(lossBase, 持有量×10%)），电探再减半 */
+{
+  const map31 = MAPS.find(m => m.id === '3-1');
+  const def = map31.defs.W;
+  const probes = [{ fuel: 100000, expect: Math.floor(Math.min(def.lossBase, 100000 * 0.1)) }, { fuel: 0, expect: 0 }];
+  let ok = true, detail = [];
+  for (const p of probes) {
+    Game.newGame();
+    Game.gain({ fuel: 500000, ammo: 500000, steel: 500000, baux: 500000 });
+    const sh = Game.createShip('fletcher', 50); Game.equipDefaults(sh.uid);
+    sh.hp = Game.shipStats(sh.uid).hpMax;
+    Game.state.fleet[1] = [sh.uid];
+    Game.state.resources.fuel = p.fuel;
+    Game.state.sortie = { mapId: '3-1', fleetIdx: 1, node: 'W', path: ['S', 'W'], finished: false, daPoSeen: false };
+    const before = Game.state.resources.fuel;
+    const r = Sortie.advance('单纵阵', true);
+    const lost = before - Game.state.resources.fuel;
+    Sortie.returnHome();
+    detail.push(`${p.fuel}→-${lost}`);
+    if (r.type !== 'whirlpool' || lost > p.expect + 1e-9) ok = false;
+  }
+  assert('规则3 运行时兑现：漩涡扣损 ≤ min(lossBase, 燃料×10%)，燃料 0 时不产生负数',
+    ok, detail.join(' | ') + ` expect=${probes.map(p => p.expect).join('/')}`);
+}
 
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
