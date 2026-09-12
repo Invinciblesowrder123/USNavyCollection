@@ -21,7 +21,11 @@ const BROWSERS = [
 const page = process.argv[2];
 const out = path.resolve(process.argv[3] || 'shot.png');
 const size = (process.argv[4] || '1440x1200').split('x');
-if (!page) { console.error('用法: node scripts/shot.js <页面路径> <输出png> [宽x高]'); process.exit(1); }
+if (!page || page.startsWith('-') || !process.argv[3]) {
+  console.error('用法: node scripts/shot.js <页面路径> <输出png> [宽x高]');
+  console.error('  例: node scripts/shot.js "_shot_air.html?case=noCV" "../backup/x/air.png" 1440x1200');
+  process.exit(1);
+}
 const browser = BROWSERS.find(p => fs.existsSync(p));
 if (!browser) { console.error('未找到 Edge/Chrome'); process.exit(1); }
 

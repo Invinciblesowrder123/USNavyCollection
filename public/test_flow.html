@@ -511,6 +511,54 @@
       const b23 = document.querySelector('#screen').innerHTML;
       R(b23.indexOf('航空战') >= 0 && b23.indexOf('编入航母并搭载舰战') >= 0, 'air:briefVisible');
       R(b23.indexOf('航空战点') >= 0, 'air:threatRow');
+
+      /* ===== 批次2：航空触接（情报室行 + 事件日志） =====
+       * 数值与判定全部来自 Battle.touchReport / Battle.touchRate（UI 不另算）。 */
+      const tkRepFighter = Battle.touchReport(2);
+      R(tkRepFighter.planes === 0, 'touch:fighterNotTouchPlane', 'planes=' + tkRepFighter.planes);
+      Sortie.returnHome();
+      UI.go('sortie');
+      document.querySelector('#screen [data-fleet="2"]').click();   // 编成自检按选中舰队渲染
+      document.querySelector('#screen [data-area="2"]').click();
+      document.querySelector('#screen [data-map="2-3"]').click();
+      const tkHtml0 = document.querySelector('#screen').innerHTML;
+      R(tkHtml0.indexOf('航空触接') >= 0 && tkHtml0.indexOf('未搭载舰攻或侦察机') >= 0, 'touch:intelRowNoPlane',
+        tkHtml0.indexOf('航空触接') >= 0 ? '有行无文案' : '无触接行');
+      /* 换上带舰侦的航母 → 行内出现四档触接率 */
+      const tkCvUid = mkAirShip('enterprise', 70, ['f6f5', 'f6f5', 'tbf', 'sbdvs2']);
+      Game.state.fleet[2] = [tkCvUid].concat(airNoCvFleet);
+      const tkRep2 = Battle.touchReport(2);
+      R(tkRep2.planes === 2 && tkRep2.rateSure > tkRep2.rateSup && tkRep2.rateSup > tkRep2.ratePar
+        && tkRep2.ratePar > 0 && tkRep2.rateLost === 0, 'touch:rateLadder',
+        [tkRep2.rateSure, tkRep2.rateSup, tkRep2.ratePar, tkRep2.rateLost].join('/'));
+      UI.go('sortie');
+      document.querySelector('#screen [data-fleet="2"]').click();
+      document.querySelector('#screen [data-area="2"]').click();
+      document.querySelector('#screen [data-map="2-3"]').click();
+      const tkHtml1 = document.querySelector('#screen').innerHTML;
+      R(tkHtml1.indexOf('航空触接') >= 0 && /制空确保 \d+%/.test(tkHtml1) && tkHtml1.indexOf('制空丧失不可触接') >= 0, 'touch:intelRowRates');
+      /* 实战：事件被 push 进日志、且顺序在航空战之后炮击战之前；触接横幅用的 CSS 类存在 */
+      let tkSample = null;
+      for (let i = 0; i < 300 && !tkSample; i++) {
+        const r = Battle.battle(Game.state.fleet[2], ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+          { allowNight: false, fleetIdx: 2, airMode: true });
+        if (r.recon === true && r.touch === 'A' && r.log.some(l => l && l.event && l.event.kind === 'touch')) tkSample = r;
+      }
+      R(!!tkSample, 'touch:eventPushed');
+      R(!!tkSample && (() => {
+        const iT = tkSample.log.findIndex(l => l && l.event && l.event.kind === 'touch');
+        const iS = tkSample.log.findIndex(l => typeof l === 'string' && l.includes('第一轮炮击战'));
+        return iT >= 0 && iS > iT;
+      })(), 'touch:eventOrder');
+      R(!!tkSample && Math.abs(Battle.hitMods(tkSample.mySide[0]).total - 1.1845) < 1e-9, 'touch:hitMultiply');
+      let cssHasTouch = false;
+      for (let s = 0; s < document.styleSheets.length; s++) {
+        try {
+          const rules = document.styleSheets[s].cssRules;
+          for (let k = 0; k < rules.length; k++) if (rules[k].selectorText && rules[k].selectorText.indexOf('.recon-banner.touch-ok') >= 0) cssHasTouch = true;
+        } catch (e) { /* 跨域样式表忽略 */ }
+      }
+      R(cssHasTouch, 'touch:bannerCss');
       UI.go('sortie');
 
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });

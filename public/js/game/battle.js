@@ -228,6 +228,76 @@ const Battle = (() => {
     return { key: 'SURE', label: '制空权确保', air: true };
   }
 
+  /* ============ 航空触接（设计稿 §4，数值已由用户确认） ============
+   * 时机：昼战航空战阶段结束后、炮击战开始前。
+   * 参与方：我方搭载**舰攻 / 水侦（含水爆）/ 舰侦**的舰（航母为主，水上侦相机可）。
+   *   注：本作舰攻没有索敌面板（stat.los 为空），按设计稿「舰攻/侦察机索敌值」的语义取
+   *   `stat.los || stat.avg`（缺省用攻击力代理）——数值量级与舰侦/水侦的索敌值同档（4~9），不会失衡。
+   * 成功率 = min(85%, Σ√(机载值) × 5% + 制空加成)；制空确保 +20% / 优势 +10% / 均势·劣势 +0 / **丧失不可触接**。
+   * 效果：我方炮击/雷击命中 ×1.15（不分级）。
+   * 敌方：对称机制，成功率固定 20%（我方制空丧失时亦无法阻止），敌命中 ×1.10。
+   * 消耗：无（克制版，不扣搭载数）。不做：触接等级分档 / 机种细分 / 失败惩罚。
+   *
+   * **坑 #10（本项目最容易悄悄改坏难度的地方）**：触接命中加成走**独立字段 `_touchHit`**，
+   * 在 `hitChance()` 内与索敌加成的 `_reconHit` **相乘**，绝不覆盖——否则会隐性削弱索敌机制。
+   * 实际倍率：触接成功且索敌成功 = 1.03 × 1.15 = **1.1845（+18.45%）**。 */
+  const TOUCH_MAX = 0.85;                                  // 成功率上限
+  const TOUCH_AIR_BONUS = { SURE: 0.20, SUP: 0.10, PAR: 0, INF: 0, LOST: null };  // null = 不可触接
+  const TOUCH_MY_HIT = 1.15;                               // 我方触接命中倍率（+15%）
+  const TOUCH_EN_RATE = 0.20;                              // 敌方触接固定成功率
+  const TOUCH_EN_HIT = 1.10;                               // 敌方触接命中倍率（+10%）
+  /* 参与触接的机种：舰攻 / 水侦（水爆同槽）/ 舰侦。舰爆、舰战不参与（与设计稿一致） */
+  const isTouchPlane = e => !!e && (e.slot === SLOT.ATTACKER || e.slot === SLOT.SEAPLANE || e.cat === '舰侦');
+  const touchPlaneValue = e => {
+    if (!e || !e.stat) return 0;
+    const v = e.stat.los || e.stat.avg || 0;
+    return v > 0 ? Math.sqrt(v) : 0;
+  };
+  /* 触接成功率：airKey 为制空状态（SURE/SUP/PAR/INF/LOST）；LOST 或未发生航空战（null）→ 0 */
+  function touchRate(side, airKey) {
+    if (!airKey) return 0;
+    const bonus = TOUCH_AIR_BONUS[airKey];
+    if (bonus == null) return 0;
+    let sum = 0;
+    for (const s of side) {
+      if (!s.alive || !s.slots) continue;
+      for (const sl of s.slots) {
+        if (sl.size <= 0 || !isTouchPlane(sl.eq)) continue;
+        sum += touchPlaneValue(sl.eq);
+      }
+    }
+    /* 一架触接机都没有 → 成功率 0（制空加成不是「无飞机也能触接」的许可，只影响有飞机时的概率） */
+    if (sum <= 0) return 0;
+    return Util.clamp(Math.min(TOUCH_MAX, sum * 0.05 + bonus), 0, TOUCH_MAX);
+  }
+  /* 触接可发动性报告（出击前情报室用；与战斗内判定同源，UI 不得另算） */
+  function touchReport(fleetIdx) {
+    const ships = playerShipsOf(fleetIdx);
+    let sum = 0;
+    const names = [];
+    for (const s of ships) {
+      if (!s.alive || !s.slots) continue;
+      for (const sl of s.slots) {
+        if (sl.size <= 0 || !isTouchPlane(sl.eq)) continue;
+        sum += touchPlaneValue(sl.eq);
+        names.push(sl.eq.zh || sl.eq.id);
+      }
+    }
+    return {
+      planes: names.length,
+      planeNames: [...new Set(names)],
+      base: Math.round(sum * 0.05 * 1000) / 1000,
+      rateSure: touchRate(ships, 'SURE'),
+      rateSup: touchRate(ships, 'SUP'),
+      ratePar: touchRate(ships, 'PAR'),
+      rateLost: touchRate(ships, 'LOST'),
+      hitBonus: TOUCH_MY_HIT,
+      enRate: TOUCH_EN_RATE,
+      enHitBonus: TOUCH_EN_HIT,
+      cap: TOUCH_MAX
+    };
+  }
+
   function threshold(ap, cap) { return ap > cap ? cap + Math.sqrt(ap - cap) : ap; }
 
   /* 装甲随机浮动（0.7 ~ 4/3 倍） */
@@ -277,6 +347,13 @@ const Battle = (() => {
   }
 
   /* ============ 命中推定（wiki推定式） ============ */
+  /* 命中乘区（索敌 × 航空触接）——单独抽成纯函数，便于断言「触接没有覆盖索敌」（坑 #10）。
+   * 两个字段都缺省取 1：`x * 1` 在 IEEE754 下精确，因此未启用这两项时逐位不变。 */
+  function hitMods(atk) {
+    const recon = (atk && atk._reconHit) || 1;
+    const touch = (atk && atk._touchHit) || 1;
+    return { recon, touch, total: recon * touch };
+  }
   function hitChance(atk, def, formAName, formBName, engMult, isTorpedo) {
     const lvT = Math.sqrt(Math.max(0, atk.lv - 1)) / 50;
     const luckT = 0.15 * (atk.stats.lck || 0) / 100;
@@ -287,7 +364,8 @@ const Battle = (() => {
     if ((formAName === '复纵阵' || formAName === '单横阵' || formAName === '梯形阵') &&
       !(formAName === '复纵阵' && formBName === '单横阵') &&
       !(formAName === '梯形阵' && formBName === '单纵阵')) formAcc = 1.2;
-    const acc = 0.07 + (0.93 + lvT + luckT + eqHit) * formAcc * moraleA * (atk._reconHit || 1);
+    /* 命中乘区 = 索敌加成（×1.03） × 航空触接加成（×1.15）——独立字段相乘，绝不互相覆盖（坑 #10） */
+    const acc = 0.07 + (0.93 + lvT + luckT + eqHit) * formAcc * moraleA * hitMods(atk).total;
     /* 回避项 */
     let evd = def.stats.evd;
     if (formBName === '单横阵' || formBName === '梯形阵' || formBName === '轮形阵') evd *= 1.2;
@@ -750,6 +828,11 @@ const Battle = (() => {
   /* ============ 夜战（wiki：昼战结束后由玩家选择「夜战突入」或「战斗结束」；
    * 夜战单轮·位置交替·我方先手·大破罚站·空母无法夜战；不受交战形态影响） ============ */
   function nightPhase(log, sideA, sideB, formAName, formBName, ev, pushSnap) {
+    /* 航空触接只作用于昼战：进入夜战前清除（夜间观测不适用）。
+     * 放在 nightPhase 开头而非 battle() 结尾，是为了让「只打昼战」的结果（allowNight:false）
+     * 仍能保留 _reconHit/_touchHit 供断言检查（battle/battleNight 两个入口都经过这里）。 */
+    for (const s of sideA) s._touchHit = 1;
+    for (const s of sideB) s._touchHit = 1;
     const fA = FORMATIONS[formAName], fB = FORMATIONS[formBName];
     const myAlive = sideA.filter(x => x.alive);
     const enAlive = sideB.filter(x => x.alive);
@@ -1084,6 +1167,30 @@ const Battle = (() => {
       L('双方均无航空战力，不发生航空战。');
     }
 
+    /* ---- 航空触接（设计稿 §4，批次2）----
+     * 时机：航空战阶段结束后、炮击战开始前。无航空战阶段（nightOnly / 双方均无航空战力）时不触发。
+     * opts.touch === false 时整个阶段跳过且不消耗随机数（drift_check 用它证明「除了触接，什么都没动」）。 */
+    if (airPhaseRan && opts.touch !== false) {
+      const myRate = touchRate(sideA, airKey);
+      if (myRate <= 0) {
+        const hasTouchPlane = sideA.some(s => s.alive && s.slots && s.slots.some(sl => sl.size > 0 && isTouchPlane(sl.eq)));
+        L(hasTouchPlane ? '未掌握制空权，航空触接不可行。' : '未搭载舰攻或侦察机，无法进行航空触接。');
+      } else if (Math.random() < myRate) {
+        for (const s of sideA) s._touchHit = TOUCH_MY_HIT;
+        touchSide = 'A';
+        L(`触接成功：后续攻击命中率提升（触接率 ${Math.round(myRate * 100)}%，我方炮击/雷击命中 ×${TOUCH_MY_HIT}）。`);
+        log.push({ event: { kind: 'touch', side: 'A', ok: true, rate: Math.round(myRate * 100), hit: TOUCH_MY_HIT } });
+      }
+      /* 敌方触接：对称机制，成功率固定 20%（我方制空权丧失时亦无法阻止）；敌方须有可出动的舰载机 */
+      const enCanTouch = sideB.some(s => s.alive && s.slots && s.slots.some(sl => sl.size > 0 && sl.plane));
+      if (enCanTouch && Math.random() < TOUCH_EN_RATE) {
+        for (const s of sideB) s._touchHit = TOUCH_EN_HIT;
+        if (!touchSide) touchSide = 'B';
+        L(`敌方触接成功！敌军炮击与雷击命中率提升（×${TOUCH_EN_HIT}）。`);
+        log.push({ event: { kind: 'touch', side: 'B', ok: true, rate: Math.round(TOUCH_EN_RATE * 100), hit: TOUCH_EN_HIT } });
+      }
+    }
+
     /* ---- 先制对潜（wiki：对潜100+声呐等门槛；深海不发动；按射程顺序） ---- */
     const aswList = sideA.filter(canOpeningASW).sort((a, b) => b.range - a.range);
     for (const s of aswList) {
@@ -1325,8 +1432,10 @@ const Battle = (() => {
     /* 出击前情报室共用接口（禁止在 UI 另写一套算法） */
     buildCombatShip, airPower, fleetStats, enemyAirPower, hasAirSuperiority, specialAttackReport,
     DAY_SPECIALS, NIGHT_SPECIALS,
-    /* 航空线（批次1/2）：航空战力判定 + 被动防空封顶比例 —— UI 与归因禁止另写一套 */
+    /* 航空线（批次1/2）：航空战力判定 + 被动防空封顶比例 + 航空触接 —— UI 与归因禁止另写一套 */
     hasAirWing, isCarrierType: hasCarrier, PASSIVE_AA_CAP,
+    touchRate, touchReport, isTouchPlane, touchPlaneValue, hitMods,
+    TOUCH_MAX, TOUCH_AIR_BONUS, TOUCH_MY_HIT, TOUCH_EN_RATE, TOUCH_EN_HIT,
     /* 士气档位（UI 徽记与文案读同一张表） */
     MORALE_TIERS, moraleTier, moraleMods, moraleBadge,
     /* 交战形态权重（方向五：侦察引导航向） */

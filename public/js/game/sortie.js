@@ -729,6 +729,8 @@ const Sortie = (() => {
         banner: nodeBanner(Sortie_nodeDefOf(map), { airWing: stats.airWing, hasCarrier: (stats.carriers || 0) > 0 })
       },
       enemyAir, airSup,
+      /* 航空触接（批次2）：与战斗内判定同源（Battle.touchReport），UI 不得另算 */
+      touch: B.touchReport(fleetIdx),
       morale,
       moraleAdvice: moraleAdvice(fleetIdx),
       reconGuide,

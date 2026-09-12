@@ -1808,6 +1808,189 @@ assert('情报室 2-3：横幅与编成状态一致（有航空战力 → 航母
 assert('情报室 air 区块只在含航空战点的图出现（2-1 无）',
   Sortie.intel(1, '2-1').air.node === false && Sortie.intel(1, '2-1').air.banner === '');
 
+/* ============================================================
+ * 批次2：航空触接（V0.302）
+ * 2.1 核心机制（独立字段不覆盖 _reconHit / LOST 不可触接）/ 2.2 演出与日志 / 2.3 情报室联动
+ * ============================================================ */
+section('批次2·航空触接核心机制（任务2.1）');
+/* 数值护栏（用户已确认的首版数值，改动必须显式） */
+assert('触接首版数值与设计稿一致（85% 封顶 / 我方 +15% / 敌方固定 20% / 敌 +10%）',
+  Battle.TOUCH_MAX === 0.85 && Battle.TOUCH_MY_HIT === 1.15 &&
+  Battle.TOUCH_EN_RATE === 0.20 && Battle.TOUCH_EN_HIT === 1.10,
+  JSON.stringify([Battle.TOUCH_MAX, Battle.TOUCH_MY_HIT, Battle.TOUCH_EN_RATE, Battle.TOUCH_EN_HIT]));
+assert('制空加成表：确保 +20% / 优势 +10% / 均势·劣势 +0 / 丧失不可触接（null）',
+  Battle.TOUCH_AIR_BONUS.SURE === 0.20 && Battle.TOUCH_AIR_BONUS.SUP === 0.10 &&
+  Battle.TOUCH_AIR_BONUS.PAR === 0 && Battle.TOUCH_AIR_BONUS.INF === 0 &&
+  Battle.TOUCH_AIR_BONUS.LOST === null,
+  JSON.stringify(Battle.TOUCH_AIR_BONUS));
+
+/* 触接机种判定：舰攻 / 水侦（水爆同槽）/ 舰侦 参与；舰战、舰爆 不参与 */
+const touchPlaneSet = eqs => {
+  Game.state.fleet[1] = [intelEquipShip('enterprise', 99, 1, eqs)];
+  return Battle.touchReport(1);
+};
+assert('触接机种=舰攻（搭载 4 组舰攻 → 4 组触接机）', touchPlaneSet(['tbf', 'tbf', 'tbf', 'tbf']).planes === 4);
+assert('触接机种=舰侦（SBD VS-2 侦察飞行队）', touchPlaneSet(['sbdvs2']).planes === 1);
+assert('触接机种不含舰战（制空机不是触接机）', touchPlaneSet(['f6f5', 'f6f5', 'f6f5', 'f6f5']).planes === 0);
+assert('触接机种不含舰爆（设计稿只写「舰攻或侦察机」）', touchPlaneSet(['sb2c', 'sb2c', 'sb2c']).planes === 0);
+Game.state.fleet[1] = [intelEquipShip('iowa', 99, 1, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u'])];
+assert('触接机种含水侦（水上侦察机可以触接）', Battle.touchReport(1).planes === 1);
+
+/* 断言 12：确保 > 优势（方向正确），两者都不超过 85% */
+const touchRepCV = (() => { Game.state.fleet[1] = [intelEquipShip('enterprise', 99, 1, ['tbf', 'tbf', 'sbdvs2', 'os2u'])]; return Battle.touchReport(1); })();
+assert('制空确保的触接率显著高于优势（+10 个百分点）',
+  touchRepCV.rateSure > touchRepCV.rateSup && Math.abs((touchRepCV.rateSure - touchRepCV.rateSup) - 0.10) < 1e-9,
+  `SURE=${touchRepCV.rateSure.toFixed(3)} SUP=${touchRepCV.rateSup.toFixed(3)}`);
+assert('触接率不超过 85% 上限（多机也不越界）',
+  touchRepCV.rateSure <= 0.85 + 1e-9 &&
+  (() => { Game.state.fleet[1] = [mkFleet(['enterprise', 'essex', 'saratoga'], 99, 1)].length ? [] : []; return true; })(),
+  'SURE=' + touchRepCV.rateSure.toFixed(3));
+const touchMany = (() => {
+  Game.state.fleet[1] = [intelEquipShip('enterprise', 99, 1, ['tbf', 'tbf', 'tbf', 'tbf']),
+    intelEquipShip('essex', 99, 1, ['tbf', 'tbf', 'tbf', 'tbf']),
+    intelEquipShip('saratoga', 99, 1, ['tbf', 'tbf', 'tbf', 'tbf'])];
+  return Battle.touchReport(1);
+})();
+assert('12 组触接机：触接率被 85% 封顶钳制', touchMany.rateSure === 0.85, 'SURE=' + touchMany.rateSure);
+/* 均势 +0：触接率等于纯机载贡献 */
+assert('均势(+0) 的触接率 = Σ√(机载值)×5%（制空加成确实为 0）',
+  Math.abs(touchRepCV.ratePar - touchRepCV.base) <= 1e-3, `PAR=${touchRepCV.ratePar} base=${touchRepCV.base}`);
+
+/* 断言 13：制空权丧失时触接率恒为 0（显式断言） */
+assert('制空权丧失：触接率恒为 0（不可触接）',
+  Battle.touchRate(touchRepCV ? [] : [], 'LOST') === 0 && touchRepCV.rateLost === 0, 'rateLost=' + touchRepCV.rateLost);
+assert('未发生航空战（airKey=null）：触接率为 0',
+  touchRepCV.rateLost === 0 && touchMany.rateLost === 0);
+/* 实战验证：只带舰攻的航母（制空 0 → airKey=LOST）绝不产生「我方触接成功」 */
+Game.state.fleet[1] = [intelEquipShip('enterprise', 99, 1, ['tbf', 'tbf', 'tbf', 'tbf'])];
+let leakedTouch = 0, touchEnCnt = 0, touchNoneCnt = 0;
+for (let i = 0; i < 150; i++) {
+  const r = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+    { allowNight: false, fleetIdx: 1, airMode: true });
+  for (const e of r.log) {
+    if (e && e.event && e.event.kind === 'touch') {
+      if (e.event.side === 'A') leakedTouch++;
+      if (e.event.side === 'B') touchEnCnt++;
+    }
+  }
+  if (!r.touch) touchNoneCnt++;
+}
+assert('实战：制空权丧失（airKey=LOST）时我方触接事件恒为 0（断言）', leakedTouch === 0, 'n=' + leakedTouch);
+assert('我方触接不可行时日志给出原因', (() => {
+  const r = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+    { allowNight: false, fleetIdx: 1, airMode: true });
+  return r.log.some(l => typeof l === 'string' && /航空触接不可行|无法进行航空触接/.test(l));
+})());
+assert('回归：无触接机的编队（F22）日志说明「未搭载舰攻或侦察机」', (() => {
+  const f = [intelEquipShip('fletcher', 90, 0, ['gun5in_38', 'torp_mk15'])];
+  const r = Battle.battle(f, ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+    { allowNight: false, fleetIdx: 1, airMode: true });
+  return r.log.some(l => typeof l === 'string' && l.includes('未搭载舰攻或侦察机'));
+})());
+assert('敌方触接对称实现：制空权丧失时敌方仍可触接（固定 20%）', touchEnCnt > 0, 'n=' + touchEnCnt);
+
+section('批次2·触接命中叠加（坑 #10，最容易悄悄改坏难度的一处）');
+/* 断言 14：实际命中倍率 = 索敌加成 × 触接加成，且 _reconHit 未被覆盖 */
+Game.state.fleet[1] = [intelEquipShip('enterprise', 99, 1, ['f6f5', 'f6f5', 'tbf', 'sbdvs2']),
+  intelEquipShip('iowa', 99, 1, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u'])];
+let bothSample = null, myTouchCnt = 0, bothCnt = 0;
+for (let i = 0; i < 600 && !bothSample; i++) {
+  const r = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+    { allowNight: false, fleetIdx: 1, airMode: true });
+  if (r.touch === 'A') myTouchCnt++;
+  if (r.recon === true && r.touch === 'A') { bothCnt++; if (!bothSample) bothSample = r; }
+}
+assert('实战样本：确实出现过「索敌成功 + 我方触接成功」的场次', !!bothSample, `myTouch=${myTouchCnt} both=${bothCnt}`);
+assert('触接不覆盖索敌：同一舰上 _reconHit=1.03 与 _touchHit=1.15 同时存在',
+  !!bothSample && bothSample.mySide.every(s => s._reconHit === 1.03 && s._touchHit === 1.15),
+  bothSample ? JSON.stringify(bothSample.mySide.map(s => [s._reconHit, s._touchHit])) : '-');
+assert('实测合成命中倍率 = 索敌 1.03 × 触接 1.15 = 1.1845（+18.45%），不是 1.15',
+  !!bothSample && Math.abs(Battle.hitMods(bothSample.mySide[0]).total - 1.1845) < 1e-9,
+  bothSample ? Battle.hitMods(bothSample.mySide[0]).total : '-');
+assert('未触接/未索敌成功时命中乘区为 ×1（浮点乘 1 精确 → 逐位不变）',
+  Battle.hitMods({}).total === 1 && Battle.hitMods({ _reconHit: 1.03 }).total === 1.03 &&
+  Battle.hitMods({ _touchHit: 1.15 }).total === 1.15);
+assert('触接只作用于昼战：进入夜战前 _touchHit 被清除（夜间观测不适用）',
+  (() => {
+    const r = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+      { allowNight: true, fleetIdx: 1, airMode: true });
+    return r.mySide.every(s => s._touchHit === 1) && r.enemySide.every(s => s._touchHit === 1);
+  })());
+
+section('批次2·触接演出与日志（任务2.2）');
+/* 断言 17：成功时日志含关键字 + 事件顺序正确（航空战之后、炮击战之前） */
+let touchEvSample = null;
+for (let i = 0; i < 600 && !touchEvSample; i++) {
+  const r = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+    { allowNight: false, fleetIdx: 1, airMode: true });
+  if (r.recon === true && r.touch === 'A' && r.log.some(l => typeof l === 'string' && l.includes('触接成功'))) touchEvSample = r;
+}
+assert('触接成功：战斗日志含「触接成功」关键字', !!touchEvSample,
+  touchEvSample ? touchEvSample.log.filter(l => typeof l === 'string' && l.includes('触接')).join(' | ') : '(未取到样本)');
+assert('触接成功：事件对象已 push 进日志且 kind=\'touch\'（复用既有事件系统，不新建）',
+  !!touchEvSample && touchEvSample.log.some(l => l && l.event && l.event.kind === 'touch' && l.event.side === 'A'),
+  touchEvSample ? JSON.stringify(touchEvSample.log.filter(l => l && l.event && l.event.kind === 'touch')) : '-');
+assert('触接事件顺序正确：在航空战之后、第一轮炮击战之前',
+  !!touchEvSample && (() => {
+    const iAir = touchEvSample.log.findIndex(l => typeof l === 'string' && l.includes('航空战！我军制空'));
+    const iTouch = touchEvSample.log.findIndex(l => l && l.event && l.event.kind === 'touch' && l.event.side === 'A');
+    const iShell = touchEvSample.log.findIndex(l => typeof l === 'string' && l.includes('第一轮炮击战'));
+    return iAir >= 0 && iTouch > iAir && iShell > iTouch;
+  })(),
+  touchEvSample ? ['air', touchEvSample.log.findIndex(l => l && l.event && l.event.kind === 'touch' && l.event.side === 'A'),
+    touchEvSample.log.findIndex(l => typeof l === 'string' && l.includes('第一轮炮击战'))].join(',') : '-');
+/* 断言 18：触接失败 / 不可触接时 不产生该事件（防误报） */
+let noTouchEvLeak = 0, noTouchSample = 0;
+for (let i = 0; i < 200; i++) {
+  const r = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+    { allowNight: false, fleetIdx: 1, airMode: true });
+  if (r.touch) continue;
+  noTouchSample++;
+  for (const e of r.log) if (e && e.event && e.event.kind === 'touch') noTouchEvLeak++;
+}
+assert('未触接的场次：日志中不出现任何 touch 事件（防误报，样本有效）',
+  noTouchSample > 20 && noTouchEvLeak === 0, `sample=${noTouchSample} leak=${noTouchEvLeak}`);
+
+section('批次2·回归与情报室联动（任务2.1 断言15 / 任务2.3）');
+/* 断言 15：航空战阶段不发生的场景，触接不触发、不报错 */
+{
+  const r0 = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F13.ships, '单纵阵', ENEMY_FLEETS.F13.formation,
+    { allowNight: false, nightOnly: true, fleetIdx: 1 });
+  assert('回归：夜战节点（nightOnly）不触发触接、不报错',
+    r0.touch === null && !r0.log.some(l => l && l.event && l.event.kind === 'touch') &&
+    !r0.log.some(l => typeof l === 'string' && l.includes('触接')),
+    'touch=' + r0.touch);
+  /* 双方均无航空战力：编队与敌军都不带舰载机 → 连航空战阶段都不会进入 */
+  const noPlaneFleet = [intelEquipShip('fletcher', 90, 0, ['gun5in_38', 'torp_mk15', 'torp_mk15'])];
+  const r1 = Battle.battle(noPlaneFleet, ENEMY_FLEETS.F02.ships, '单纵阵', ENEMY_FLEETS.F02.formation,
+    { allowNight: false, fleetIdx: 1 });
+  assert('回归：双方均无航空战力时（F02）触接不触发、不报错', r1.touch === null, 'touch=' + r1.touch);
+}
+/* 开关：opts.touch === false 时整个阶段跳过（drift_check 靠它证明「除触接外一位未动」） */
+{
+  let leaked = 0;
+  for (let i = 0; i < 60; i++) {
+    const r = Battle.battle(Game.state.fleet[1], ENEMY_FLEETS.F22.ships, '单纵阵', ENEMY_FLEETS.F22.formation,
+      { allowNight: false, fleetIdx: 1, airMode: true, touch: false });
+    if (r.touch !== null) leaked++;
+    if (r.log.some(l => typeof l === 'string' && l.includes('触接'))) leaked++;
+  }
+  assert('opts.touch=false 时触接阶段完全关闭（无事件、无日志、不留状态）', leaked === 0, 'leak=' + leaked);
+}
+/* 情报室联动（任务2.3）：复用 Battle.touchReport，不另算 */
+Game.state.fleet[1] = [intelEquipShip('enterprise', 99, 1, ['f6f5', 'f6f5', 'tbf', 'sbdvs2'])];
+const intel23T = Sortie.intel(1, '2-3');
+assert('情报室含 touch 区块且与 Battle.touchReport 同源',
+  !!intel23T.touch && intel23T.touch.planes === 2 &&
+  intel23T.touch.rateSure === Battle.touchReport(1).rateSure,
+  JSON.stringify({ planes: intel23T.touch && intel23T.touch.planes, sure: intel23T.touch && intel23T.touch.rateSure }));
+assert('情报室 touch 区块报出「确保 / 优势 / 均势 / 丧失」四档触接率',
+  intel23T.touch.rateSure > intel23T.touch.rateSup && intel23T.touch.rateSup > intel23T.touch.ratePar &&
+  intel23T.touch.ratePar > intel23T.touch.rateLost && intel23T.touch.rateLost === 0,
+  [intel23T.touch.rateSure, intel23T.touch.rateSup, intel23T.touch.ratePar, intel23T.touch.rateLost].join(' / '));
+Game.state.fleet[1] = [intelEquipShip('fletcher', 90, 0, ['gun5in_38', 'torp_mk15', 'torp_mk15'])];
+assert('情报室：无触接机时 planes=0（UI 显示「无法触接」提示）', Sortie.intel(1, '2-3').touch.planes === 0);
+
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed ? 1 : 0);

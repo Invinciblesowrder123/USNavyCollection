@@ -11,6 +11,9 @@
     "test": "node scripts/simulate.js",
     "test:migration": "node scripts/test_save_migration.js",
     "test:e2e": "node scripts/e2e.js",
+    "drift": "node scripts/drift_check.js --against scripts/battle_digest.baseline.txt",
+    "drift:archive": "node scripts/drift_check.js --no-touch --against scripts/battle_digest.baseline_v0301.txt",
+    "shot": "node scripts/shot.js",
     "admin": "node scripts/create_admin.js"
   },
   "dependencies": {

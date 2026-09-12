@@ -272,6 +272,17 @@ const SortieUI = (() => {
         ? `<span class="ok">${Util.esc(it.reconGuide.detail)}</span>`
         : Util.esc(it.reconGuide.detail)}</div>`;
     }
+    /* 航空触接（批次2）：数值全部来自 Battle.touchReport（与战斗判定同源，UI 不另算） */
+    if (it.touch && (it.touch.planes > 0 || it.enemyAir > 0)) {
+      const tk = it.touch;
+      const pct = v => Math.round(v * 100) + '%';
+      const detail = tk.planes > 0
+        ? `搭载触接机 ${tk.planes} 组（${Util.esc(tk.planeNames.join('、'))}）——制空确保 ${pct(tk.rateSure)} ｜ 优势 ${pct(tk.rateSup)} ｜ 均势 ${pct(tk.ratePar)} ｜ 制空丧失不可触接；成功则炮击/雷击命中 ×${tk.hitBonus}`
+        : `未搭载舰攻或侦察机，无法触接（侦察机、舰攻均可；航母为主）`;
+      html += `<div class="morale-row"><b>航空触接</b>：${tk.planes > 0
+        ? `<span class="ok">${detail}</span>`
+        : `<span class="dim">${detail}</span>`}</div>`;
+    }
     html += specialsHtml(it.specials, it.airSup);
     if (m.threatNote) html += `<div class="md-threat"><b>威胁评估</b>：${Util.esc(m.threatNote)}</div>`;
     html += `<div class="dim">自检只作提示，不阻止出击。对位不满足、士气偏低仍可出击，失败后可按归因调整编成。</div>`;
@@ -754,6 +765,24 @@ const SortieUI = (() => {
       setTimeout(() => banner.remove(), 1150);
     }
 
+    /* ---- 航空触接演出（批次2）：侦察机盘旋标记 + 「触接成功」横幅（敌方触接为红色警示） ---- */
+    function touchAnim(ev) {
+      const b = bfBox();
+      const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+      const mine = ev.side === 'A';
+      const ring = mkEl('touch-ring' + (mine ? '' : ' en'));
+      put(ring, cx, cy);
+      document.body.appendChild(ring);
+      setTimeout(() => ring.remove(), 1250);
+      const banner = mkEl('recon-banner ' + (mine ? 'touch-ok' : 'touch-en'));
+      banner.textContent = mine
+        ? `触接成功！侦察机已捕获敌舰队（命中 ×${ev.hit}）`
+        : `敌方触接成功！敌军命中 ×${ev.hit}`;
+      put(banner, cx, cy - 34);
+      document.body.appendChild(banner);
+      setTimeout(() => banner.remove(), 1500);
+    }
+
     /* ---- 开幕空袭·第三步·轰炸（批量）：机群自高空俯冲轰炸舰队（纯俯冲，无起飞动作），
      * 命中/落水一次性结算。昼战空母航空攻击（未经历第一步起飞）时保留航母起飞爬升 ---- */
     function airStrikeBulkAnim(ev) {
@@ -1131,6 +1160,7 @@ const SortieUI = (() => {
         case 'airfight': airFightAnim(ev); break;
         case 'launch': launchAnim(ev); break;
         case 'recon': reconAnim(ev); break;
+        case 'touch': touchAnim(ev); break;
         case 'flak': (ev.shots ? flakBulkAnim(ev) : flakAnim(ev, atkEl, tgtEl)); break;
       }
     }
@@ -1142,6 +1172,7 @@ const SortieUI = (() => {
         case 'airfight': return Math.max(110, Math.round(flight * 0.3)) + 90 + Math.min(ev.dmg || 4, 10) * 18;
         case 'launch': return 340;
         case 'recon': return 1150;
+        case 'touch': return 900;
         case 'flak': return ev.shots ? (Math.max(140, Math.round(flight * 0.28)) + 200) : (Math.max(110, Math.round(flight * 0.3)) + 120 + Math.min(Math.max(ev.dmg || 3, 3), 4) * 25);
         default: return flight + 230;
       }
@@ -1156,7 +1187,7 @@ const SortieUI = (() => {
       skipped = true;
       clearTimeout(timerId);
       clearAirGroup();
-      root.querySelectorAll('.proj-shell,.proj-torp,.proj-plane,.bomb,.dc,.explosion,.dmg-num,.splash,.tracer,.flak-puff,.miss-txt,.recon-ring,.recon-banner')
+      root.querySelectorAll('.proj-shell,.proj-torp,.proj-plane,.bomb,.dc,.explosion,.dmg-num,.splash,.tracer,.flak-puff,.miss-txt,.recon-ring,.recon-banner,.touch-ring')
         .forEach(el => el.remove());
       root.querySelectorAll('.battle-ship.firing,.battle-ship.hit').forEach(el => el.classList.remove('firing', 'hit'));
       while (pos < entries.length) {

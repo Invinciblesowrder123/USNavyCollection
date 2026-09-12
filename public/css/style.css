@@ -871,6 +871,24 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
   color: #ffa090; background: rgba(58, 20, 16, .92);
   border: 1px solid rgba(255, 130, 100, .65); box-shadow: 0 0 16px rgba(255, 100, 80, .3);
 }
+/* 航空触接横幅（批次2）：我方成功=青蓝「侦察机已抓到敌舰队」，敌方成功=红色警示 */
+.recon-banner.touch-ok {
+  color: #bfe9ff; background: rgba(12, 40, 62, .94);
+  border: 1px solid rgba(120, 210, 255, .7); box-shadow: 0 0 18px rgba(90, 180, 255, .35);
+}
+.recon-banner.touch-en {
+  color: #ffb0b0; background: rgba(62, 16, 20, .94);
+  border: 1px solid rgba(255, 110, 110, .75); box-shadow: 0 0 18px rgba(255, 90, 90, .4);
+  animation: bannerIn .3s ease-out, touchPulse 0.6s ease-out 2;
+}
+@keyframes touchPulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+/* 侦察机盘旋标记（触接成功） */
+.touch-ring {
+  position: fixed; z-index: 618; width: 34px; height: 34px; margin: -17px 0 0 -17px;
+  border: 2px dashed rgba(150, 220, 255, .9); border-radius: 50%;
+  pointer-events: none; animation: whirlSpin 1.1s linear 2;
+}
+.touch-ring.en { border-color: rgba(255, 130, 130, .9); }
 @keyframes bannerIn { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 /* ---------- 海域地图（Kancolle风格海图） ---------- */

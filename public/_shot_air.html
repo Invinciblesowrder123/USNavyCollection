@@ -47,16 +47,19 @@
                      mk('benson', 70, ['gun5in_38', 'torp_mk15'])];
       var fleet = c === 'withCV'
         ? [mk('enterprise', 95, ['f6f5', 'f6f5', 'f6f5', 'sbdvs2'])].concat(escorts)
-        : escorts.slice();
+        : (c === 'touch'
+          ? [mk('enterprise', 95, ['f6f5', 'f6f5', 'tbf', 'sbdvs2']),
+             mk('essex', 90, ['f6f5', 'f6f5', 'tbf', 'soc'])].concat(escorts)
+          : escorts.slice());
       Game.state.fleet[1] = fleet;
       /* 制造部分攻略进度，便于看地图状态 */
       Game.state.mapProgress['1-1'].cleared = true; Game.state.mapProgress['1-1'].gauge = 0; Game.state.mapProgress['1-1'].kills = 3;
       Game.state.mapProgress['1-2'].cleared = true; Game.state.mapProgress['1-2'].gauge = 0; Game.state.mapProgress['1-2'].kills = 4;
       Game.state.mapProgress['2-3'].kills = 2; Game.state.mapProgress['2-3'].gauge = 3;
 
-      if (c === 'brief') {
+      if (c === 'brief' || c === 'touch') {
         SortieUI.mapList(scr);
-        /* 直接选中 2-3 展示海域详情（含作战简报 + 威胁评估） */
+        /* 直接选中 2-3 展示海域详情（含作战简报 + 威胁评估 + 编成自检） */
         var a2 = scr.querySelector('[data-area="2"]'); if (a2) a2.click();
         var m23 = scr.querySelector('[data-map="2-3"]'); if (m23) m23.click();
         return;

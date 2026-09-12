@@ -12,6 +12,10 @@
  *   node scripts/drift_check.js > scripts/battle_digest.baseline.txt   # 存基线
  *   node scripts/drift_check.js --against scripts/battle_digest.baseline.txt   # 与基线对拍
  *   node scripts/drift_check.js --against <另一个 public/js 目录>              # 与另一份代码对拍
+ *   USNC_NO_TOUCH=1 node scripts/drift_check.js --against scripts/battle_digest.baseline_v0301.txt
+ *       —— 关闭航空触接阶段（opts.touch=false，不消耗随机数）后与 V0.301 基线对拍。
+ *          这是「V0.302 除了新增触接判定之外，一位都没动」的证明手段：
+ *          触接是唯一新增的随机数消费者，把它关掉必须逐位回到 V0.301。
  *
  * 退出码：0 = 一致（或已打印摘要），1 = 存在差异 / 出错。
  * 注意：这是验证脚本，不是单元断言，不接入 `npm run sim`（跑统计才出结论的检查不塞进常规套件）。
@@ -77,11 +81,15 @@ const slowBB = mkFleet(['newyork', 'colorado', 'iowa', 'fletcher', 'benson', 'ma
 const ddOnly = mkFleet(['fletcher', 'benson', 'mahan', 'kidd', 'sims', 'bagley'], 70, 1);
 
 function hashStr(h, s) { for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffffffff; return h; }
+/* USNC_NO_TOUCH=1 / --no-touch：关闭航空触接阶段（该阶段是 V0.302 唯一新增的随机数消费者）。
+ * 关掉之后必须逐位回到 V0.301 基线 —— 这是「其余逻辑一位未动」的硬证明。 */
+const NO_TOUCH = process.env.USNC_NO_TOUCH === '1' || args.includes('--no-touch');
 function run(name, fleet, enemyKey, opts, n) {
   const en = ENEMY_FLEETS[enemyKey];
+  const base = NO_TOUCH ? Object.assign({}, opts, { touch: false }) : opts;
   let ranks = '', h = 5381, killed = 0, myDmg = 0, logLen = 0;
   for (let i = 0; i < n; i++) {
-    const r = Battle.battle(fleet, en.ships, '单纵阵', en.formation, Object.assign({ fleetIdx: 1 }, opts));
+    const r = Battle.battle(fleet, en.ships, '单纵阵', en.formation, Object.assign({ fleetIdx: 1 }, base));
     ranks += r.rank;
     killed += r.enemyKilled;
     myDmg += r.mySide.reduce((a, s) => a + s.dealt, 0);

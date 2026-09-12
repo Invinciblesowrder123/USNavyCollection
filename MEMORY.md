@@ -93,6 +93,15 @@ USNavyCollection/
     结算结果上挂 `r.airWing / r.airPassive`；`fleetStats()` 也带 `airWing / carriers / carrierNames`。
   - 节点进入横幅文案统一在 `Sortie.NODE_BANNER` + `Sortie.nodeBanner(def, {airWing, hasCarrier})`（**不逐图硬编码**）；
     `Sortie.usedNodeModes()` 供「文案表覆盖全部 mode」断言使用。UI 渲染在 `ui/sortie.js::sortieActive` 的 `.map-banner`。
+- **航空触接（批次2，数值用户已确认）**：昼战航空战结束后、炮击战开始前判定。
+  参与方＝搭载**舰攻 / 水侦（水爆同槽）/ 舰侦**的舰（**舰战、舰爆不参与**）。
+  成功率 `min(85%, Σ√(机载值)×5% + 制空加成)`；加成 确保 +20% / 优势 +10% / 均势·劣势 +0 / **丧失不可触接（null）**；
+  **一架触接机都没有 → 0**。本作舰攻无索敌面板 → 机载值取 `stat.los || stat.avg`。
+  成功 → 命中 ×1.15，走**独立字段 `_touchHit`**；**绝不覆盖索敌的 `_reconHit`（坑 #10）**，两者相乘 = **1.03×1.15 = 1.1845**。
+  命中乘区单点定义在 `Battle.hitMods(atk)`（`hitChance` 只读它）。敌方对称：固定 20%，敌命中 ×1.10。
+  触接**只作用于昼战**：`_touchHit` 在 `nightPhase` 开头清除。事件 `kind:'touch'`（复用既有事件系统）。
+  接口：`Battle.touchRate(side, airKey)` / `touchReport(fleetIdx)` / `isTouchPlane` / `TOUCH_*`；情报室 `Sortie.intel().touch`。
+  `opts.touch === false` 时整个阶段跳过且**不消耗随机数**——`npm run drift:archive` 靠它证明「除触接外一位未动」。
 - 舰队级能力接口（**唯一来源，UI 禁止另写一套**）：`Battle.fleetStats(fleetIdx)` / `enemyAirPower(key)` / `hasAirSuperiority(my,en)` / `specialAttackReport(fleetIdx,{airSup})`；
   `Game.fleetAir/fleetAsw/fleetNight/fleetSpeed/battleFleetStats` 是薄包装。「存档实例→战斗对象→聚合」链路只在 `battle.js` 内实现一次。
 - 特殊攻击判定表：`battle.js` 的 `DAY_SPECIALS`（5 项）/ `NIGHT_SPECIALS`（3 项）+ `attackProfile()`；`resolveDayAttack`/`resolveNightAttack` 与出击前清单**共用同一张表**，改倍率只改一处。
@@ -112,8 +121,10 @@ USNavyCollection/
   `Sortie.checkObjectives(map,ctx)` 是**纯函数**，只在 BOSS 节点判定；`noHeavy` 的"全程"由 `sortie.daPoSeen` 汇总。
   奖励一次性：`Progression.grantObjectiveRewards`（全局账本 `st.stats.objectives`），达成记录写进 `record.objectives`。
   **目标绝不影响主结算** —— 固定种子逐项对拍断言守着。
-- 战绩/战力核对工具：`scripts/drift_check.js`（固定种子 LCG → 9 组战斗场景 → 评价串/伤害/日志指纹）+ 基线 `scripts/battle_digest.baseline.txt`；
-  `scripts/recon_eng_paper.js`（方向五纸面验证复跑）。**改战斗代码前后必须跑 drift_check**。
+- 战绩/战力核对工具：`scripts/drift_check.js`（固定种子 LCG → 9 组战斗场景 → 评价串/伤害/日志指纹）+
+  **两份基线**：`scripts/battle_digest.baseline.txt`（当前版本）与 `scripts/battle_digest.baseline_v0301.txt`（V0.301 存档）。
+  `npm run drift` / `npm run drift:archive`（`--no-touch`，关掉触接后**必须逐位回到 V0.301** —— 这是「除新增机制外一位未动」的硬证明）。
+  **改战斗代码前后必须跑**。另有 `scripts/recon_eng_paper.js`（方向五复跑）、`scripts/shot.js`（无头浏览器截图，Gate 4）。
 - 失败归因：`game/sortie.js::attributionLines()` 是**纯函数**（输入 result/nodeDef/fleet/state → 输出归因行）；覆盖 sub / night / 制空不足 / 索敌失败 / 红脸。
   只在败局输出。结算结果里 `recon`/`myAir`/`enAir`/`airSup`/`airKey` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。结算结果里 `recon`/`myAir`/`enAir`/`airSup` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。
 
@@ -189,6 +200,13 @@ sim 1441 / 迁移 27 / E2E 133 全过，0 JS 错误；引擎逐位对拍仍零�
 `Sortie.NODE_BANNER/nodeBanner/usedNodeModes/mapHasAirNode`；2-3 补 `brief/threat/threatNote`。
 sim **1506** / 迁移 32 / E2E **165**（0 JS 错误）；**drift_check 9 组仍逐位一致**。
 工具新增 `scripts/shot.js`（无头浏览器截图，Gate 4）+ `public/_shot_air.html`（人工核对页）。
+
+**V0.302 批次2 · 航空触接（2026-09-12）**：昼战航空战结束后、炮击战开始前判定；
+成功率 `min(85%, Σ√(机载值)×5% + 制空加成)`（确保+20/优势+10/均势·劣势+0/**丧失不可触接**），无触接机 → 0；
+成功命中 ×1.15 走**独立字段 `_touchHit`**（**不覆盖 `_reconHit`**，相乘 = **1.1845**，坑 #10）；敌方固定 20% / ×1.10。
+事件 `kind:'touch'` + 演出 + 情报室「航空触接」行。**触接是唯一新增的随机数消费者**：
+`npm run drift` 对当前基线逐位一致；`npm run drift:archive`（关掉触接）**逐位回到 V0.301**，证明其余逻辑未动。
+sim **1538** / 迁移 32 / E2E **173**（0 JS 错误）。
 
 ## 反遗忘检查清单
 
