@@ -25,6 +25,7 @@
   <script src="js/ui/sortie.js"></script>
   <script>
     /* 航空战点（2-3 A）人工核对页：?case=noCV 无航母 / withCV 带舰战航母 / brief 海域简报
+     * 其它 case：touch 触接 / brief15 1-5 / brief21 2-1（简报补全回归）/ brief35 3-5 / brief44 4-4 / nodes35 3-5 节点
      * 用法：npm start 后打开 http://127.0.0.1:3000/_shot_air.html?case=noCV */
     window.addEventListener('load', function () {
       var q = new URLSearchParams(location.search);
@@ -93,6 +94,14 @@
         SortieUI.mapList(scr);
         var a1 = scr.querySelector('[data-area="1"]'); if (a1) a1.click();
         var m15 = scr.querySelector('[data-map="1-5"]'); if (m15) m15.click();
+        return;
+      }
+      if (c === 'brief21') {
+        /* 2-1 图拉吉急袭：用户报「没有任务简报」的那一张 —— 本图无特殊节点，
+         * 但设计稿 §5 要求「每海域」都有 brief（回归见 scripts/simulate.js 简报覆盖率断言） */
+        SortieUI.mapList(scr);
+        var a2b = scr.querySelector('[data-area="2"]'); if (a2b) a2b.click();
+        var m21 = scr.querySelector('[data-map="2-1"]'); if (m21) m21.click();
         return;
       }
       var st = Sortie.start('2-3', 1);

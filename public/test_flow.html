@@ -369,10 +369,22 @@
       R(!!intelEl && intelEl.innerHTML.indexOf('舰队能力') >= 0, 'layout:intelContentInBox');
       R(!!intelEl && document.querySelector('#screen .map-detail').innerHTML.indexOf('舰队能力') < 0,
         'layout:intelNotLeftInRightColumn');
+      /* ===== 回归：作战简报必须覆盖**全部 25 图**（2026-09-12 用户反馈「2-1 没有任务简报」）=====
+       * 设计稿 §5 写的是「maps.js **每海域**新增 brief 字段」—— 1-1 这类无特殊节点的图同样要有简报。
+       * 旧断言 layout:noBriefBoxWhenMapHasNone 断言的是「1-1 没有简报框」，
+       * 等于把 bug 当成规格写进了测试，所以它一直是绿的。现改为「每张图都要渲染出非空简报」，
+       * 全量覆盖（25 图）由引擎断言负责，这里抽样验证真实 DOM 渲染。 */
       goArea('1', '1-1');
-      R(!document.querySelector('#screen .sortie-brief'), 'layout:noBriefBoxWhenMapHasNone');
-      /* 无作战简报的图（1-1）仍有自检 box —— box 不依赖 brief */
+      const brief11 = document.querySelector('#screen .map-detail .sortie-brief');
+      R(!!brief11, 'brief:1-1Rendered');
+      R(!!brief11 && brief11.textContent.trim().length > 20, 'brief:1-1NotEmpty',
+        'len=' + (brief11 ? brief11.textContent.trim().length : 0));
       R(!!document.querySelector('#screen .sortie-mapside > .sortie-intel'), 'layout:intelBoxWithoutBrief');
+      /* 用户报的那张：2-1 图拉吉急袭 —— 简报必须存在且含本图关键字（防「渲染了空框」） */
+      goArea('2', '2-1');
+      const brief21 = document.querySelector('#screen .map-detail .sortie-brief');
+      R(!!brief21 && brief21.textContent.indexOf('图拉吉') >= 0, 'brief:2-1Rendered',
+        brief21 ? brief21.textContent.replace(/\s+/g, ' ').slice(0, 40) : '(null)');
       /* 失败归因（制空/索敌）与防误报 */
       const attrBad = Sortie.attributionLines({ result: { victory: false, rank: 'D', myAir: 100, enAir: 400, airSup: false, recon: false }, nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state });
       const attrOk = Sortie.attributionLines({ result: { victory: false, rank: 'D', myAir: 400, enAir: 100, airSup: true, recon: true }, nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state });

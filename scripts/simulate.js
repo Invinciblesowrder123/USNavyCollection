@@ -86,6 +86,31 @@ for (const id of strongIds) {
   Game.equipDefaults(s.uid);
   strongFleet.push(s.uid);
 }
+/* ---------------------------------------------------------------------------
+ * 测试基建：strongFleet 被后续十几个 section 复用（出击 / 远征 / 养成 / 记录 …），
+ * 但**大破进击会轰沉并从 `Game.state.ships` 移除该舰**（见本文件「大破进击僚舰轰沉」断言）。
+ * 后果：只要某次战斗让某舰大破、下一次进击就把它沉掉，`Game.state.ships[u]` 从此取到 undefined，
+ *       整个套件抛出 TypeError 而非断言失败 —— 表现为**随机崩溃**（实测约 8% 的跑次）。
+ * 2026-09-12 定位：崩溃点是 1-5 消耗测试（连打 3 场）与 ex8 远征；根因是 strongFleet 未做保全。
+ * repairStrongFleet()：把缺失的舰按原配置、原序号重建，并把全队耐久补满（健康舰队不会再被轰沉）。
+ * 注意：重建的舰 supply 会是满值 —— 因此**凡是断言油弹消耗的段落，必须靠「提前补满耐久」避免击沉**，
+ *      而不能依赖重建（重建会污染 min() 取值）。
+ * --------------------------------------------------------------------------- */
+function repairStrongFleet() {
+  for (let i = 0; i < strongFleet.length; i++) {
+    let s = Game.state.ships[strongFleet[i]];
+    if (!s) {
+      s = Game.createShip(strongIds[i], 99);
+      s.kai = 2;
+      Game.equipDefaults(s.uid);
+      strongFleet[i] = s.uid;
+      s = Game.state.ships[s.uid];
+    }
+    s.hp = Game.shipStats(s.uid).hpMax;
+  }
+  return strongFleet;
+}
+repairStrongFleet();
 let bossWins = 0, bossS = 0;
 for (let i = 0; i < 50; i++) {
   const r = Battle.battle(strongFleet, ENEMY_FLEETS.F09.ships, '单纵阵', ENEMY_FLEETS.F09.formation, { allowNight: true, fleetIdx: 1 });
@@ -201,6 +226,45 @@ assert('特殊节点总数：夜战 5 / 潜艇 6 / 航空战 4 / 漩涡 5',
     .filter(m => !(typeof m.brief === 'string' && m.brief.length > 20)).map(m => m.id);
   assert('所有含特殊节点的海域都写了作战简报（P0-6）', noBrief.length === 0, noBrief.join('、'));
 }
+/* 作战简报覆盖率：设计稿 §5「maps.js **每海域**新增 brief 字段」——是全 25 图，不是只有含特殊节点的图。
+ * 回归来源（2026-09-12 用户反馈「2-1 没有任务简报」）：上面那条断言只查含特殊节点的海域（11 图），
+ * 于是 1-1/1-2/1-3/2-1/4-1~4-5/5-1~5-5 共 14 图漏网，且**没有任何断言能拦住**。
+ * 教训：覆盖类断言要按「文案要求的范围」写，不能按「当前已实现的范围」写，否则永远为真。 */
+{
+  const lack = MAPS.filter(m => !(typeof m.brief === 'string' && m.brief.length > 20)).map(m => m.id);
+  assert('全部 25 张海域都配置了作战简报（设计稿 §5：每海域）', lack.length === 0, '缺=' + lack.join('、'));
+  assert('作战简报无 undefined / 空文本残留',
+    MAPS.every(m => m.brief && !m.brief.includes('undefined') && m.brief.trim().length > 20));
+}
+/* 文案不得声称不存在的特殊节点 —— 规范 §8.4「文案所说的威胁是否真的存在于节点逻辑中？」，
+ * 方向做成**双向**：既不许编造节点，有节点的图也必须在简报里点明（否则玩家无从准备）。 */
+{
+  const NODE_CLAIM = {
+    night: ['夜战节点', '夜战点'],
+    sub: ['潜艇伏击点', '潜艇点'],
+    air: ['航空战节点', '航空战点'],
+    whirl: ['异常洋流', '漩涡']
+  };
+  const modesOf = mp => {
+    const s = new Set();
+    for (const d of Object.values(mp.defs)) {
+      if (d.mode) s.add(d.mode);
+      if (d.type === 'whirlpool') s.add('whirl');
+    }
+    return s;
+  };
+  const fake = [], silent = [];
+  for (const mp of MAPS) {
+    const have = modesOf(mp);
+    const all = [mp.brief || '', mp.desc || '', mp.threatNote || ''].join('\n');
+    for (const k in NODE_CLAIM) {
+      if (NODE_CLAIM[k].some(w => all.includes(w)) && !have.has(k)) fake.push(mp.id + '·' + NODE_CLAIM[k][0]);
+      if (have.has(k) && !NODE_CLAIM[k].some(w => (mp.brief || '').includes(w))) silent.push(mp.id + '·' + k);
+    }
+  }
+  assert('文案未声称不存在的特殊节点（防编造威胁）', fake.length === 0, fake.join('、'));
+  assert('含特殊节点的海域，其作战简报点明了该节点类型', silent.length === 0, silent.join('、'));
+}
 for (const bid of ['1-4', '2-2', '2-3', '3-1']) {
   const mm = MAPS.find(x => x.id === bid);
   assert(`${bid} 作战简报已配置`, typeof mm.brief === 'string' && mm.brief.length > 20);
@@ -294,15 +358,18 @@ assert('1-5 D/E 仍为反潜节点（油8% / 弹0）',
   ['D', 'E'].every(n => c15.defs[n].cost && c15.defs[n].cost.ammo === 0 && c15.defs[n].cost.fuel === 0.08),
   JSON.stringify([c15.defs.D.cost, c15.defs.E.cost]));
 const costPrevFleet = Game.state.fleet[1].slice();
+repairStrongFleet();   // 进点前补满：本段连打 3 场，若有大破舰就会进击轰沉 → 后续 section 全崩
 Game.state.fleet[1] = strongFleet;
 const costStart = Sortie.start('1-5', 1);
 assert('1-5 解锁后可出击（cost测试前置）', costStart.ok === true, JSON.stringify(costStart));
 const costS = Sortie.advance('单纵阵', true);   // S 出发点：无消耗
 Sortie.moveToNext();
+repairStrongFleet();   // 每战前补满耐久：本段只测消耗，不验证击沉（补耐久不改 supply，min() 取值不受影响）
 const costA = Sortie.advance('单纵阵', true);   // A 夜战点：按夜战消耗
 Sortie.moveToNext();
 const ammoBeforeD = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.ammo));
 const fuelBeforeD = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.fuel));
+repairStrongFleet();
 const costD = Sortie.advance('单纵阵', true);   // D 反潜点：油8%/弹0
 const ammoAfter = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.ammo));
 const fuelAfter = Math.min(...strongFleet.map(u => Game.state.ships[u].supply.fuel));
@@ -502,6 +569,7 @@ assert('解锁后可解体', Factory.scrapEquip(eqL.uid).ok);
 Game.state.fleet[1] = starterFleetBackup;
 /* 远征奖励包含开发资材（ex8：+2） */
 const ex8DevMats = Game.state.resources.devMats;
+repairStrongFleet();   // 远征要求 6 舰编成：若前面的战斗有舰被轰沉，这里先补回来
 Game.state.fleet[1] = strongFleet.slice();
 const ex8 = Logistics.startExpedition(1, 'ex8');
 Game.state.expeditions[1].end = Date.now() - 1;
@@ -552,6 +620,7 @@ assert('领取日常奖励', cq.ok && Game.state.resources.fuel >= 100, JSON.str
 section('出击流程（1-1 全流程，强舰队 ×5）');
 /* 用强舰队替换舰队1 */
 Game.state.fleet[1] = strongFleet;
+repairStrongFleet();
 for (const uid of strongFleet) {
   const s = Game.state.ships[uid];
   s.hp = Game.shipStats(uid).hpMax;
@@ -559,6 +628,7 @@ for (const uid of strongFleet) {
 }
 let cleared = 0;
 for (let i = 0; i < 5; i++) {
+  repairStrongFleet();   // 每轮出击前补满（循环内 advance(true) 可能让大破舰被轰沉，uid 消失会崩）
   for (const uid of strongFleet) {
     const s = Game.state.ships[uid];
     s.hp = Game.shipStats(uid).hpMax;
@@ -685,6 +755,7 @@ const exFlagExp = Game.state.ships[exFleet[0]].exp, exOtherExp = Game.state.ship
 assert('远征经验：基础30×(旗舰1.5×随机2倍×大成功2倍)', exFlagExp > 0 && exOtherExp > 0 && exFlagExp % 15 === 0 && exOtherExp % 15 === 0 && exFlagExp >= exOtherExp / 2,
   `flag=${exFlagExp} other=${exOtherExp}`);
 /* 旗舰大破禁出击 */
+repairStrongFleet();
 Game.state.fleet[1] = strongFleet;
 const fs = Game.state.ships[strongFleet[0]];
 fs.hp = Math.floor(Game.shipStats(fs.uid).hpMax * 0.2);
@@ -704,6 +775,8 @@ assert('大破进击战斗正常', dsAdv.ok && dsAdv.type === 'battle');
 assert('大破进击僚舰轰沉', !Game.state.ships[doomedShip.uid]);
 assert('战斗日志包含轰沉提示', dsAdv.result.log.some(l => typeof l === 'string' && l.includes('轰沉')));
 Sortie.returnHome();
+/* 本测试故意轰沉 strongFleet[2]：立刻重建，否则后续所有复用 strongFleet 的 section 都会取到 undefined */
+repairStrongFleet();
 
 section('近代化改修（wiki标准：素材值/奖励偏斜/上限/海防舰/改造重置）');
 /* 素材属性值表 */
@@ -1226,7 +1299,9 @@ function catsBefore(idx) {
   return c;
 }
 const textFindings = [];
-for (const id of ANNOTATED) {
+/* 覆盖范围 = **全部 25 图**（原只查已声明威胁的 21 图，漏掉了 1-1/2-1/5-2/5-3 这类无维度图
+ * —— 它们同样有 brief，文案同样可能推荐玩家当时拿不到的舰种/装备） */
+for (const id of MAPS.map(x => x.id)) {
   const m = MAPS.find(x => x.id === id);
   const idx = MAPS.findIndex(x => x.id === id);
   const text = [m.brief || '', m.threatNote || ''].join('\n');
@@ -1234,6 +1309,12 @@ for (const id of ANNOTATED) {
   for (const w in TYPE_WORDS) if (text.includes(w) && !TYPE_WORDS[w].some(x => ty.has(x))) textFindings.push(`${id}·舰种「${w}」`);
   for (const w in CAT_WORDS) if (text.includes(w) && !CAT_WORDS[w].some(x => ca.has(x))) textFindings.push(`${id}·装备「${w}」`);
 }
+/* ⚠️ 可证伪性说明（2026-09-12 实测，负向对照用例 D 证实）：
+ * 本项目**建造 / 开发自始解锁** —— typesBefore() 把整个可建造池（DD/DE/CL/CA/CVL/CV/CVB/BB/SS/AV 全 10 种）
+ * 与全部可开发装备类别都算作「已可获得」，而文案里能提到的舰种与类别**全部落在池内**。
+ * 因此这条断言当前是**恒真式**：任何现实文案都不会让它变红。
+ * 保留的意义：① 覆盖范围已从 21 图扩到全 25 图；② 日后若把建造/开发改为按区域解锁，它立刻恢复判别力。
+ * **不要把它当成 P0-3 的有效守护** —— 真正的守护是上面的「简报覆盖率」与「不许编造节点」两条。 */
 assert('文案提到的舰种/装备在到达该图前均可获得（P0-3）', textFindings.length === 0, textFindings.join('、'));
 assert('威胁说明逐项覆盖已声明维度（文案与机制同步）', ANNOTATED.every(id => {
   const m = MAPS.find(x => x.id === id);
