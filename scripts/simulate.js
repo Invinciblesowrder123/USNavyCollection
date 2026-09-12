@@ -1074,7 +1074,8 @@ const mapHasWhirl = m => Object.values(m.defs).some(d => d.type === 'whirlpool')
 const mapHasLos = m => { const b = m.branch ? (Array.isArray(m.branch) ? m.branch : [m.branch]) : []; return b.some(x => x.if && x.if.los); };
 const mapHasAir = m => Object.values(m.defs).some(d => (d.type === 'battle' || d.type === 'boss') && d.enemy && Battle.enemyAirPower(d.enemy) > 0);
 const THREAT_RULES = [['asw', mapHasSub], ['night', mapHasNight], ['radar', mapHasWhirl], ['los', mapHasLos], ['air', mapHasAir]];
-const ANNOTATED = ['1-2', '1-5', '1-4', '2-2', '2-3', '2-4', '2-5', '3-1', '3-2', '3-3', '3-4', '3-5'];
+const ANNOTATED = ['1-2', '1-3', '1-4', '1-5', '2-2', '2-3', '2-4', '2-5', '3-1', '3-2', '3-3', '3-4', '3-5',
+  '4-1', '4-2', '4-3', '4-4', '4-5', '5-1', '5-4', '5-5'];
 const vocabBad = [], exactBad = [], forwardBad = [];
 let annotatedCount = 0;
 for (const m of MAPS) {
@@ -1104,8 +1105,19 @@ assert(`${ANNOTATED.length} 张图均有威胁说明文案`, ANNOTATED.every(id 
   return (m.threat || []).length > 0 && (m.threatNote || '').length > 20;
 }));
 assert('未声明维度的海域：对位结果为空且不报错',
-  Sortie.threatCheck(1, MAPS.find(m => m.id === '1-3')).length === 0 &&
-  Sortie.threatCheck(1, MAPS.find(m => m.id === '1-3')) instanceof Array);
+  Sortie.threatCheck(1, MAPS.find(m => m.id === '1-1')).length === 0 &&
+  Sortie.threatCheck(1, MAPS.find(m => m.id === '1-1')) instanceof Array &&
+  Sortie.threatCheck(1, MAPS.find(m => m.id === '2-1')).length === 0);
+/* 铺满后统计：可推导出维度的海域必须全部已声明（未声明的只剩「推导为空」的纯净图） */
+{
+  const derivedOf = m => THREAT_RULES.filter(r => r[1](m)).map(r => r[0]);
+  const shouldDeclare = MAPS.filter(m => derivedOf(m).length > 0).map(m => m.id);
+  const missing = shouldDeclare.filter(id => !ANNOTATED.includes(id));
+  assert('所有可推导出威胁维度的海域都已声明（铺满）', missing.length === 0, missing.join('、'));
+  assert('未声明的海域推导结果为空（没有"有维度却不声明"的图）',
+    MAPS.filter(m => !ANNOTATED.includes(m.id)).every(m => derivedOf(m).length === 0),
+    MAPS.filter(m => !ANNOTATED.includes(m.id) && derivedOf(m).length > 0).map(m => m.id).join('、'));
+}
 assert('声明海域的对位维度键合法', Sortie.intel(1, '3-1').threats.every(t => Sortie.THREAT_KEYS.includes(t.key)));
 
 section('方向一·编成自检与特殊攻击清单（任务1.3）');
@@ -1514,16 +1526,20 @@ assert('连续通关不刷新首通时间戳（只写一次）',
 {
   const order = [];
   for (const mp of MAPS) {
-    if (!['1', '2', '3'].includes(mp.id.split('-')[0])) continue;
     for (const id of mp.bossDrops || []) if (!order.includes(id)) order.push(id);
   }
-  assert('1-x/2-x/3-x 的 BOSS 掉落舰均有舰史 bio',
+  assert('全部海域（含 4-x/5-x）的 BOSS 掉落舰均有舰史 bio',
     order.every(id => ShipData[id] && (ShipData[id].bio || '').length >= 8),
     order.filter(id => !(ShipData[id] && ShipData[id].bio)).join(','));
-  assert('舰史数量 ≥40 且无空文本/undefined',
-    Object.values(ShipData).filter(d => d.bio).length >= 40 &&
+  assert('舰史数量 ≥49 且无空文本/undefined',
+    Object.values(ShipData).filter(d => d.bio).length >= 49 &&
     Object.values(ShipData).every(d => d.bio === undefined || (d.bio.length >= 8 && !d.bio.includes('undefined'))),
     'n=' + Object.values(ShipData).filter(d => d.bio).length);
+  assert('4-x/5-x 新增舰史覆盖全部缺失的 BOSS 掉落舰（7 艘）',
+    ['indiana', 'maryland', 'ticonderoga', 'england', 'newjersey', 'wisconsin', 'midway']
+      .every(id => (ShipData[id].bio || '').length >= 8),
+    ['indiana', 'maryland', 'ticonderoga', 'england', 'newjersey', 'wisconsin', 'midway']
+      .filter(id => !(ShipData[id].bio || '').length).join(','));
   const twoGram = s => { const out = []; for (let i = 0; i + 2 <= s.length; i++) out.push(s.slice(i, i + 2)); return out; };
   const sinkObj = s => { const m2 = s.match(/击沉([^。；！\s]{2,10})/); return m2 ? m2[1] : null; };
   const starNum = s => { const m2 = s.match(/([0-9]+)\s*枚?战星/); return m2 ? m2[1] : null; };
@@ -1540,9 +1556,11 @@ assert('连续通关不刷新首通时间戳（只写一次）',
   assert('舰史与台词中的历史事实不矛盾', contra.length === 0, contra.join('、'));
   const REUSE = { sanfrancisco: '铁底湾', quincy: '萨沃岛', laffey: '不会沉没', yorktown: '中途岛', hornet: '杜立特',
     southdakota: '圣克鲁斯', washington: '雾岛', enterprise: '灰色幽灵', colorado: '大七', intrepid: '硬脖子',
-    alabama: '无一名士兵阵亡', massachusetts: '北非', albacore: '大凤', harder: '驱逐舰', nevada: '珍珠港', vestal: '珍珠港' };
+    alabama: '无一名士兵阵亡', massachusetts: '北非', albacore: '大凤', harder: '驱逐舰', nevada: '珍珠港', vestal: '珍珠港',
+    /* 批次4.2 新补的 4-x/5-x 舰史，同样复用台词里已埋的真史原料 */
+    indiana: '二号舰', maryland: '苏里高', england: '十二天', ticonderoga: '长舰体', midway: '装甲飞行甲板' };
   const notReused = Object.keys(REUSE).filter(id => !(ShipData[id].bio || '').includes(REUSE[id]));
-  assert('舰史复用台词中已埋的真史原料（16 艘显式核对）', notReused.length === 0, notReused.join('、'));
+  assert('舰史复用台词中已埋的真史原料（21 艘显式核对）', notReused.length === 0, notReused.join('、'));
 }
 
 section('方向四·海域作战目标（任务4.1–4.3）');
@@ -1837,6 +1855,15 @@ assert('情报室 2-3：无航母 → air 对位不满足，且文案指明「�
   intel23NoCV.threats.find(t => t.key === 'air').ok === false &&
   /没有航空母舰|未搭载/.test(intel23NoCV.threats.find(t => t.key === 'air').detail),
   intel23NoCV.threats.find(t => t.key === 'air').detail);
+/* 文案与实际规则一致：只有「含航空战节点」的图才提「被动防空」；普通图只能说「丧失制空权」（防承诺不存在的机制） */
+assert('情报室文案区分「航空战点（被动防空）」与「普通图（丧失制空权）」',
+  (() => {
+    const d23 = intel23NoCV.threats.find(t => t.key === 'air').detail;
+    const d41 = Sortie.intel(1, '4-1').threats.find(t => t.key === 'air').detail;
+    return d23.includes('被动迎击') && d23.includes('航空战点') && !d41.includes('被动迎击');
+  })(),
+  JSON.stringify([intel23NoCV.threats.find(t => t.key === 'air').detail,
+    Sortie.intel(1, '4-1').threats.find(t => t.key === 'air').detail]));
 Game.state.fleet[1] = airFleetFighter;
 const intel23CV = Sortie.intel(1, '2-3');
 assert('情报室 2-3：带舰战航母 → air 对位满足（同源自 fleetStats.airWing）',
@@ -2198,6 +2225,35 @@ assert('前置事实：初始舰含 DD（对潜保底）',
   }
   assert('规则3 运行时兑现：漩涡扣损 ≤ min(lossBase, 燃料×10%)，燃料 0 时不产生负数',
     ok, detail.join(' | ') + ` expect=${probes.map(p => p.expect).join('/')}`);
+}
+
+section('批次4.3·作战目标扩展（+2，追问「迫使改编成」还是「多点一下按钮」）');
+{
+  const objOf = (mid, oid) => {
+    const m = MAPS.find(x => x.id === mid);
+    return m && (m.objectives || []).find(o => o.id === oid);
+  };
+  const newOnes = [['3-4', '3-4-cv2'], ['3-5', '3-5-dd4']];
+  assert('新增目标存在于 3-4 / 3-5', newOnes.every(([mid, oid]) => !!objOf(mid, oid)));
+  /* 「迫使改编成」的判据：类型是编成型（typeLimit），且门槛不是"带 1 艘就行"（min ≥2）——
+   * 6 个编成位里让出 2 个以上给指定舰种，必然牺牲其他维度的输出（制空/夜战/对潜） */
+  assert('新增目标都是「迫使改编成」型（typeLimit 且 min ≥2，不是「多点一下按钮」）',
+    newOnes.every(([mid, oid]) => {
+      const o = objOf(mid, oid);
+      return o && o.type === 'typeLimit' && (o.min || 1) >= 2;
+    }),
+    newOnes.map(([mid, oid]) => JSON.stringify(objOf(mid, oid))).join(' | '));
+  /* 与所在图的实际节点威胁对位：3-4 有航空战点 → 空母目标与机制一致；3-5 有潜艇点 → 驱逐目标与机制一致 */
+  assert('3-4 的「≥2 空母」与 C 点航空战点对位', MAPS.find(m => m.id === '3-4').defs.C.mode === 'air');
+  assert('3-5 的「≥4 驱逐舰」与 G 点潜艇伏击对位', MAPS.find(m => m.id === '3-5').defs.G.mode === 'sub');
+  /* 只在 BOSS 判定 + 出击前能预览（复用既有纯函数） */
+  const p34 = Sortie.objectivePreview(MAPS.find(m => m.id === '3-4'), 1);
+  assert('3-4 新目标可出击前预览（typeLimit 可核对）',
+    p34.length === 1 && p34[0].pre && typeof p34[0].pre.ok === 'boolean' && /当前 \d+ 艘/.test(p34[0].pre.now),
+    JSON.stringify(p34));
+  assert('新目标不在道中节点判定（objectiveMet 只看 BOSS）',
+    Sortie.objectiveMet(objOf('3-4', '3-4-cv2'), { nodeDef: { type: 'battle' }, result: { rank: 'S' }, fleetTypes: ['CV', 'CV'] }) === false &&
+    Sortie.objectiveMet(objOf('3-4', '3-4-cv2'), { nodeDef: { type: 'boss' }, result: { rank: 'S' }, fleetTypes: ['CV', 'CV'] }) === true);
 }
 
 section('总结');

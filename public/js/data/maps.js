@@ -271,6 +271,9 @@ const MAPS = [
   },
   {
     id: '1-3', name: '珍珠港近海', desc: '深海空母栖姬的机动部队迫近！这是舰队的决战！', stars: 5,
+    /* threat：air ← B 点敌军 F07 含空母；asw ← BOSS F09 编成含潜水舰；los ← branch.if.los */
+    threat: ['air', 'asw', 'los'],
+    threatNote: '本海域考验制空、对潜与索敌。索敌≥40 可直取 B 点空母部队；否则绕经 E 补给点调整状态。BOSS 编成含深海空母栖姬与潜水舰：未携带舰战将丧失制空，未编入对潜舰艇则会被潜艇单方面雷击。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 40, boss: 380 },     // 提督经验（wiki 1-3: 道中+40 / BOSS+380）
     nodes: {
@@ -536,6 +539,10 @@ const MAPS = [
       D: { type: 'boss', enemy: 'F46' }
     },
     branch: { at: 'S', if: { los: 80 }, to: ['A'] },   // 索敌≥80 走燃料补给线；否则直接迎击
+    /* 作战目标（方向四 / 批次4.3）：≥2 空母 —— 与「走 B 线还能带够火力」直接冲突（空母挤掉水面输出位） */
+    objectives: [
+      { id: '3-4-cv2', type: 'typeLimit', types: ['CV', 'CVB', 'CVL'], min: 2, desc: '编成含 ≥2 艘空母（C 点航空战点需夺制空）', reward: { baux: 600, fuel: 400 } }
+    ],
     drops: ['indiana', 'westvirginia', 'tennessee', 'newmexico'],
     bossDrops: ['missouri', 'enterprise', 'essex', 'intrepid']
   },
@@ -612,12 +619,19 @@ const MAPS = [
       K: { type: 'boss', enemy: 'F59' }      // 敌增援主力：轻巡Tsu级+输送舰队
     },
     branch: { at: 'S', if: { dd: 5 }, to: ['W'] },   // 驱逐舰≥5 走下路（W 洋流 → F → G → K）；否则走上路（B-D-H 遇北方栖姬）
+    /* 作战目标（方向四 / 批次4.3）：≥4 驱逐舰 —— 与「D 点航空战要舰战、B 点夜战要火力」三方争 6 个位置 */
+    objectives: [
+      { id: '3-5-dd4', type: 'typeLimit', types: ['DD'], min: 4, desc: '编成含 ≥4 艘驱逐舰（G 点潜艇伏击；代价是制空与夜战输出位被压缩）', reward: { fuel: 700, ammo: 700 } }
+    ],
     drops: ['tang', 'barb'],
     bossDrops: ['saratoga', 'intrepid', 'westvirginia', 'harder', 'albacore', 'cleveland']
   },
   /* ==================== 4.中太平洋海域（马绍尔/马里亚纳，wiki 6-X） ==================== */
   {
     id: '4-1', name: '马绍尔群岛近海', desc: '挺进中太平洋！深海在环礁之间布下了哨戒线。', stars: 11,
+    /* threat：asw ← A 点敌军 F60 含潜水舰；air ← BOSS F63 含轻空母 Nu 级；los ← branch.if.los */
+    threat: ['air', 'asw', 'los'],
+    threatNote: '本海域考验对潜、索敌与制空。A 点为对潜警戒线（敌军含潜水舰），索敌≥35 可直接切入该线；BOSS 为轻空母旗舰部队，未搭载舰战将丧失制空权。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 130, boss: 2000 },   // 提督经验（wiki 6-1: 道中+130 / BOSS+2000）
     nodes: {
@@ -637,6 +651,9 @@ const MAPS = [
   },
   {
     id: '4-2', name: '夸贾林环礁海域', desc: '世界最大环礁的要塞！夺取铝土补给线并击破守军。', stars: 11,
+    /* threat：air ← A 点/BOSS 敌军含轻空母 Nu 级；los ← branch.if.los */
+    threat: ['air', 'los'],
+    threatNote: '本海域考验制空与索敌。索敌≥45 可切入 B 点铝土补给线；A 点与 BOSS 编成均含敌空母，未编入航母并搭载舰战将丧失制空权。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 140, boss: 2100 },   // 提督经验（wiki 6-3: 道中+140 / BOSS+2100）
     nodes: {
@@ -656,6 +673,9 @@ const MAPS = [
   },
   {
     id: '4-3', name: '塞班岛攻略', desc: '登陆塞班岛！突破空袭与夜战的双重防线。', stars: 12,
+    /* threat：air ← A 点敌军 F67 含空母；los ← branch.if.los */
+    threat: ['air', 'los'],
+    threatNote: '本海域是空袭与夜袭的复合线。索敌≥55 可切入 B 点夜袭线；A 点与 BOSS 编成含敌空母，需要舰战争夺制空。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 150, boss: 2400 },   // 提督经验（wiki 6-4: 道中+150 / BOSS+2400）
     nodes: {
@@ -675,6 +695,9 @@ const MAPS = [
   },
   {
     id: '4-4', name: '菲律宾海决战', desc: '马里亚纳火鸡射击！深海机动部队倾巢而出，制空权决战！', stars: 12,
+    /* threat：air ← A/B/BOSS 三个节点敌军全部以空母为核心（无分支、无潜艇） */
+    threat: ['air'],
+    threatNote: '马里亚纳火鸡射击 —— 全空袭决战。本图三个节点敌军全部以空母为核心：没有航空母舰的舰队将连续暴露在敌机轰炸之下，请编入航母并搭载舰战夺取制空。',
     start: 'S', boss: 'C', gauge: 5,
     admExp: { node: 170, boss: 2700 },   // 提督经验（wiki 6-5 前置：道中+170 / BOSS+2700）
     nodes: {
@@ -692,6 +715,9 @@ const MAPS = [
   },
   {
     id: '4-5', name: '硫磺岛近海', desc: 'BOSS海域！折钵山栖姬镇守的硫磺岛，寸土必争的恶战！', stars: 13,
+    /* threat：asw ← A 点敌军 F74 含潜水舰；air ← B 点敌军 F75 含空母；los ← branch.if.los */
+    threat: ['air', 'asw', 'los'],
+    threatNote: '本海域考验对潜、制空与索敌。索敌≥60 可切入 B 点空袭线；A 点为对潜警戒（敌军含潜水舰），B 点与 BOSS 编成含敌空母，未搭载舰战将丧失制空权。',
     start: 'S', boss: 'D', gauge: 7, need: '4-4',
     admExp: { node: 180, boss: 3300 },   // 提督经验（wiki 6-5: 道中+180 / BOSS+3300）
     nodes: {
@@ -712,6 +738,9 @@ const MAPS = [
   /* ==================== 5.菲律宾海域（莱特湾，wiki 5-X） ==================== */
   {
     id: '5-1', name: '莱特湾前哨', desc: '菲律宾的大门已经敞开！扫清莱特湾的前哨防线。', stars: 13,
+    /* threat：air ← BOSS 敌军 F79 含空母 Wo 级（本图无分支、无潜艇） */
+    threat: ['air'],
+    threatNote: '莱特湾的大门。BOSS 编成以空母 Wo 级为核心：未编入航母并搭载舰战将丧失制空权。',
     start: 'S', boss: 'C', gauge: 5,
     admExp: { node: 120, boss: 1800 },   // 提督经验（wiki 5-1: 道中+120 / BOSS+1800）
     nodes: {
@@ -763,6 +792,9 @@ const MAPS = [
   },
   {
     id: '5-4', name: '恩加尼奥角', desc: '深海机动部队的诱饵舰队！全歼恩加尼奥角的空母群！', stars: 14,
+    /* threat：air ← A/B/BOSS 敌军全部以空母为核心；los ← branch.if.los */
+    threat: ['air', 'los'],
+    threatNote: '恩加尼奥角 —— 敌机动部队的诱饵舰队。索敌≥65 可直取空袭主力；A、B 与 BOSS 三处敌军全部以空母为核心，需要舰战争夺制空。',
     start: 'S', boss: 'C', gauge: 6,
     admExp: { node: 150, boss: 2400 },   // 提督经验（wiki 5-4: 道中+150 / BOSS+2400）
     nodes: {
@@ -782,6 +814,9 @@ const MAPS = [
   },
   {
     id: '5-5', name: '莱特湾决战', desc: 'BOSS海域！深海大和栖姬亲率的联合舰队，最后的决战！', stars: 15,
+    /* threat：air ← B 点 F89 与 BOSS F91 含空母 Wo 级；los ← branch.if.los */
+    threat: ['air', 'los'],
+    threatNote: '终章决战。索敌≥70 可切入 B 点空袭线；B 点与 BOSS 编成含敌空母，未搭载舰战将丧失制空权 —— 而对手是深海大和栖姬亲率的联合舰队。',
     start: 'S', boss: 'D', gauge: 8, need: '5-4',
     admExp: { node: 160, boss: 2600 },   // 提督经验（wiki 5-5: 道中+160 / BOSS+2600）
     nodes: {

@@ -80,6 +80,13 @@
         var m35 = scr.querySelector('[data-map="3-5"]'); if (m35) m35.click();
         return;
       }
+      if (c === 'brief44') {
+        /* 4-4 菲律宾海决战：全空袭决战（批次4.1 新声明威胁维度） */
+        SortieUI.mapList(scr);
+        var a4 = scr.querySelector('[data-area="4"]'); if (a4) a4.click();
+        var m44 = scr.querySelector('[data-map="4-4"]'); if (m44) m44.click();
+        return;
+      }
       var st = Sortie.start('2-3', 1);
       if (!st.ok) { scr.innerHTML = '<pre style="color:#f88">' + st.msg + '</pre>'; return; }
       Game.state.sortie.node = 'A';                      // 2-3 A = 航空战点
