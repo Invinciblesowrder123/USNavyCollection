@@ -194,6 +194,12 @@ sim 1441 / 迁移 27 / E2E 133 全过，0 JS 错误；引擎逐位对拍仍零�
 
 见 `HEARTBEAT.md` 最新条目（本文件只保留决策，心跳文件记录流水）。
 
+**海域选择页布局（2026-09-12 定稿）**：左列 `.sortie-mapside` = **地图（`aspect-ratio:5/4`，高度只由自身宽度决定）+ 作战简报 `.sortie-brief` + 编成自检 `.sortie-intel`**；
+右列 `.map-detail`（固定 340px）= 迷你海图 + 标题 + 血条 + 描述 + 出现物品/分支/掉落 + **出击按钮**。
+**编成自检（作战目标/舰队能力/士气/威胁对位/航向侦察/航空触接/特殊攻击/威胁评估）一律放左列 box，不得塞回右列**——
+右列太窄，那堆长行会被压成十几行。渲染入口 `ui/sortie.js::intelBox(m, fidx)`；`.md-intel-sep` 已废弃。
+E2E 有 7 条布局断言守着（含负向对照验证）。
+
 **V0.302 批次1 · 航空战点（2026-09-12）**：`mode:'air'` 落地 2-3 A 点（圣克鲁斯=航母对决，敌军 F22 制空 130）。
 无航空战力 → 「被动防空」分支（敌机直接轰炸 + 仅对空炮火还击，单次伤害封顶 60%）。
 新增 `Battle.hasAirWing/isCarrierType/PASSIVE_AA_CAP`、`fleetStats.airWing/carriers`、`r.airWing/airPassive`、

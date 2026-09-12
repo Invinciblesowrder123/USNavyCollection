@@ -1249,3 +1249,60 @@ bio 内容全部复用台词里已埋的真史原料：马里兰的珍珠港→�
 - 1-1 / 2-1 / 5-2 / 5-3 四图不声明威胁维度（推导为空，属设计上的纯净图）；5-2「夜战强化」要等 3c 才成立。
 
 **下一步**：子批 3c（4-x/5-x 节点铺开 → threat 重对拍 → 每图 brief）。
+
+---
+
+## 2026-09-12 海域选择页：编成自检移到地图下方（用户反馈）
+
+**反馈（附截图）**：「我的意思是看看能否把红框的内容放在地图下面，搞一个新的内容 box？」
+红框 = 右侧详情列里那一大堆情报文本（作战目标 / 舰队能力 / 舰队士气 / 威胁对位 / 航向侦察 / 航空触接 / 特殊攻击 ×2 / 威胁评估 / 自检提示）；绿框 = 地图下方那块空间。
+
+### 根因
+
+右列 `.map-detail` 是**固定 340px 宽**的窄条，而这堆行长度大（例如 4-4 的制空提示一条就要 3 行），
+在窄列里被压成十几行、可读性差；同时地图下方有约两倍宽度的空余。
+
+### 改动（只挪容器，内容一字未改）
+
+| 文件 | 改了什么 |
+|---|---|
+| `public/js/ui/sortie.js` | ① 新增 `intelBox(m, fidx)`——把 `objectivesHtml` + `intelRows` 包成 `.sortie-intel` box；② `mapDetailPanel` 里删掉这两处调用（右列回归「迷你海图 + 海域标题 + 血条 + 描述 + 出现物品/分支/掉落 + 出击按钮」）；③ `draw()` 把 `intelBox` 放进 `.sortie-mapside`，顺序为 **地图 → 作战简报 → 编成自检**；④ 去掉两处 `.md-intel-sep` 虚线（box 本身就是分隔） |
+| `public/css/style.css` | 新增 `.sortie-intel`（蓝调左边框 box，字号 11.5→12px、行距 1.85，宽版排布）；删除已废弃的 `.md-intel-sep` |
+| `public/test_flow.html` | 新增 7 条布局断言（见下）+ 一次负向对照 |
+| `public/index.html` | `?v=20260912c4` → `20260912c5` |
+
+**范围界定（已与用户确认）**：只移动「情报自检」那一大块；右列保留 迷你海图·标题·血条·描述·出现物品·分支·掉落 与 **出击按钮**（行动入口位置不变）。
+判定与数值仍然全部来自 `Sortie.intel` / 引擎，**UI 一行算法都没加**（禁止事项 6）。
+
+### 新增的 7 条布局断言（E2E）
+
+`layout:intelBelowMap`（box 在 `.sortie-mapside` 内）/ `layout:intelNotInDetailColumn`（不在 `.map-detail` 内）/
+`layout:intelAfterMap`（top ≥ 地图 bottom）/ `layout:intelAfterBrief`（有简报时排在简报之后）/
+`layout:intelContentInBox`（「舰队能力」确实渲染在 box 内）/ `layout:intelNotLeftInRightColumn`（右列里已无「舰队能力」）/
+`layout:intelBoxWithoutBrief`（1-1 无简报时 box 仍渲染，不依赖 brief）。
+
+**做了负向对照**：临时把 `intelBox` 挪回右列 → E2E 立刻报
+`FAIL layout:intelBelowMap / intelNotInDetailColumn / intelAfterMap / intelAfterBrief / intelNotLeftInRightColumn / intelBoxWithoutBrief`（6 条变红，共 179 通过 / 6 失败），
+确认断言真能抓住位置错误、不是空转；验证完已还原（`grep intelBox` 只剩「定义 + mapside 里的一次调用」）。
+
+### 测试
+
+| 层 | 结果 |
+|---|---|
+| `npm run test:e2e` | **185 项通过 / 0 JS 错误**（178 → +7） |
+| `npm run sim` | 1581 项通过（本批未动引擎） |
+| `npm run drift` | 9 组逐位一致 |
+
+### 浏览器实测（Gate 4）
+
+`../backup/2026-09-12_布局_情报框下移/`：
+- `before_after_4-4.png`（1440px）：4-4 —— 右列只剩迷你海图 + 标题 + 血条 + 描述 + 掉落 + 出击按钮；地图下方是「编成自检」box
+- `2-3_带简报.png`（1440px）：2-3 —— 顺序为 地图 → 作战简报（金框）→ 编成自检（蓝框）；地图仍是 5:4 未被拉伸
+- `4-4_1080.png`（1080px，用户报 bug 时的窗口宽度）：不破版
+
+### 已知问题 / 未纳入范围
+
+- 右列现在明显比左列短，**右下会留出空白**（与之前"左下留白"同类，是"不拉伸地图"的必然代价）。
+  若希望填满，可选做法有两个：① 让右列拉伸到与左列等高、出击按钮贴底；② 把 box 改成横跨两列的整宽两栏。
+  当前按用户示意（绿框就在地图正下方、左列宽度）保留现状。
+- 作战简报仍只对有 `brief` 的海域渲染；无简报的图（如 4-4）地图下方直接是编成自检 box。

@@ -350,8 +350,22 @@
       R(!!briefEl && !!document.querySelector('#screen .sortie-mapside > .sortie-brief'), 'layout:briefBelowMap');
       R(!!briefEl && !document.querySelector('#screen .map-detail .sortie-brief'), 'layout:briefNotInDetailColumn');
       R(briefEl.getBoundingClientRect().top >= box22.bottom - 1, 'layout:briefAfterMap');
+      /* ===== 编成自检 box 移到地图下方（用户反馈：右列太窄，这堆长行被压成十几行） =====
+       * 断言的是真实 DOM 位置：box 必须在左列（.sortie-mapside）内、在地图与简报之后，
+       * 且**不得**再出现在右列（.map-detail）里；内容归属也要确认（舰队能力在 box 内）。 */
+      const intelEl = document.querySelector('#screen .sortie-intel');
+      R(!!intelEl && !!document.querySelector('#screen .sortie-mapside > .sortie-intel'), 'layout:intelBelowMap');
+      R(!!intelEl && !document.querySelector('#screen .map-detail .sortie-intel'), 'layout:intelNotInDetailColumn');
+      R(!!intelEl && intelEl.getBoundingClientRect().top >= box22.bottom - 1, 'layout:intelAfterMap');
+      R(!!intelEl && !!briefEl && intelEl.getBoundingClientRect().top >= briefEl.getBoundingClientRect().bottom - 1,
+        'layout:intelAfterBrief');
+      R(!!intelEl && intelEl.innerHTML.indexOf('舰队能力') >= 0, 'layout:intelContentInBox');
+      R(!!intelEl && document.querySelector('#screen .map-detail').innerHTML.indexOf('舰队能力') < 0,
+        'layout:intelNotLeftInRightColumn');
       goArea('1', '1-1');
       R(!document.querySelector('#screen .sortie-brief'), 'layout:noBriefBoxWhenMapHasNone');
+      /* 无作战简报的图（1-1）仍有自检 box —— box 不依赖 brief */
+      R(!!document.querySelector('#screen .sortie-mapside > .sortie-intel'), 'layout:intelBoxWithoutBrief');
       /* 失败归因（制空/索敌）与防误报 */
       const attrBad = Sortie.attributionLines({ result: { victory: false, rank: 'D', myAir: 100, enAir: 400, airSup: false, recon: false }, nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state });
       const attrOk = Sortie.attributionLines({ result: { victory: false, rank: 'D', myAir: 400, enAir: 100, airSup: true, recon: true }, nodeDef: { type: 'battle' }, fleet: Game.state.fleet[1], st: Game.state });

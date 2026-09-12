@@ -1128,6 +1128,28 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .spot-btn.sel .spot-name { color: var(--gold); }
 .spot-prog { font-size: 10px; color: var(--dim); text-shadow: 0 1px 3px #000; }
 
+/* 编成自检 box（出击前情报）：放在**地图下方**、作战简报之后（与简报同列）。
+ * 从右侧详情列（固定 340px 宽）搬来 —— 那堆长行在窄列里会被压成十几行；
+ * 地图下方有约两倍宽度，同样内容排布舒展得多，右列回归「海域信息卡 + 出击入口」。
+ * 字号比右列版本略放大（11.5 → 12px）、行距 1.85。 */
+.sortie-intel {
+  margin-top: 10px; padding: 10px 14px;
+  background: rgba(96, 160, 220, .055);
+  border: 1px solid rgba(120, 180, 240, .28);
+  border-left: 3px solid var(--blue);
+  border-radius: 6px;
+  font-size: 12px; line-height: 1.85; color: var(--text);
+}
+.sortie-intel .si-head { color: var(--blue); font-weight: bold; letter-spacing: 2px; margin-bottom: 3px; }
+.sortie-intel .si-body > * { margin-top: 2px; }
+.sortie-intel .morale-row,
+.sortie-intel .md-special,
+.sortie-intel .obj-row,
+.sortie-intel .md-morale,
+.sortie-intel .md-threat { font-size: 12px; }
+.sortie-intel .md-threat { margin-top: 5px; }
+.sortie-intel .obj-list { margin-top: 2px; }
+
 /* 地图详情面板 */
 .map-detail {
   flex: 0 0 340px; min-width: 0;
@@ -1158,7 +1180,7 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .md-rows .ok { color: var(--green); }
 /* 出击前情报室（方向一）：威胁评估与特殊攻击清单 */
 .md-threat { color: var(--dim); font-size: 11.5px; line-height: 1.7; margin-top: 4px; border-left: 2px solid var(--gold); padding-left: 8px; }
-.md-intel-sep { border-top: 1px dashed var(--line); margin: 6px 0; }
+/* 注：`.md-intel-sep`（右列里的虚线分隔）随编成自检搬到地图下方的 `.sortie-intel` box 而废弃，已删除 */
 .md-special { line-height: 1.9; }
 /* 出击前轮换提醒（方向三）：红脸/偏低时出现在编成自检面板顶部 */
 .md-morale { font-size: 11.5px; line-height: 1.7; border-radius: 4px; padding: 5px 8px; margin-top: 4px; }

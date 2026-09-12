@@ -233,8 +233,7 @@ const SortieUI = (() => {
       return `<div class="obj-row${o.done ? ' done' : ''}"><b>${o.done ? '★' : '○'}</b> ${Util.esc(o.cond)} ${done} ${pre}${reward}</div>`;
     }).join('');
     const cnt = list.filter(o => o.done).length;
-    return `<div class="md-intel-sep"></div>
-      <div><b>作战目标</b>（可选，只判定、不改战斗；本图战功 ${cnt}/${list.length}）</div>
+    return `<div><b>作战目标</b>（可选，只判定、不改战斗；本图战功 ${cnt}/${list.length}）</div>
       <div class="obj-list">${rows}</div>`;
   }
 
@@ -245,7 +244,7 @@ const SortieUI = (() => {
     const speedTxt = s.speed.slowCount > 0
       ? `<span class="red">含低速舰 ${s.speed.slowCount} 艘（${Util.esc(s.speed.slowNames.join('、'))}）</span>`
       : '<span class="ok">全队高速</span>';
-    let html = `<div class="md-intel-sep"></div>`;
+    let html = '';
     /* 出击前轮换提醒（方向三）：置顶，因为它决定「现在打还是先休整」 */
     if (it.moraleAdvice) html += `<div class="md-morale ${it.moraleAdvice.level}">⚠ ${Util.esc(it.moraleAdvice.text)}</div>`;
     html += `<div><b>舰队能力</b>：制空 <b>${s.air}</b> ｜ 索敌 <b>${s.los}</b> ｜ 对潜 <b>${s.asw}</b> ｜ 速力 ${speedTxt} ｜ 夜战火力 <b>${s.night}</b></div>`;
@@ -289,6 +288,21 @@ const SortieUI = (() => {
     return html;
   }
 
+  /* 编成自检 box：放在**地图下方**（与作战简报同列），不再塞进右侧详情列。
+   * 原因：右列只有约 330px 宽，这堆行（作战目标 / 舰队能力 / 士气 / 威胁对位 / 航向侦察 /
+   * 航空触接 / 特殊攻击 ×2 / 威胁评估）会被压成十几行窄条，可读性差；
+   * 地图下方有约两倍宽度，同样内容排布舒展得多。右列回归「海域信息卡 + 出击入口」。
+   * 内容一字未改，只是换了容器（判定与数值仍全部来自 Sortie.intel / 引擎，UI 不另算）。 */
+  function intelBox(m, fidx) {
+    const obj = objectivesHtml(m, fidx);
+    const intel = intelRows(m, fidx);
+    if (!obj && !intel) return '';
+    return `<div class="sortie-intel">
+      <div class="si-head">编成自检</div>
+      <div class="si-body">${obj}${intel}</div>
+    </div>`;
+  }
+
   /* 作战简报：放在地图下方的独立提示框。
    * 刻意不放进右侧详情列——长文案会把右列撑高，连带把左侧地图拉伸（用户反馈的布局 bug）。
    * 左列由「地图（固定比例）+ 简报框」组成，右列高度不再影响地图高度。 */
@@ -330,8 +344,6 @@ const SortieUI = (() => {
         ${ddNeed ? `<div><b>分支驱逐</b>：≥${ddNeed} 艘</div>` : ''}
         <div><b>道中掉落</b>：${m.drops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
         <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
-        ${objectivesHtml(m, fidx)}
-        ${intelRows(m, fidx)}
       </div>
       ${locked
         ? `<div class="md-lock">🔒 未解锁！先击破 <b>${m.need}</b> 后开放此 BOSS 海域。</div>`
@@ -379,6 +391,7 @@ const SortieUI = (() => {
           <div class="sortie-mapside">
             ${areaMapPanel(selArea, sel.id)}
             ${briefBox(sel)}
+            ${intelBox(sel, selFleet)}
           </div>
           ${mapDetailPanel(sel, selFleet)}
         </div>
