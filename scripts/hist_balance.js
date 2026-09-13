@@ -69,13 +69,20 @@ function equipNight(uid) {
     const ne = Game.createEquip(eid); ne.locked = false; s.equipped.push(ne.uid);
   }
 }
-/* 航空配装：**只给航母**装舰战，其余保持默认（否则 BB/DD 的炮被舰战挤掉，战力暴跌） */
+/* 航空配装：**只给航母**装舰载机，其余保持默认（否则 BB/DD 的炮被舰战挤掉，战力暴跌）。
+ * V0.304 修订（测量效度修正）：混装 舰战（制空）+ 舰爆/舰攻（对舰输出）——
+ * 旧版只装舰战会让 CV 对水面输出≈0，系统性低估 CV 队 S 率（测量工具自身偏差，非引擎结论）。
+ * 配比：前 2 槽舰战保制空，其余舰爆（无爆位则舰攻）。 */
 function equipAir(uid) {
   const s = Game.state.ships[uid], def = ShipData[s.id];
   if (def.type !== 'CV' && def.type !== 'CVL') { Game.equipDefaults(uid); return; }
   for (const e of s.equipped.slice()) Game.destroyEquip(e);
   s.equipped = [];
-  for (const eid of CVF) { if (s.equipped.length >= def.slots.length) break; const ne = Game.createEquip(eid); ne.locked = false; s.equipped.push(ne.uid); }
+  const n = def.slots.length;
+  for (let i = 0; i < n; i++) {
+    const eid = i < 2 ? 'f6f5' : 'sb2c3';
+    const ne = Game.createEquip(eid); ne.locked = false; s.equipped.push(ne.uid);
+  }
 }
 function buildFleet(spec, lv, mode) {
   Game.state.ships = {}; Game.state.fleet[1] = [];
@@ -103,15 +110,25 @@ function run(spec, lv, mode, enemyKey, bonus, N) {
 }
 
 const H1 = History.byId('H1'), H2 = History.byId('H2');
+const M1 = History.byId('M1'), M2 = History.byId('M2');
 const H1_CV2 = ['enterprise', 'essex', 'saratoga', 'iowa', 'fletcher', 'baltimore'];
 const H1_CV0 = ['iowa', 'southdakota', 'fletcher', 'baltimore', 'atlanta', 'sanfrancisco'];
 const H2_DD = ['fletcher', 'fletcher', 'fletcher', 'fletcher', 'sanfrancisco', 'baltimore'];
 const H2_META = ['iowa', 'enterprise', 'fletcher', 'baltimore', 'atlanta', 'saratoga'];
+/* V0.304 批次2：M1 禁入制空 / M2 混编 的测量编成 */
+const M1_OK   = ['enterprise', 'essex', 'saratoga', 'iowa', 'fletcher', 'baltimore'];            // 2CV 无 BB（合规）
+const M1_BAN  = ['enterprise', 'essex', 'iowa', 'washington', 'fletcher', 'baltimore'];          // 2CV + 2BB（禁入触发）
+const M1_NOHV = ['iowa', 'southdakota', 'fletcher', 'baltimore', 'atlanta', 'sanfrancisco'];     // 0CV（require 不满足）
+const M2_OK   = ['enterprise', 'iowa', 'fletcher', 'fletcher', 'baltimore', 'essex'];            // CV+BB+DD×2（合规混编）
+const M2_NOBB = ['enterprise', 'essex', 'saratoga', 'cabot', 'fletcher', 'fletcher'];            // 无 BB（require 不满足）
+const M2_NOCV = ['iowa', 'missouri', 'washington', 'fletcher', 'fletcher', 'baltimore'];         // 无 CV（require 不满足）
 const N = parseInt(process.argv[2], 10) || 400;
 
 console.log(`战役平衡测量 · N=${N} · 规则文本：`);
 console.log('  H1:', History.ruleText(H1.histRule));
 console.log('  H2:', History.ruleText(H2.histRule));
+console.log('  M1:', History.ruleText(M1.histRule));
+console.log('  M2:', History.ruleText(M2.histRule));
 console.log('\n（S 档 = 奖励档；「史实重演」要求 S 胜）');
 for (const lv of [30, 60, 90]) {
   console.log(`\n===== 舰娘等级 ${lv} =====`);
@@ -119,4 +136,10 @@ for (const lv of [30, 60, 90]) {
   console.log(`H1 BOSS  违规 0CV   加成关: ${run(H1_CV0, lv, 'air', 'H1X', false, N)}   开: ${run(H1_CV0, lv, 'air', 'H1X', true, N)}`);
   console.log(`H2 BOSS  合规 4DD+  加成关: ${run(H2_DD, lv, 'night', 'H2X', false, N)}   开: ${run(H2_DD, lv, 'night', 'H2X', true, N)}`);
   console.log(`H2 BOSS  违规 BB+CV 加成关: ${run(H2_META, lv, 'night', 'H2X', false, N)}   开: ${run(H2_META, lv, 'night', 'H2X', true, N)}`);
+  console.log(`M1 BOSS  合规 2CV-无BB 加成关: ${run(M1_OK, lv, 'air', 'M1X', false, N)}   开: ${run(M1_OK, lv, 'air', 'M1X', true, N)}`);
+  console.log(`M1 BOSS  违规 2CV+BB  加成关: ${run(M1_BAN, lv, 'air', 'M1X', false, N)}   开: ${run(M1_BAN, lv, 'air', 'M1X', true, N)}`);
+  console.log(`M1 BOSS  违规 0CV     加成关: ${run(M1_NOHV, lv, 'air', 'M1X', false, N)}   开: ${run(M1_NOHV, lv, 'air', 'M1X', true, N)}`);
+  console.log(`M2 BOSS  合规 混编    加成关: ${run(M2_OK, lv, 'air', 'M2X', false, N)}   开: ${run(M2_OK, lv, 'air', 'M2X', true, N)}`);
+  console.log(`M2 BOSS  违规 无BB    加成关: ${run(M2_NOBB, lv, 'air', 'M2X', false, N)}   开: ${run(M2_NOBB, lv, 'air', 'M2X', true, N)}`);
+  console.log(`M2 BOSS  违规 无CV    加成关: ${run(M2_NOCV, lv, 'air', 'M2X', false, N)}   开: ${run(M2_NOCV, lv, 'air', 'M2X', true, N)}`);
 }

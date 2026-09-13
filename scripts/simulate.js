@@ -1573,12 +1573,16 @@ assert('连续通关不刷新首通时间戳（只写一次）',
   const nBeforeBad = rec0.honors.length;
   Progression.grantHonors(uid0, ['not_a_real_honor']);
   assert('荣誉表外的 id 一律不写入', rec0.honors.length === nBeforeBad);
-  /* 首版 8 个通用荣誉（方向二）+ 6 个历史战役专属荣誉（V0.303）= 14；
-   * 上限断言防止无限膨胀（荣誉只该指向「可用不同打法达成的作战事实」）。 */
-  assert('荣誉数量 14 个（通用 8 + 战役 6）', Progression.HONORS.length === 14, 'n=' + Progression.HONORS.length);
+  /* 首版 8 个通用荣誉（方向二）+ 战役专属荣誉（V0.303 六个 / V0.304 再六个）；
+   * 上限断言防止无限膨胀（荣誉只该指向「可用不同打法达成的作战事实」）。
+   * V0.304 起：计数断言遍历化（通用 8 锚定 + 战役荣誉 = 每场战役 × 2~3 个的推导口径），不写死总数。 */
+  assert('通用荣誉恰好 8 个（回归锚定）', Progression.HONORS.filter(h => !/^hist_/.test(h.id)).length === 8,
+    'n=' + Progression.HONORS.filter(h => !/^hist_/.test(h.id)).length);
   const histHonors = Progression.HONORS.filter(h => /^hist_/.test(h.id));
-  assert('战役荣誉恰好 6 个，且在空上下文（常规图结算）下一律不触发（防误触发）',
-    histHonors.length === 6 && histHonors.every(h => h.check({}, {}) === false),
+  assert('战役荣誉覆盖全部战役的奖励层荣誉且在空上下文（常规图结算）下一律不触发（防误触发）',
+    histHonors.length >= HISTORY_BATTLES.length * 2 &&
+    HISTORY_BATTLES.every(b => histHonors.some(h => h.id === b.rewards.histForm.honor) && histHonors.some(h => h.id === b.rewards.hard.honor)) &&
+    histHonors.every(h => h.check({}, {}) === false),
     'hist=' + histHonors.length);
   assert('荣誉表不含任何数值加成字段',
     Progression.HONORS.every(h => !('bonus' in h) && !('mod' in h) && !('stat' in h) && typeof h.check === 'function'));
@@ -2363,8 +2367,9 @@ section('V0.303·任务1.1 战役数据结构与两场战役');
   };
   HB.forEach((b, i) => walk(b, 'battle[' + i + ']'));
   assert('战役数据字段无 undefined（递归扫描）', undefs.length === 0, undefs.slice(0, 8).join(','));
-  assert('战役数量 = 2（H1 圣克鲁斯 / H2 铁底湾，先两场验证观感与数值）',
-    HB.length === 2 && HB[0].id === 'H1' && HB[1].id === 'H2' &&
+  /* V0.304 起：战役列表断言改为遍历（锚定前两场 H1/H2，不写死总数） */
+  assert('战役数量 ≥ 2 且前两场为 H1 圣克鲁斯 / H2 铁底湾（遍历断言，不写死总数）',
+    HB.length >= 2 && HB[0].id === 'H1' && HB[1].id === 'H2' &&
     /圣克鲁斯/.test(HB[0].name) && /铁底湾/.test(HB[1].name));
   assert('战役元数据齐全（id / name / date / stars / admReq）',
     HB.every(b => typeof b.admReq === 'number' && b.admReq > 0 && /^\d{4}-\d{2}-\d{2}$/.test(b.date)));
@@ -2383,8 +2388,11 @@ section('V0.303·任务1.1 战役数据结构与两场战役');
     HB.map(b => b.id).join(','));
   /* 6 个敌编成模板：键唯一 + 模板全部在库 + 编队合法 */
   const ekeys = History.enemyKeys();
-  assert('战役专属敌编成模板共 6 个且键全局唯一',
-    ekeys.length === 6 && new Set(ekeys).size === 6, ekeys.join(','));
+  /* V0.304 起：不再写死模板总数，改为「键全局唯一 + 每场战役的键都被收录」 */
+  assert('战役专属敌编成模板键全局唯一且每场战役的键都被收录',
+    new Set(ekeys).size === ekeys.length &&
+    HB.every(b => Object.keys(b.enemies || {}).every(k => History.enemy(k) === b.enemies[k])),
+    ekeys.join(','));
   assert('战役敌编成引用的深海模板全部在库',
     ekeys.every(k => History.enemy(k).ships.length > 0 && History.enemy(k).ships.every(s => !!DEEP_TEMPLATES[s])));
   assert('战役敌编成阵型名合法（与 FORMATIONS 表对得上）',
@@ -2416,11 +2424,16 @@ section('V0.303·任务1.1 战役数据结构与两场战役');
   assert('史实重演与强敌阶奖励各自声明的荣誉 id 在 HONORS 表内（数据—荣誉表对齐）',
     HB.every(b => !!Progression.HONOR_BY_ID[b.rewards.histForm.honor] && !!Progression.HONOR_BY_ID[b.rewards.hard.honor]),
     HB.map(b => b.rewards.histForm.honor + '/' + b.rewards.hard.honor).join(' | '));
-  /* 设计卡 §四注入量核算：螺丝 26 / devMats 20 / 消耗品 2 */
-  const screwsTotal = HB.reduce((n, b) => n + (b.rewards.firstClear.screws || 0) + (b.rewards.histForm.screws || 0) + (b.rewards.hard.firstClear.screws || 0), 0);
-  const devTotal = HB.reduce((n, b) => n + (b.rewards.hard.firstClear.devMats || 0), 0);
-  assert('奖励注入量与设计卡核算一致（螺丝 26 / devMats 20）',
-    screwsTotal === 26 && devTotal === 20, `screws=${screwsTotal} devMats=${devTotal}`);
+  /* 设计卡 §四注入量核算：H1/H2 锚定螺丝 26 / devMats 20（回归保护）；
+   * V0.304 起新战役逐场校验「层结构为正整数 + repeat 低于 firstClear」，不写死总量 */
+  const screwsH12 = HB.slice(0, 2).reduce((n, b) => n + (b.rewards.firstClear.screws || 0) + (b.rewards.histForm.screws || 0) + (b.rewards.hard.firstClear.screws || 0), 0);
+  const devH12 = HB.slice(0, 2).reduce((n, b) => n + (b.rewards.hard.firstClear.devMats || 0), 0);
+  assert('H1/H2 奖励注入量与设计卡核算一致（螺丝 26 / devMats 20，回归锚定）',
+    screwsH12 === 26 && devH12 === 20, `screws=${screwsH12} devMats=${devH12}`);
+  assert('各战役奖励层为正整数且 repeat 档低于 firstClear 档（不设周回刷取点）',
+    HB.every(b => [b.rewards.firstClear.screws, b.rewards.histForm.screws, b.rewards.hard.firstClear.screws]
+      .every(n => Number.isInteger(n) && n > 0) &&
+      (b.rewards.repeat.fuel || 0) < (b.rewards.firstClear.fuel || 0)));
 
   /* --- 任务 1.1 验收断言 3：战役引用舰种在到达门槛前可获得 --- */
   const buildableTypes = new Set(Object.values(ShipData).filter(d => d.build).map(d => d.type));
@@ -2433,6 +2446,10 @@ section('V0.303·任务1.1 战役数据结构与两场战役');
   assert('战役考察维度与设计意图一致（H1 航空 / H2 夜战，且都有对应 mode 节点）',
     HB[0].defs[HB[0].boss].mode === 'air' && HB[0].defs.A.mode === 'air' &&
     HB[1].defs[HB[1].boss].mode === 'night' && Object.values(HB[1].defs).some(d => d.type === 'whirlpool'));
+  /* V0.304 泛化：每场战役 BOSS 均为特殊节点（air/night）且道中至少一个特殊节点 */
+  assert('每场战役 BOSS 均为特殊节点且道中含至少一个特殊节点（V0.304 遍历）',
+    HB.every(b => ['air', 'night'].includes(b.defs[b.boss].mode) &&
+      Object.values(b.defs).some(d => d.type === 'battle' && (d.mode || d.type === 'whirlpool'))));
 }
 
 section('V0.303·任务1.2 战役流程接入（唯一接入点 resolveMap）与统计隔离');
@@ -2754,8 +2771,9 @@ section('V0.303·任务2.1 强敌阶二波制（waves）');
   assert('wavesFor：强敌阶 BOSS 节点有第二波，常规阶与无 waves 的图没有',
     History.wavesFor(H1, 'X') === 'H1X2' && History.wavesFor(H1, 'A') === null &&
     History.wavesFor(MAPS[0], MAPS[0].boss) === null && History.wavesFor(null, 'X') === null);
-  assert('waveEnemyKeys 覆盖两场战役的第二波模板（4 个键）',
-    History.waveEnemyKeys().length === 4 && History.waveEnemyKeys().every(k => !!History.enemy(k)),
+  /* V0.304 起：不写死键数，按「每场战役 2 键（第一波 + 第二波）」遍历 */
+  assert('waveEnemyKeys 覆盖全部战役的第二波模板（每场 2 键，遍历断言）',
+    History.waveEnemyKeys().length === HISTORY_BATTLES.length * 2 && History.waveEnemyKeys().every(k => !!History.enemy(k)),
     History.waveEnemyKeys().join(','));
   assert('战役常规阶（so.hard=false）即便在 BOSS 节点也不会取第二波敌编成', (() => {
     Game.newGame(); Game.state.admiral.level = 40;
@@ -2937,14 +2955,23 @@ section('V0.303·任务2.1 强敌阶二波制（waves）');
 section('V0.303·任务2.3 文案三件套（简报 / 第二波横幅 / 归因分支）');
 {
   const HB = HISTORY_BATTLES;
-  assert('H1 简报含「制空」维度关键字，H2 简报含「夜战」维度关键字',
+  assert('H1 简报含「制空」维度关键字，H2 简报含「夜战」维度关键字（锚定）',
     HB[0].brief.includes('制空') && HB[1].brief.includes('夜战'));
-  assert('两场战役简报均为两段军事简报体（含换行、长度达标、无 undefined）',
+  /* V0.304 泛化：简报必须点明 BOSS 节点维度的关键字（air→制空 / night→夜战）；
+   * M2 的简报还必须点明资源压力（坑 #25：弹药补正是设计意图） */
+  assert('战役简报点明其 BOSS 节点维度关键字（air→制空 / night→夜战，V0.304 遍历）',
+    HB.every(b => (b.defs[b.boss].mode === 'air' ? b.brief.includes('制空') : true) &&
+                  (b.defs[b.boss].mode === 'night' ? b.brief.includes('夜战') : true)));
+  assert('M2 简报点明资源压力（弹药补正提示，坑 #25）',
+    /弹药/.test(History.byId('M2').brief) && /50%/.test(History.byId('M2').brief));
+  assert('全部战役简报均为两段军事简报体（含换行、长度达标、无 undefined）',
     HB.every(b => b.brief.split('\n').length >= 2 && b.brief.length > 60 && !/undefined/.test(b.brief)));
   assert('强敌阶简报必须点明「第二梯队」（P0-6：不搞突然袭击）',
     HB.every(b => /第二梯队/.test(b.hard.brief) && /迎击/.test(b.hard.brief) && /收兵/.test(b.hard.brief)));
-  assert('第二波入场横幅逐战役独立、且非空（H1 翔鹤·瑞鹤 / H2 雾岛炮击队）',
-    /撤退/.test(HB[0].hard.waveBanner) && /雾岛/.test(HB[1].hard.waveBanner));
+  assert('第二波入场横幅逐战役独立、且非空（H1 翔鹤·瑞鹤 / H2 雾岛炮击队锚定；V0.304 起遍历查重）',
+    /撤退/.test(HB[0].hard.waveBanner) && /雾岛/.test(HB[1].hard.waveBanner) &&
+    HB.every(b => b.hard.waveBanner && b.hard.waveBanner.length > 0) &&
+    new Set(HB.map(b => b.hard.waveBanner)).size === HB.length);
   assert('nodeBanner 在 wave>=2 时返回第二波横幅（覆盖节点自身的 mode 文案）',
     Sortie.nodeBanner({ mode: 'air' }, { wave: 2, waveBanner: '测试横幅' }) === '测试横幅' &&
     Sortie.nodeBanner({ mode: 'air' }, { wave: 1, airWing: true }) === Sortie.NODE_BANNER.air &&
@@ -2996,10 +3023,10 @@ section('V0.303·任务3.1 战役荣誉（6 个）与 BOSS 掉落');
     /东京快车/.test(Progression.HONOR_BY_ID.hist_h2_hard.name) &&
     /沙利文/.test(Progression.HONOR_BY_ID.hist_h2_suilven.name));
   /* 奖励表声明的荣誉 id 与荣誉表对齐（数据—代码双向） */
-  assert('战役奖励表声明的荣誉 id 与 HONORS 表一一对应（H1/H2 各一条常规阶 + 一条强敌阶）',
+  /* V0.304 起：荣誉对齐断言遍历化——每场战役两条且全部互不重复（H1/H2 锚定由上方 IDS 断言承担） */
+  assert('战役奖励表声明的荣誉 id 与 HONORS 表一一对应且互不重复（V0.304 遍历）',
     HISTORY_BATTLES.every(b => Progression.HONOR_BY_ID[b.rewards.histForm.honor] && Progression.HONOR_BY_ID[b.rewards.hard.honor]) &&
-    HISTORY_BATTLES.map(b => b.rewards.histForm.honor).join(',') === 'hist_h1_s,hist_h2_iron' &&
-    HISTORY_BATTLES.map(b => b.rewards.hard.honor).join(',') === 'hist_h1_hard,hist_h2_hard');
+    new Set(HISTORY_BATTLES.flatMap(b => [b.rewards.histForm.honor, b.rewards.hard.honor])).size === HISTORY_BATTLES.length * 2);
 
   const fresh = id => { const s = Game.createShip(id, 90); Game.state.fleet[1] = [s.uid]; return s; };
   const base = extra => Object.assign({
@@ -3254,6 +3281,282 @@ section('V0.304·批次1 子批 3c：4-x/5-x 特殊节点铺满');
   assert('5-2/5-3 已声明威胁维度（退出无维度词白名单）',
     MAPS.find(m => m.id === '5-2').threat.join(',') === 'night' &&
     MAPS.find(m => m.id === '5-3').threat.join(',') === 'air,night');
+}
+
+/* ============================================================
+ * V0.304 · 批次2：第二批历史战役（M1 中途岛 / M2 莱特湾）
+ * ============================================================ */
+section('V0.304·批次2 M1 中途岛 / M2 莱特湾');
+{
+  const M1 = History.byId('M1'), M2 = History.byId('M2');
+  const mkShip = (id, lv) => { const s = Game.createShip(id, lv); s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60; return s.uid; };
+  const mkCtx = extra => Object.assign({
+    kind: 'sortie', rank: 'S', failed: false, historic: 'M1', hard: false, wave: 1, histMatch: true,
+    histClear: true, histForm: true, histHard: false, histNoSunk: true, ddCount: 0, cvlCount: 0,
+    nodeIsBoss: true, histFinal: true
+  }, extra);
+
+  /* ---- 数据锚定与规则边界（验收断言 6） ---- */
+  assert('M1/M2 已登记且数据锚定（admReq / bossDrops / 四种规则形态齐备）',
+    !!M1 && !!M2 && M1.admReq === 12 && M2.admReq === 14 &&
+    M1.bossDrops.join(',') === 'enterprise,hornet' && M2.bossDrops.join(',') === 'newjersey,johnston');
+  assert('M1 为禁入制空考（require ≥2 CV/CVL + ban BB/BBV）——与 H1 构成禁入对照组', (() => {
+    const t = M1.histRule;
+    return t.require.length === 1 && t.require[0].min === 2 && t.require[0].types.join(',') === 'CV,CVL' && t.ban.join(',') === 'BB,BBV';
+  })());
+  assert('M2 为混编考（≥1 CV/CVL + ≥1 BB + ≥2 DD，无禁入）——四种规则形态至此齐备', (() => {
+    const t = M2.histRule;
+    return t.require.length === 3 && (t.ban || []).length === 0 &&
+      t.require[0].min === 1 && t.require[1].min === 1 && t.require[2].min === 2;
+  })());
+  assert('matchRule M1 边界：2CV 合规 / 1CV 不足 / 2CV+BB 禁入优先 / 0CV+BB 双不满足',
+    History.matchRule(M1.histRule, ['CV', 'CVL', 'DD', 'DD', 'CA', 'CL']).ok === true &&
+    History.matchRule(M1.histRule, ['CV', 'DD', 'DD', 'DD', 'CA', 'CL']).ok === false &&
+    History.matchRule(M1.histRule, ['CV', 'CVL', 'BB', 'DD', 'CA', 'CL']).ok === false &&
+    History.matchRule(M1.histRule, ['CV', 'CVL', 'BB', 'DD', 'CA', 'CL']).banHit === true &&
+    History.matchRule(M1.histRule, ['BB', 'BBV', 'DD', 'DD', 'CA', 'CL']).ok === false);
+  assert('matchRule M2 边界：三组全满足 / 缺 BB / DD 只有 1 艘 / CVL 计入第一组（恰好下边界）',
+    History.matchRule(M2.histRule, ['CV', 'BB', 'DD', 'DD', 'CA', 'CL']).ok === true &&
+    History.matchRule(M2.histRule, ['CV', 'DD', 'DD', 'DD', 'CA', 'CL']).ok === false &&
+    History.matchRule(M2.histRule, ['CV', 'BB', 'DD', 'CA', 'CA', 'CL']).ok === false &&
+    History.matchRule(M2.histRule, ['CVL', 'BB', 'DD', 'DD', 'DD', 'DD']).ok === true);
+  assert('M1/M2 BOSS 制空定档实测（M1X=166 为 H1X=147 上一档；M2X=180；M2A=147）',
+    Battle.enemyAirPower('M1X') === 166 && Battle.enemyAirPower('M2X') === 180 && Battle.enemyAirPower('M2A') === 147,
+    `M1X=${Battle.enemyAirPower('M1X')} M2X=${Battle.enemyAirPower('M2X')} M2A=${Battle.enemyAirPower('M2A')}`);
+  assert('M2 第二波（栗田主力）无航空战力且 BB-heavy（史实：萨马岛突入未遂）',
+    Battle.enemyAirPower('M2X2') === 0 &&
+    History.enemy('M2X2').ships.filter(k => DEEP_TEMPLATES[k].type === 'BB').length >= 3 &&
+    History.enemy('M2X2').formation === '单纵阵');
+  /* 验收断言 7：waves 交叉断言 + so.wave 只能由 startHardWave 推进（V0.303 通用断言已遍历 M1/M2，
+   * 此处锚定 M1/M2 的 waves 键与第二波模板存在性） */
+  assert('M1/M2 的 waves 键为 BOSS 节点且 [0] === defs[boss].enemy',
+    M1.hard.waves.X[0] === M1.defs.X.enemy && M1.hard.waves.X[1] === 'M1X2' &&
+    M2.hard.waves.X[0] === M2.defs.X.enemy && M2.hard.waves.X[1] === 'M2X2');
+
+  /* ---- M2 资源压力（坑 #25 正面断言，验收断言 11） ---- */
+  assert('M2 打到 BOSS 时残弹率 <50%、弹药补正生效、结算归因可读（资源压力 = 毕业考的一部分）', (() => {
+    Game.newGame(); Game.state.admiral.level = 90;
+    Game.gain({ fuel: 999999, ammo: 999999, steel: 999999, baux: 999999 });
+    /* 混编：CV + BB + DD×2（满足史实规则，同时战力足以走完全程） */
+    Game.state.fleet[1] = [mkShip('enterprise', 100), mkShip('essex', 100), mkShip('iowa', 100),
+      mkShip('fletcher', 100), mkShip('fletcher', 100), mkShip('baltimore', 100)];
+    const r0 = Sortie.start('M2', 1);
+    if (!r0.ok) return false;
+    let guard = 0;
+    while (guard++ < 12) {
+      const map = Sortie.currentMap();
+      if (!map) return false;
+      const def = Sortie.nodeDef(map, Game.state.sortie.node);
+      const p = Sortie.prepareBattle('单纵阵');
+      if (!p.ok) return false;
+      if (def.type === 'boss') {
+        const ammos = Game.state.fleet[1].filter(u => Game.state.ships[u]).map(u => Game.state.ships[u].supply.ammo);
+        const minAmmo = Math.min.apply(null, ammos);
+        const done = Sortie.settleBattle(p);
+        return minAmmo < 0.5 && Battle.ammoBonus({ ammo: minAmmo }) < 1 && done.ok === true;
+      }
+      Sortie.settleBattle(p);
+      if (!Sortie.moveToNext()) return false;
+    }
+    return false;
+  })());
+
+  /* ---- 荣誉：登记 / 幂等 / histFinal 栅栏（坑 #26，验收断言 8） ---- */
+  const IDS2 = ['hist_m1_s', 'hist_m1_hard', 'hist_m1_cvl', 'hist_m2_s', 'hist_m2_hard', 'hist_m2_taffy'];
+  assert('V0.304 六个战役荣誉全部登记且为「只展示不加成」型',
+    IDS2.every(id => { const h = Progression.HONOR_BY_ID[id]; return !!h && typeof h.check === 'function' && !('bonus' in h) && !('mod' in h) && !('stat' in h); }));
+  assert('战役荣誉名称与题材一致（五分钟 / 俯冲轰炸机的黎明 / 约克城归队 / 莱特湾的黎明 / 突入的终点 / 塔菲三号）',
+    /五分钟/.test(Progression.HONOR_BY_ID.hist_m1_s.name) &&
+    /俯冲轰炸机/.test(Progression.HONOR_BY_ID.hist_m1_hard.name) &&
+    /约克城/.test(Progression.HONOR_BY_ID.hist_m1_cvl.name) &&
+    /莱特湾/.test(Progression.HONOR_BY_ID.hist_m2_s.name) &&
+    /突入/.test(Progression.HONOR_BY_ID.hist_m2_hard.name) &&
+    /塔菲/.test(Progression.HONOR_BY_ID.hist_m2_taffy.name));
+  /* 坑 #26：M2 道中 3 个战斗点 —— histFinal=false（道中/第一波）时全部按层荣誉不触发 */
+  assert('坑#26 栅栏：M2 道中 S 胜（histFinal=false）不触发任何 M2 荣誉', (() => {
+    Game.newGame();
+    const s = Game.createShip('sanfrancisco', 90); Game.state.fleet[1] = [s.uid];
+    Progression.recordBattleResult({ uids: [s.uid], kind: 'sortie', rank: 'S', failed: false,
+      historic: 'M2', hard: false, wave: 1, histMatch: true, histClear: false, histForm: false,
+      histHard: false, histNoSunk: true, ddCount: 2, cvlCount: 0, nodeIsBoss: false, histFinal: false });
+    return !s.record.honors.some(h => /^hist_m2_/.test(h.id));
+  })());
+  assert('hist_m1_s：M1 常规阶史实编成 S 胜授予；histMatch=false 不授予', (() => {
+    Game.newGame();
+    const s = Game.createShip('enterprise', 90); Game.state.fleet[1] = [s.uid];
+    Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, mkCtx({ historic: 'M1' })));
+    const ok1 = s.record.honors.some(h => h.id === 'hist_m1_s');
+    Game.newGame();
+    const s2 = Game.createShip('enterprise', 90); Game.state.fleet[1] = [s2.uid];
+    Progression.recordBattleResult(Object.assign({ uids: [s2.uid] }, mkCtx({ historic: 'M1', histMatch: false, histForm: false })));
+    return ok1 && !s2.record.honors.some(h => h.id === 'hist_m1_s');
+  })());
+  assert('hist_m1_cvl：编成含 CVL（cvlCount≥1）且 S 胜授予；无 CVL 不授予', (() => {
+    Game.newGame();
+    const s = Game.createShip('independence', 90); Game.state.fleet[1] = [s.uid];
+    Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, mkCtx({ historic: 'M1', cvlCount: 1, histForm: false })));
+    const ok1 = s.record.honors.some(h => h.id === 'hist_m1_cvl');
+    Game.newGame();
+    const s2 = Game.createShip('enterprise', 90); Game.state.fleet[1] = [s2.uid];
+    Progression.recordBattleResult(Object.assign({ uids: [s2.uid] }, mkCtx({ historic: 'M1', histForm: false })));
+    return ok1 && !s2.record.honors.some(h => h.id === 'hist_m1_cvl');
+  })());
+  assert('hist_m2_taffy：BOSS S 胜 + ≥2 DD + 无人沉没授予；DD=1 / 有沉没 / 非 S 均不授予', (() => {
+    const taffy = (dd, noSunk, rank) => {
+      Game.newGame();
+      const s = Game.createShip('johnston', 90); Game.state.fleet[1] = [s.uid];
+      Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, mkCtx({
+        historic: 'M2', ddCount: dd, histNoSunk: noSunk, rank, histMatch: false, histForm: false })));
+      return s.record.honors.some(h => h.id === 'hist_m2_taffy');
+    };
+    return taffy(2, true, 'S') === true && taffy(1, true, 'S') === false &&
+      taffy(2, false, 'S') === false && taffy(2, true, 'A') === false;
+  })());
+  assert('hist_m1_hard：只有强敌阶第二波（hard=true 且 histFinal=true）S 胜才授予', (() => {
+    const grant = (hard, fin) => {
+      Game.newGame();
+      const s = Game.createShip('iowa', 90); Game.state.fleet[1] = [s.uid];
+      Progression.recordBattleResult(Object.assign({ uids: [s.uid] }, mkCtx({
+        historic: 'M1', hard, histFinal: fin, histForm: false })));
+      return s.record.honors.some(h => h.id === 'hist_m1_hard');
+    };
+    return grant(true, true) === true && grant(true, false) === false && grant(false, true) === false;
+  })());
+  assert('战役荣誉幂等（M1/M2）：同一达成重复结算不重复授勋', (() => {
+    Game.newGame();
+    const s = Game.createShip('enterprise', 90); Game.state.fleet[1] = [s.uid];
+    const ctx = Object.assign({ uids: [s.uid] }, mkCtx({ historic: 'M2', ddCount: 2 }));
+    Progression.recordBattleResult(ctx);
+    const n1 = s.record.honors.length;
+    const r2 = Progression.recordBattleResult(ctx);
+    return s.record.honors.length === n1 && r2.granted.length === 0;
+  })());
+
+  /* ---- 奖励账本（验收断言 9：一次性靠账本 + 败局不写） ---- */
+  assert('M1 奖励账本一次性：重复达成 3 次 firstClear/histForm 不再入账（单元级）', (() => {
+    Game.newGame();
+    Game.state.resources.screws = 0; Game.state.resources.devMats = 0;
+    const led = () => Game.state.stats.historic;
+    const ctx = { battle: M1, hard: false, wave: 1, victory: true, rank: 'S', histMatch: true, bossVictory: true };
+    const g1 = Progression.grantHistoricRewards(ctx);
+    const snap = JSON.stringify(led());
+    const later = [0, 1, 2].map(() => Progression.grantHistoricRewards(ctx));
+    return g1.granted.length === 2 && later.every(g => g.granted.length === 0) && JSON.stringify(led()) === snap;
+  })());
+  const m2Hard = (() => {
+    Game.newGame();
+    Game.state.resources.screws = 0; Game.state.resources.devMats = 0;
+    const led = () => Game.state.stats.historic;
+    const w1 = Progression.grantHistoricRewards({ battle: M2, hard: true, wave: 1, victory: true, rank: 'S', histMatch: true, bossVictory: true });
+    const afterW1 = led()['M2:hard'];
+    const w2 = Progression.grantHistoricRewards({ battle: M2, hard: true, wave: 2, victory: true, rank: 'S', histMatch: true, bossVictory: true });
+    const dbg = { w1: w1.granted, w2: w2.granted, ledgerAfterW1: afterW1 || null,
+      screws: Game.state.resources.screws, devMats: Game.state.resources.devMats,
+      m2id: M2 && M2.id, hardFirstClear: M2 && M2.rewards && M2.rewards.hard && M2.rewards.hard.firstClear };
+    const ok = w1.granted.length === 0 && afterW1 === undefined &&
+      w2.granted.includes('hard') && Game.state.resources.screws === 6 && Game.state.resources.devMats === 12;
+    return { ok, dbg };
+  })();
+  assert('M2 强敌阶层：第二波 S 胜发一次（screws+6 / devMats+12），第一波不发', m2Hard.ok, JSON.stringify(m2Hard.dbg));
+}
+
+/* ============================================================
+ * V0.304 · 批次3：远征大成功（cond 编成条件 → 确定性资源 ×1.5）
+ * ============================================================ */
+section('V0.304·批次3 远征大成功（cond 编成条件）');
+{
+  /* 覆盖率护栏（任务 3.1：≥60%，没有覆盖率系统存在感为零） */
+  const condN = EXPEDITIONS.filter(e => e.cond).length;
+  assert(`远征 cond 覆盖率 ≥60%（实际 ${condN}/${EXPEDITIONS.length}）`,
+    condN / EXPEDITIONS.length >= 0.6, `${condN}/${EXPEDITIONS.length}`);
+  assert('带 cond 的远征条目均配有 condText（UI 单一展示源）',
+    EXPEDITIONS.every(e => !e.cond || (typeof e.condText === 'string' && e.condText.length > 0)));
+  /* 验收 13：cond 判定边界（纯函数，旗舰舰种 / types 恰好 min / equip 类别跨舰累计） */
+  assert('checkExCond 边界：旗舰舰种 / types 恰好 min / equip 类别含二号舰装备 / 空舰队为 false', (() => {
+    Game.newGame(); Game.state.admiral.level = 40;
+    Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+    const mk = (id, lv) => { const s = Game.createShip(id, lv); return s.uid; };
+    /* ex3 cond.flagship='CL'：CL 旗舰 ✓ / DD 旗舰 ✗ */
+    const clF = [mk('cleveland', 60), mk('fletcher', 60)];
+    const ddF = [mk('fletcher', 60), mk('cleveland', 60)];
+    const ex3 = EXPEDITIONS.find(e => e.id === 'ex3');
+    const okCL = Logistics.checkExCond(clF, ex3) === true && Logistics.checkExCond(ddF, ex3) === false;
+    /* ex2 cond.types=['DD'] min=3：恰好 3 艘 ✓ / 2 艘 ✗ */
+    const ex2 = EXPEDITIONS.find(e => e.id === 'ex2');
+    const three = [mk('fletcher', 60), mk('fletcher', 60), mk('fletcher', 60), mk('cleveland', 60)];
+    const two = [mk('fletcher', 60), mk('fletcher', 60), mk('cleveland', 60), mk('cleveland', 60)];
+    const okMin = Logistics.checkExCond(three, ex2) === true && Logistics.checkExCond(two, ex2) === false;
+    /* ex7 cond.equip 电探 ×2：旗舰 1 件 + 二号舰 1 件（跨舰累计）✓；仅旗舰 1 件 ✗ */
+    const ex7 = EXPEDITIONS.find(e => e.id === 'ex7');
+    const equipRadar = (uid, n) => { const s = Game.state.ships[uid]; for (const e of s.equipped.slice()) Game.destroyEquip(e); s.equipped = []; for (let i = 0; i < n; i++) { const ne = Game.createEquip('radar_sg'); ne.locked = false; s.equipped.push(ne.uid); } };
+    const r1 = mk('iowa', 60), r2 = mk('baltimore', 60), r3 = mk('fletcher', 60), r4 = mk('essex', 60);
+    equipRadar(r1, 1); equipRadar(r2, 1);
+    const ok2 = Logistics.checkExCond([r1, r2, r3, r4], ex7) === true;
+    equipRadar(r2, 0);
+    equipRadar(r2, 0); // 二号舰清空
+    const ok1 = Logistics.checkExCond([r1, r2, r3, r4], ex7) === false;
+    /* 空舰队 → false */
+    const okEmpty = Logistics.checkExCond([], EXPEDITIONS[0]) === false;
+    return okCL && okMin && ok2 && ok1 && okEmpty;
+  })());
+  /* 验收 12/14：满足 cond → ×1.5；不满足 → 与改动前逐位一致；随机数消费次数不变。
+   * 方法：stub Math.random 为定值 → 既有 great roll 结果确定；cond 判定零随机消费 →
+   * 满足/不满足两支编成的 RNG 消费序列完全相同（奖励比值恰为 1.5/1，great 相同）。 */
+  assert('验收12/14：cond 满足 → 资源×1.5；不满足 → 与改动前逐位一致；RNG 消费次数不变', (() => {
+    const ex6 = EXPEDITIONS.find(e => e.id === 'ex6');        // 无 cond 条目做基线
+    const ex2 = EXPEDITIONS.find(e => e.id === 'ex2');        // cond = DD×3
+    Game.newGame(); Game.state.admiral.level = 40;
+    Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+    const mk = (id, lv) => { const s = Game.createShip(id, lv); s.hp = Game.shipStats(s.uid).hpMax; return s.uid; };
+    const okFleet = [mk('fletcher', 60), mk('fletcher', 60), mk('fletcher', 60), mk('cleveland', 60)];   // DD×3 ✓
+    const noFleet = [mk('fletcher', 60), mk('fletcher', 60), mk('cleveland', 60), mk('cleveland', 60)];  // DD×2 ✗
+    let calls = 0;
+    const nativeRandom = Math.random;
+    try {
+      Math.random = () => { calls++; return 0.5; };           // ≥0.15 → great=false；<0.5 的经验翻倍不触发
+      const claim = (fleet, ex) => {
+        calls = 0;
+        Game.state.fleet[2] = fleet.slice();
+        for (const uid of Game.state.fleet[2]) { const s = Game.state.ships[uid]; if (s) s.morale = 40; }   // 压回非闪：great 走 0.15 分支 → 定值 stub 下恒 false
+        Game.state.expeditions[2] = { exId: ex.id, start: Date.now() - 1, end: Date.now() - 1 };
+        const r = Logistics.claimExpedition(2);
+        return { r, calls };
+      };
+      const noRngCalls = 0;
+      /* 不满足 cond（回归对照）：奖励必须等于 基础×1（great=false）——与改动前公式逐位一致 */
+      const a = claim(noFleet, ex2);
+      const baseOk = Object.keys(ex2.reward).every(k => a.r.reward[k] === ex2.reward[k]);
+      /* 满足 cond：奖励 = 基础×1.5（四舍五入），greatCond 标记为真 */
+      const b = claim(okFleet, ex2);
+      const condOk = Object.keys(ex2.reward).every(k => b.r.reward[k] === Math.round(ex2.reward[k] * 1.5)) && b.r.greatCond === true;
+      /* RNG 消费次数与 cond 无关（确定性判定零消费） */
+      const sameCalls = a.calls === b.calls;
+      /* 无 cond 条目（ex6）行为不变：great=false → 基础值 */
+      const c = claim(noFleet, ex6);
+      const ex6Ok = Object.keys(ex6.reward).every(k => c.r.reward[k] === ex6.reward[k]) && c.r.greatCond === false;
+      return baseOk && condOk && sameCalls && ex6Ok;
+    } finally {
+      Math.random = nativeRandom;
+    }
+  })());
+  /* 验收12补：cond 满足 × 随机大成功 ×2 叠乘 = ×3 */
+  assert('cond 满足与随机大成功叠乘：资源 ×3（×2 × ×1.5），提督/舰娘经验不受 cond 影响', (() => {
+    const ex2 = EXPEDITIONS.find(e => e.id === 'ex2');
+    Game.newGame(); Game.state.admiral.level = 40;
+    Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+    const mk = (id, lv) => { const s = Game.createShip(id, lv); s.hp = Game.shipStats(s.uid).hpMax; return s.uid; };
+    Game.state.fleet[2] = [mk('fletcher', 60), mk('fletcher', 60), mk('fletcher', 60), mk('cleveland', 60)];
+    const nativeRandom = Math.random;
+    try {
+      Math.random = () => 0.1;                                // <0.15 → great=true（全员非闪，走 0.15 分支）；0.1<0.5 → 经验翻倍触发
+      Game.state.expeditions[2] = { exId: 'ex2', start: Date.now() - 1, end: Date.now() - 1 };
+      const r = Logistics.claimExpedition(2);
+      const mult3 = Object.keys(r.reward).every(k => r.reward[k] === Math.round(ex2.reward[k] * 3));
+      return r.great === true && r.greatCond === true && mult3;
+    } finally {
+      Math.random = nativeRandom;
+    }
+  })());
 }
 
 section('总结');

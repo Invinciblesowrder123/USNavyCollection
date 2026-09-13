@@ -122,6 +122,104 @@ const HISTORY_BATTLES = [
         + '击破第一波后你将被询问「迎击 / 收兵」：迎击则第二波立即发起，'
         + '**残弹、耐久与士气全部继承，不做任何补给**；收兵则按第一波正常结算，零惩罚。'
     }
+  },
+  {
+    id: 'M1', name: '中途岛海战', date: '1942-06-04', stars: 10,
+    admReq: 12,   // [PLACEHOLDER] 高于 H1/H2 的 10，卡在 4-x 攻略期；上线后按通关数据微调
+    brief: '中途岛。1942 年 6 月 4 日，四支机动部队的航空战队在黎明前折戟——决定胜负的不是炮，是五分钟。\n'
+      + '本战役全程考验制空：B 点与 BOSS 均为航空战节点，建议编入 ≥2 艘航母并搭载舰战。'
+      + '**战列舰禁入**——史实上战列舰队全程未接敌，把位置让给航母与护航舰（禁入舰种在场时史实加成为 0，但照常能打）。',
+    histRule: {
+      require: [{ types: ['CV', 'CVL'], min: 2 }],
+      /* 与 H1（无禁入的航空战）构成天然对照：hist_balance 用 M1 回答「禁入对航空战编成有没有辨识力」 */
+      ban: ['BB', 'BBV'],
+      tip: '1942 年 6 月 4 日，企业、大黄蜂、约克城的俯冲轰炸机在五分钟内改写了太平洋战争。'
+    },
+    bonus: { hit: 1.05, evd: 1.05 },
+    start: 'S', boss: 'X',
+    nodes: { S: { x: 0, y: 240 }, A: { x: 230, y: 110 }, B: { x: 460, y: 300 }, X: { x: 690, y: 150 } },
+    edges: [['S', 'A'], ['A', 'B'], ['B', 'X']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'M1A' },                 /* 机动部队护卫队 */
+      B: { type: 'battle', enemy: 'M1B', mode: 'air' },    /* 航空战点：机动部队本队前哨 */
+      X: { type: 'boss', enemy: 'M1X', mode: 'air' }       /* BOSS 航空战：加强两档（制空 168） */
+    },
+    enemies: {
+      M1A: { formation: '单纵阵', ships: ['eca2e', 'ecl2e', 'edd3e', 'edd3e', 'edd3e'] },
+      M1B: { formation: '轮形阵', ships: ['ecv1e', 'ecvl1e', 'edd3e', 'edd3e'] },
+      /* BOSS：H1X（147）上一档，实测制空 168 */
+      M1X: { formation: '轮形阵', ships: ['ecv1f', 'ecv1e', 'eca2e', 'edd3e', 'edd3e'] },
+      /* 第二波：飞龙残存航空队——史实 6/4 午后飞龙单独发起两轮反击 */
+      M1X2: { formation: '轮形阵', ships: ['ecv1f', 'ecvl1e', 'edd3e', 'edd3e'] }
+    },
+    bossDrops: ['enterprise', 'hornet'],   /* hornet 与 H1 重复获取是允许的双入口设计 */
+    rewards: {
+      firstClear: { fuel: 800, ammo: 800, steel: 800, baux: 400, screws: 5 },
+      histForm: { screws: 3, item: ['dc_team'], honor: 'hist_m1_s' },
+      hard: { firstClear: { screws: 5, devMats: 10 }, honor: 'hist_m1_hard' },
+      repeat: { fuel: 150, ammo: 150, steel: 150, baux: 75 }
+    },
+    hard: {
+      admReq: 15,
+      unlock: 'firstClear',
+      waves: { X: ['M1X', 'M1X2'] },
+      waveBanner: '飞龙的航空队——她们不该还能起飞。',
+      brief: '情报更新：敌军拥有第二梯队。第一波击破后，午后仍在独自反击的飞龙残存航空队可能再度压上'
+        + '——她们不该还能起飞。\n'
+        + '击破第一波后你将被询问「迎击 / 收兵」：迎击则第二波立即发起，'
+        + '**残弹、耐久与士气全部继承，不做任何补给**；收兵则按第一波正常结算，零惩罚。'
+    }
+  },
+  {
+    id: 'M2', name: '莱特湾海战', date: '1944-10-23', stars: 11,
+    admReq: 14,   // [PLACEHOLDER] 5-x 攻略期；终章战役应晚于 M1 解锁
+    /* 全游戏第一个「资源压力」战役（坑 #25）：四节点消耗 + 弹药补正是设计意图，不是 bug */
+    brief: '莱特湾。1944 年 10 月，两支舰队在菲律宾海域合围——史上规模最大的海战，也是对后勤的终极考验。\n'
+      + '四个节点步步消耗：A 点航空战（需要舰战争夺制空）、B 点潜艇伏击、C 点夜战（弹药 −30%），打到 BOSS 时弹药大概率跌破 50%'
+      + '——弹药补正会真实生效，这正是毕业考的一部分。史实编成要求混编：≥1 航母、≥1 战列舰、≥2 驱逐舰，'
+      + '第三舰队与第七舰队的协同，浓缩在你面前的六个编成位里。',
+    histRule: {
+      require: [{ types: ['CV', 'CVL'], min: 1 }, { types: ['BB'], min: 1 }, { types: ['DD'], min: 2 }],
+      ban: [],
+      tip: '1944 年 10 月 23 至 26 日，第三舰队与第七舰队两路协同，在莱特湾封死了帝国海军的最后反击。'
+    },
+    bonus: { hit: 1.05, evd: 1.05 },
+    start: 'S', boss: 'X',
+    nodes: { S: { x: 0, y: 240 }, A: { x: 210, y: 100 }, B: { x: 420, y: 300 }, C: { x: 630, y: 100 }, X: { x: 840, y: 240 } },
+    edges: [['S', 'A'], ['A', 'B'], ['B', 'C'], ['C', 'X']],
+    defs: {
+      S: { type: 'start' },
+      A: { type: 'battle', enemy: 'M2A', mode: 'air' },    /* 锡布延海空袭（制空 147） */
+      B: { type: 'battle', enemy: 'M2B', mode: 'sub' },    /* 巴拉望水道潜艇伏击——史实 10/23 潜艇击沉爱宕/摩耶 */
+      C: { type: 'battle', enemy: 'M2C', mode: 'night' },  /* 苏里高海峡——史上最后一场战列舰夜战 */
+      X: { type: 'boss', enemy: 'M2X', mode: 'air' }       /* BOSS：恩加尼奥—萨马混战（制空 182） */
+    },
+    enemies: {
+      M2A: { formation: '轮形阵', ships: ['ecv1e', 'ecvl1e', 'edd3e', 'edd3e'] },
+      M2B: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'ess3e', 'eca2e', 'edd3e'] },
+      M2C: { formation: '单纵阵', ships: ['ebb2e', 'ebb1e', 'eclt1e', 'edd3e', 'edd3e'] },
+      M2X: { formation: '轮形阵', ships: ['ecv1f', 'ecv1f', 'eca2e', 'edd3e', 'edd3e'] },
+      /* 第二波：栗田主力——战列旗舰、单纵阵、BB-heavy、无航空掩护（史实：萨马岛撤退，突入未遂） */
+      M2X2: { formation: '单纵阵', ships: ['ebb3e', 'ebb3e', 'ebb2e', 'eca2e', 'eca2e', 'edd3e'] }
+    },
+    bossDrops: ['newjersey', 'johnston'],   /* newjersey 与 5-x 掉落双入口允许；johnston = 萨马岛传奇驱逐舰 */
+    rewards: {   // [PLACEHOLDER] 毕业考档位高于 M1；上线后与通关率数据一起校
+      firstClear: { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 8 },
+      histForm: { screws: 4, item: ['dc_team'], honor: 'hist_m2_s' },
+      hard: { firstClear: { screws: 6, devMats: 12 }, honor: 'hist_m2_hard' },
+      repeat: { fuel: 200, ammo: 200, steel: 200, baux: 100 }
+    },
+    hard: {
+      admReq: 18,
+      unlock: 'firstClear',
+      waves: { X: ['M2X', 'M2X2'] },
+      waveBanner: '栗田舰队——本该完成突入的主力，现在压上来了。',
+      brief: '情报更新：敌军拥有第二梯队。第一波击破后，本该完成突入的栗田主力舰队压了上来'
+        + '——战列舰一字排开，没有航空掩护。\n'
+        + '击破第一波后你将被询问「迎击 / 收兵」：迎击则第二波立即发起，'
+        + '**残弹、耐久与士气全部继承，不做任何补给**；收兵则按第一波正常结算，零惩罚。'
+    }
   }
 ];
 

@@ -731,6 +731,7 @@ const Sortie = (() => {
       histHard: !!(histBattle && !histContinue && histHard && histWave >= 2 && histBossVictory && result.rank === 'S'),
       histNoSunk: !histBattle || (so.histSunk || 0) === 0,
       ddCount: fleetTypes(so.fleetIdx).filter(t => t === 'DD').length,
+      cvlCount: fleetTypes(so.fleetIdx).filter(t => t === 'CVL').length,   // V0.304：「约克城归队」判定用
       nodeIsBoss: isBoss,
       /* histFinal = 「本场已是战役的最终结算」（BOSS 节点 且（非强敌阶 或 第二波已打完））：
        * 荣誉用它挡住「第一波 S 胜就拿强敌阶荣誉」这类提前授勋。 */

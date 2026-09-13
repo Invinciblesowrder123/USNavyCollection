@@ -378,7 +378,19 @@ const Progression = (() => {
     { id: 'hist_h2_hard', name: '「东京快车的终点」', desc: '铁底湾：强敌阶（第二波）S 胜', kind: 'fleet',
       check: c => c.historic === 'H2' && !!c.histFinal && !!c.hard && !c.failed && c.rank === 'S' },
     { id: 'hist_h2_suilven', name: '「沙利文姐妹」', desc: '铁底湾：编成含 ≥4 艘驱逐舰且无人沉没', kind: 'fleet',
-      check: c => c.historic === 'H2' && !!c.histFinal && !c.failed && (c.ddCount || 0) >= 4 && !!c.histNoSunk }
+      check: c => c.historic === 'H2' && !!c.histFinal && !c.failed && (c.ddCount || 0) >= 4 && !!c.histNoSunk },
+    { id: 'hist_m1_s', name: '「五分钟」', desc: '中途岛：以史实编成取得 S 胜（常规阶）', kind: 'fleet',
+      check: c => c.historic === 'M1' && !!c.histFinal && !c.hard && !c.failed && c.rank === 'S' && !!c.histMatch },
+    { id: 'hist_m1_hard', name: '「俯冲轰炸机的黎明」', desc: '中途岛：强敌阶（第二波）S 胜', kind: 'fleet',
+      check: c => c.historic === 'M1' && !!c.histFinal && !!c.hard && !c.failed && c.rank === 'S' },
+    { id: 'hist_m1_cvl', name: '「约克城归队」', desc: '中途岛：编成含轻空母且取得 S 胜', kind: 'fleet',
+      check: c => c.historic === 'M1' && !!c.histFinal && !c.failed && c.rank === 'S' && (c.cvlCount || 0) >= 1 },
+    { id: 'hist_m2_s', name: '「莱特湾的黎明」', desc: '莱特湾：以史实编成取得 S 胜（常规阶）', kind: 'fleet',
+      check: c => c.historic === 'M2' && !!c.histFinal && !c.hard && !c.failed && c.rank === 'S' && !!c.histMatch },
+    { id: 'hist_m2_hard', name: '「突入的终点」', desc: '莱特湾：强敌阶（第二波）S 胜', kind: 'fleet',
+      check: c => c.historic === 'M2' && !!c.histFinal && !!c.hard && !c.failed && c.rank === 'S' },
+    { id: 'hist_m2_taffy', name: '「塔菲三号」', desc: '莱特湾：BOSS S 胜、编成含 ≥2 驱逐舰且无人沉没', kind: 'fleet',
+      check: c => c.historic === 'M2' && !!c.histFinal && !c.failed && c.rank === 'S' && (c.ddCount || 0) >= 2 && !!c.histNoSunk }
   ];
   const HONOR_BY_ID = (() => { const m = {}; for (const h of HONORS) m[h.id] = h; return m; })();
 

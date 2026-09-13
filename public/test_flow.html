@@ -432,7 +432,11 @@
       R(document.querySelector('#screen').innerHTML.includes('航向侦察'), 'recon:panel');
 
       /* ===== 方向二：舰历 ===== */
-      R(typeof Progression.recordSummary === 'function' && Progression.HONORS.length === 14, 'record:honorCount');
+      /* V0.304 起：荣誉总数遍历化（通用 8 锚定 + 战役荣誉随战役数增长，不写死总数） */
+      R(typeof Progression.recordSummary === 'function' &&
+        Progression.HONORS.filter(h => !/^hist_/.test(h.id)).length === 8 &&
+        Progression.HONORS.length >= Progression.HONORS.filter(h => /^hist_/.test(h.id)).length + 8,
+        'record:honorCount');
       /* 取一艘真正打过仗的舰（前面的流程会 unshift 维斯塔尔，fleet[1][0] 未必参战过） */
       const rUid = Object.keys(Game.state.ships).find(u => Game.state.ships[u].record && Game.state.ships[u].record.sorties > 0) || Game.state.fleet[1][0];
       const rSum = Progression.recordSummary(rUid);
@@ -632,8 +636,11 @@
         if (bid) { const c = scrEl.querySelector('[data-battle="' + bid + '"]'); if (c) c.click(); }
       };
       openHist(null);
-      R(scrEl.querySelectorAll('[data-battle]').length === 2, 'hist:tabListsBothBattles',
-        'n=' + scrEl.querySelectorAll('[data-battle]').length);
+      /* V0.304 起：战役页签断言遍历化（锚定 M1/M2 在列，不写死总数） */
+      R(scrEl.querySelectorAll('[data-battle]').length === HISTORY_BATTLES.length, 'hist:tabListsAllBattles',
+        'n=' + scrEl.querySelectorAll('[data-battle]').length + ' expected=' + HISTORY_BATTLES.length);
+      R(!!scrEl.querySelector('[data-battle="M1"]') && !!scrEl.querySelector('[data-battle="M2"]'),
+        'hist:m1m2CardsListed');
       R(!!scrEl.querySelector('.hist-list .hist-card.sel'), 'hist:firstCardSelectedByDefault');
       R(!!scrEl.querySelector('.sortie-mapside > .hist-list'), 'hist:listInLeftColumn');
       R(!!scrEl.querySelector('.sortie-mapside > .sortie-intel'), 'hist:intelBoxReused');
@@ -647,6 +654,19 @@
         'hist:ruleConditionsListed');
       /* 简报里的 **强调** 必须被渲染成粗体，不能把 markdown 标记漏给玩家 */
       R(scrEl.innerHTML.indexOf('**') < 0, 'hist:noMarkdownLeak');
+      /* V0.304：M1 禁入规则出击前可见；M2 混编三组条件 + 资源压力简报可见（坑 #22/#25） */
+      openHist('M1');
+      R(!!scrEl.querySelector('.hist-rule') && scrEl.querySelector('.hist-rule').textContent.indexOf('禁入') >= 0,
+        'hist:m1BanRuleRendered');
+      R(scrEl.innerHTML.indexOf('**') < 0, 'hist:m1NoMarkdownLeak');
+      openHist('M2');
+      R(!!scrEl.querySelector('.hist-rule') &&
+        (scrEl.querySelector('.hist-rule').textContent.match(/\u2265/g) || []).length >= 3,
+        'hist:m2MixedRuleConditions');
+      R(!!scrEl.querySelector('.hist-detail > .sortie-brief') &&
+        scrEl.querySelector('.hist-detail .sortie-brief').textContent.indexOf('弹药') >= 0,
+        'hist:m2ResourcePressureBrief');
+      openHist(null);
       /* 匹配度自检与引擎同源（DOM 文本结论必须与 Sortie.intel → History.matchRule 一致） */
       const verifyMatch = tag => {
         const it = Sortie.intel(1, 'H1');
