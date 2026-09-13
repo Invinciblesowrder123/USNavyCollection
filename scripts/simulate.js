@@ -3559,6 +3559,99 @@ section('V0.304·批次3 远征大成功（cond 编成条件）');
   })());
 }
 
+/* ============================================================
+ * V0.304 · 批次4.1：分段战斗流程回归（test_night_split.js 并入 npm run sim）
+ *   背景（V0.303 报告 §10.8）：该脚本手工注入全局命名空间，引擎新增依赖时静默失效。
+ *   并入 sim 后与主套件共享装载与 assert —— 引擎全局依赖变化立刻暴露。
+ *   验证：昼战分段 / battleNight 追加 / 演习分段结算 / settleBattle 弹药 20%·30% 分支。
+ * ============================================================ */
+section('V0.304·批次4 分段战斗流程回归（原 test_night_split 并入）');
+{
+  Game.newGame();
+  const nfFleet = Game.state.fleet[1];
+  const nfHasNight = log => log.some(e => typeof e === 'string' && e.includes('进入夜战'));
+  assert('夜战回归：全局命名空间注入与主套件一致（shipSpeed / SLOW_CLASSES 可用）',
+    typeof shipSpeed === 'function' && Array.isArray(SLOW_CLASSES));
+
+  /* ---- 昼战分段：allowNight:false 不进入夜战 ---- */
+  const nfDay = Battle.battle(nfFleet, ENEMY_FLEETS.F09.ships, '单纵阵', ENEMY_FLEETS.F09.formation, { allowNight: false, fleetIdx: 1 });
+  assert('分段回归：昼战结果不含夜战日志', !nfHasNight(nfDay.log));
+  assert('分段回归：昼战 nightUsed=false', nfDay.nightUsed === false);
+  assert('分段回归：昼战结果持有阵型名（供夜战续接）', !!nfDay.formAName && !!nfDay.formBName);
+  const nfMyAlive = nfDay.mySide.some(s => s.alive);
+  const nfEnAlive = nfDay.enemySide.some(s => s.alive);
+  assert('分段回归：昼战含战斗结束结算行', nfDay.log.some(e => typeof e === 'string' && e.includes('战斗结束')));
+  const nfDayLogLen = nfDay.log.length;
+
+  /* ---- 夜战续接：追加日志并重新结算 ---- */
+  if (nfMyAlive && nfEnAlive) {
+    const nfNight = Battle.battleNight(nfDay);
+    assert('分段回归：夜战追加进入夜战日志', nfHasNight(nfNight.log));
+    assert('分段回归：夜战日志追加在昼战日志之后', nfNight.log.length > nfDayLogLen && nfNight.log[nfDayLogLen] !== undefined);
+    assert('分段回归：夜战结果 nightUsed=true', nfNight.nightUsed === true);
+    assert('分段回归：夜战共享同一日志数组引用', nfNight.log === nfDay.log);
+    assert('分段回归：夜战mySide沿用昼战对象', nfNight.mySide === nfDay.mySide && nfNight.enemySide === nfDay.enemySide);
+    assert('分段回归：夜战后评价不劣于昼战（夜战只能加分）',
+      'SABC'.indexOf(nfNight.rank) <= 'SABC'.indexOf(nfDay.rank), `昼${nfDay.rank} 夜${nfNight.rank}`);
+  } else {
+    const nfNight = Battle.battleNight(nfDay);
+    assert('分段回归：无战力时 battleNight 不崩且不进入夜战', nfNight !== null && !nfHasNight(nfNight.log) && nfNight.nightUsed === false);
+  }
+
+  /* ---- 演习：分段流程 + 结算经验 ---- */
+  const nfPf = Logistics.practiceReady().fleets[0];
+  const nfPracDay = Battle.battle(nfFleet, nfPf.ships, '复纵阵', '单纵阵', { allowNight: false, fleetIdx: 1 });
+  assert('分段回归：演习昼战敌方阵型为单纵阵', nfPracDay.formBName === '单纵阵');
+  assert('分段回归：演习昼战我方阵型生效', nfPracDay.formAName === '复纵阵');
+  const nfPracNight = Battle.battleNight(nfPracDay);
+  const nfGains = Progression.applyBattleResult(1, nfPracNight, true);
+  assert('分段回归：演习夜战后经验结算正常', Array.isArray(nfGains.gains));
+  assert('分段回归：演习提督经验合理', nfGains.adm.exp >= 20 && nfGains.adm.exp <= 160);
+
+  /* ---- 出击 settleBattle 全流程（prep → night → settle） ---- */
+  Sortie.start('1-1', 1);
+  Sortie.moveToNext();                 // S -> A（战斗点）
+  const nfPrep = Sortie.prepareBattle('单纵阵');
+  assert('分段回归：prepareBattle 成功且不含夜战', nfPrep.ok && !nfHasNight(nfPrep.result.log));
+  const nfAmmoBefore = Game.state.ships[nfFleet[0]].supply.ammo;
+  const nfSettled = Sortie.settleBattle(nfPrep);
+  assert('分段回归：不夜战：弹药消耗20%',
+    Math.abs(Game.state.ships[nfFleet[0]].supply.ammo - (nfAmmoBefore - 0.2)) < 1e-9,
+    `消耗${(nfAmmoBefore - Game.state.ships[nfFleet[0]].supply.ammo).toFixed(2)}`);
+  assert('分段回归：settleBattle 返回掉血条字段', nfSettled.ok && ('drop' in nfSettled) && ('cleared' in nfSettled));
+  Sortie.returnHome();
+
+  /* ---- 夜战突入：弹药消耗30% ---- */
+  const nfStrong = ['iowa', 'southdakota', 'enterprise', 'fletcher', 'kidd', 'helena']
+    .map(id => Game.createShip(id, 50));
+  const nfStrongFleet = nfStrong.map(s => s.uid);
+  const nfPrevFleet = Game.state.fleet[1];
+  Game.state.fleet[1] = nfStrongFleet;
+  for (const u of nfStrongFleet) { const s = Game.state.ships[u]; s.supply.fuel = 1; s.supply.ammo = 1; }
+  let nfPrep2 = null, nfNightAvail = false;
+  for (let attempt = 0; attempt < 5 && !nfNightAvail; attempt++) {
+    Sortie.start('1-1', 1);
+    Sortie.moveToNext();               // S -> A（战斗点）
+    Sortie.moveToNext();               // A -> B（BOSS点）
+    nfPrep2 = Sortie.prepareBattle('单纵阵');
+    nfNightAvail = nfPrep2.ok && nfPrep2.result.mySide.some(s => s.alive) && nfPrep2.result.enemySide.some(s => s.alive);
+  }
+  assert('分段回归：夜战路径 prepareBattle 成功', nfPrep2 && nfPrep2.ok);
+  if (nfNightAvail) {
+    Sortie.continueNight(nfPrep2);
+    assert('分段回归：夜战突入后 nightUsed=true', nfPrep2.result.nightUsed === true);
+  } else {
+    nfPrep2.result.nightUsed = true;   // 昼战即全歼时，直接校验结算的30%弹药分支
+  }
+  const nfAmmoBefore30 = Game.state.ships[nfStrongFleet[0]].supply.ammo;
+  Sortie.settleBattle(nfPrep2);
+  assert('分段回归：夜战突入：弹药消耗30%',
+    Math.abs(Game.state.ships[nfStrongFleet[0]].supply.ammo - (nfAmmoBefore30 - 0.3)) < 1e-9,
+    `消耗${(nfAmmoBefore30 - Game.state.ships[nfStrongFleet[0]].supply.ammo).toFixed(2)}`);
+  Sortie.returnHome();
+  Game.state.fleet[1] = nfPrevFleet;
+}
+
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed ? 1 : 0);
