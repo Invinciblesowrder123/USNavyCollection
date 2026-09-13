@@ -169,6 +169,59 @@
         }
         return;
       }
+      if (c === 'brief52') {
+        /* 5-2 苏里高海峡（V0.304 子批 3c）：全夜战路线 —— 简报点明夜战节点 ×3 + 威胁评估 */
+        Game.state.mapProgress['5-1'].cleared = true;
+        SortieUI.mapList(scr);
+        var a5 = scr.querySelector('[data-area="5"]'); if (a5) a5.click();
+        var m52 = scr.querySelector('[data-map="5-2"]'); if (m52) m52.click();
+        return;
+      }
+      if (c === 'nodes55') {
+        /* 5-5 莱特湾决战（V0.304 子批 3c）：四类特殊节点同图 + 重连后的双路线 */
+        Game.state.mapProgress['5-4'].cleared = true;
+        Game.state.mapProgress['5-5'].kills = 2; Game.state.mapProgress['5-5'].gauge = 6;
+        var st55 = Sortie.start('5-5', 1);
+        if (!st55.ok) { scr.innerHTML = '<pre style="color:#f88">' + st55.msg + '</pre>'; return; }
+        Game.state.sortie.node = 'A';
+        SortieUI.sortieActive(scr);
+        return;
+      }
+      if (c === 'histM1' || c === 'histM2') {
+        /* V0.304 第二批战役详情：
+         *   histM1 —— M1 中途岛 + 含战列舰编成 → 禁入红色警示（考「禁入制空」）
+         *   histM2 —— M2 莱特湾 + 混编编成 → 三组 require 全部满足 + 资源压力简报（坑 #25） */
+        Game.state.admiral.level = 60;
+        var histFleet2 = (c === 'histM1')
+          ? [mk('enterprise', 95, ['f6f5', 'f6f5', 'f6f5', 'sbdvs2']),
+             mk('essex', 90, ['f6f5', 'f6f5', 'tbf', 'sbdvs2']),
+             mk('iowa', 90, ['gun16in_50', 'gun16in_50', 'ap_mk8']),
+             mk('fletcher', 80, ['gun5in_38', 'torp_mk15', 'torp_mk15'])]
+          : [mk('enterprise', 95, ['f6f5', 'f6f5', 'tbf', 'sbdvs2']),
+             mk('iowa', 90, ['gun16in_50', 'gun16in_50', 'ap_mk8']),
+             mk('fletcher', 85, ['gun5in_38', 'torp_mk15', 'torp_mk15']),
+             mk('kidd', 80, ['gun5in_38', 'torp_mk15', 'radar_sg'])];
+        Game.state.fleet[1] = histFleet2;
+        SortieUI.mapList(scr);
+        var tabH2 = scr.querySelector('[data-tab="hist"]'); if (tabH2) tabH2.click();
+        var bSel = scr.querySelector('[data-battle="' + (c === 'histM1' ? 'M1' : 'M2') + '"]'); if (bSel) bSel.click();
+        return;
+      }
+      if (c === 'histWaveM2') {
+        /* V0.304 强敌阶第二波入场：M2 莱特湾，栗田主力压上，看第二波横幅 */
+        Game.state.admiral.level = 60;
+        Game.state.fleet[1] = [mk('enterprise', 95, ['f6f5', 'f6f5', 'tbf', 'sbdvs2']),
+                               mk('iowa', 95, ['gun16in_50', 'gun16in_50', 'ap_mk8']),
+                               mk('fletcher', 90, ['gun5in_38', 'torp_mk15', 'torp_mk15']),
+                               mk('kidd', 90, ['gun5in_38', 'torp_mk15', 'radar_sg'])];
+        Game.state.stats.historic['M2:firstClear'] = Date.now();
+        var stM2 = Sortie.startHard('M2', 1);
+        if (!stM2.ok) { scr.innerHTML = '<pre style="color:#f88">' + stM2.msg + '</pre>'; return; }
+        Game.state.sortie.node = 'X';
+        Game.state.sortie.wave = 2;
+        SortieUI.sortieActive(scr);
+        return;
+      }
       var st = Sortie.start('2-3', 1);
       if (!st.ok) { scr.innerHTML = '<pre style="color:#f88">' + st.msg + '</pre>'; return; }
       Game.state.sortie.node = 'A';                      // 2-3 A = 航空战点

@@ -2630,7 +2630,10 @@ section('V0.303·任务1.3 史实加成乘区 _histHit（独立乘区，绝不�
   for (let i = 0; i < 60; i++) { airKeyFleet(); if (Battle.battle(Game.state.fleet[1].slice(), en.ships, '单纵阵', en.formation, { allowNight: true, fleetIdx: 1, airMode: true }).rank === 'S') sOff++; }
   for (let i = 0; i < 60; i++) { airKeyFleet(); if (Battle.battle(Game.state.fleet[1].slice(), en.ships, '单纵阵', en.formation, { allowNight: true, fleetIdx: 1, airMode: true, historic: true, histHit: 1.05, histEvd: 1.05 }).rank === 'S') sOn++; }
   assert('史实加成方向正确：开启后 S 胜次数不少于关闭（60 场对照，只作方向性检查）',
-    sOn >= sOff - 6, `off=${sOff} on=${sOn}`);
+    /* V0.304：容差 ±6 → ±12。根因：hist_balance 的 equipAir 配装修正（舰战+舰爆混装）后
+     * CV 队 S 胜方差增大，60 场样本下差值标准差 ≈5.5，±6 仅约 1σ（实测约 1/12 跑次误报）。
+     * ±12 ≈ 2σ，仍保留「加成方向不得反转」的判别力。 */
+    sOn >= sOff - 12, `off=${sOff} on=${sOn}`);
 }
 
 section('V0.303·任务1.4 结算 / 全局账本 / 存档 v6 / item 奖励通道');
@@ -2752,16 +2755,26 @@ section('V0.303·任务2.1 强敌阶二波制（waves）');
     return s.uid;
   };
   const toBoss2 = () => {
+    /* V0.304 稳固化：道中战后旗舰可能大破 → 大破进击拦截 prepareBattle（实测约 1~2/10 跑次 flaky）。
+     * 本段关注二波机制而非损伤管理——拦截时修满耐久重试一次。 */
+    const retryPrep = () => {
+      let p = Sortie.prepareBattle('单纵阵');
+      if (!p.ok) {
+        for (const u of Game.state.fleet[1]) { const s = Game.state.ships[u]; if (s) s.hp = Game.shipStats(u).hpMax; }
+        p = Sortie.prepareBattle('单纵阵');
+      }
+      return p;
+    };
     let guard = 0;
     while (guard++ < 12) {
       const map = Sortie.currentMap();
       if (!map) return null;
       const def = Sortie.nodeDef(map, Game.state.sortie.node);
       if (def.type === 'battle') {
-        const p = Sortie.prepareBattle('单纵阵');
+        const p = retryPrep();
         if (!p.ok) return null;
         Sortie.settleBattle(p);
-      } else if (def.type === 'boss') return Sortie.prepareBattle('单纵阵');
+      } else if (def.type === 'boss') return retryPrep();
       if (!Sortie.moveToNext()) return null;
     }
     return null;
@@ -2888,8 +2901,17 @@ section('V0.303·任务2.1 强敌阶二波制（waves）');
 
   /* ---- 断言 21：二波战败的归因必须命中「弹药 / 连续作战」，而不是误报索敌失败 ----
    * 直接推进到 BOSS 再人为制造「第一波之后的残破状态」（残弹见底 + 全员大破）：
-   * 这正是二波制在真实玩法里的典型场景，且比"用弱船从 S 点打到 BOSS"确定得多。 */
-  setupHard(hardFleet);
+   * 这正是二波制在真实玩法里的典型场景，且比"用弱船从 S 点打到 BOSS"确定得多。
+   * V0.304 稳固化：改用**纯水面编队**——CV 的舰爆轰炸不消耗弹药（航空战照打），
+   * 深夜战场景下偶发 B 胜导致归因断言 flaky（实测 1/10）；纯水面 + 残弹 0 = 必败构造。 */
+  setupHard(() => [
+    histShip2('iowa', 120, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+    histShip2('washington', 120, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+    histShip2('southdakota', 120, ['gun16in_50', 'gun16in_50', 'ap_mk8']),
+    histShip2('fletcher', 120, ['gun5in_38', 'torp_mk15', 'torp_mk15', 'sonar_qc']),
+    histShip2('benson', 120, ['gun5in_38', 'torp_mk15', 'torp_mk15']),
+    histShip2('baltimore', 120, ['gun8in_55', 'gun8in_55', 'radar_sg', 'ap_mk8'])
+  ]);
   Game.state.sortie.node = 'X';
   const prepW = Sortie.prepareBattle('单纵阵');
   let lost = null;
@@ -2901,7 +2923,9 @@ section('V0.303·任务2.1 强敌阶二波制（waves）');
     const uids = Game.state.fleet[1].filter(u => Game.state.ships[u]);
     uids.forEach((u, i) => {
       const s = Game.state.ships[u];
-      s.supply.ammo = 0.04; s.supply.fuel = 0.04;
+      /* V0.304 稳固化：残弹 0.04（补正 0.08）下高练度队偶发 B 胜 → 归因断言 flaky（实测 1/10）。
+       * 残弹 0 = 「0% 无法炮击」（引擎既有规则），战败构造确定化。 */
+      s.supply.ammo = 0; s.supply.fuel = 0.04;
       s.hp = i === 0 ? Math.max(1, Math.floor(Game.shipStats(u).hpMax * 0.4)) : 1;
     });
     const p2 = Sortie.startHardWave(prepW);
@@ -3347,8 +3371,13 @@ section('V0.304·批次2 M1 中途岛 / M2 莱特湾');
       const map = Sortie.currentMap();
       if (!map) return false;
       const def = Sortie.nodeDef(map, Game.state.sortie.node);
-      const p = Sortie.prepareBattle('单纵阵');
-      if (!p.ok) return false;
+      let p = Sortie.prepareBattle('单纵阵');
+      if (!p.ok) {
+        /* 大破进击拦截的稳固化（同 toBoss2）：修满耐久重试一次，本段关注资源压力而非损伤 */
+        for (const u of Game.state.fleet[1]) { const s = Game.state.ships[u]; if (s) s.hp = Game.shipStats(u).hpMax; }
+        p = Sortie.prepareBattle('单纵阵');
+        if (!p.ok) return false;
+      }
       if (def.type === 'boss') {
         const ammos = Game.state.fleet[1].filter(u => Game.state.ships[u]).map(u => Game.state.ships[u].supply.ammo);
         const minAmmo = Math.min.apply(null, ammos);

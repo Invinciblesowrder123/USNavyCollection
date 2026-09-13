@@ -169,12 +169,17 @@ if (fs.existsSync(againstPath) && fs.statSync(againstPath).isFile()) {
   process.exit(1);
 }
 
-if (ref === out) {
+/* 行尾免疫（同下）：autocrlf 转换不改变摘要内容，逐位比较前归一化 \r\n → \n */
+const norm = s => s.replace(/\r\n/g, '\n');
+if (norm(ref) === norm(out)) {
   console.log('✓ 战斗数值零漂移：' + lines.length + ' 组场景摘要逐位一致');
   process.exit(0);
 }
 console.error('✗ 检测到战斗数值漂移：');
-const a = ref.trim().split('\n'), b = out.trim().split('\n');
+/* 行尾免疫：core.autocrlf=true 时 git checkout 会把基线文件转成 CRLF，行尾 \r 会造成整文件误报漂移
+ * （2026-09-13 实测：scripts/ 目录意外恢复后三基线全红，逐字节排查发现行尾差异）。 */
+const stripCR = s => s.replace(/\r$/, '');
+const a = ref.trim().split('\n').map(stripCR), b = out.trim().split('\n').map(stripCR);
 for (let i = 0; i < Math.max(a.length, b.length); i++) {
   if (a[i] !== b[i]) {
     console.error('  - 基线: ' + (a[i] || '(缺失)'));
