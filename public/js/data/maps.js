@@ -204,7 +204,18 @@ const ENEMY_FLEETS = {
   /* 3-2 A 点潜艇伏击：阿留申的潜艇战（基斯卡近海） */
   F95: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'eca2e', 'edd3e'] },
   /* 3-5 G 点潜艇伏击：北方海域的混合防线 */
-  F96: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'eca2e', 'edd3e'] }
+  F96: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'eca2e', 'edd3e'] },
+  /* ---- V0.304 批次1（子批 3c）：4-x/5-x 特殊节点铺开使用的新编成（全部复用既有深海模板，不新增数值单位） ---- */
+  /* 4-1 C 点航空战：环礁上空的舰载机警戒队（制空 83，与 BOSS F63 同档） */
+  F97: { formation: '轮形阵', ships: ['ecvl1f', 'eca2e', 'edd3e', 'edd3e'] },
+  /* 5-1 A 点潜艇伏击：巴拉望方向先期破交的潜水战队（重巡护卫） */
+  F98: { formation: '梯形阵', ships: ['ess4', 'ess3e', 'ess3e', 'eca2e', 'edd3e'] },
+  /* 5-1 B 点航空战：前哨上空的空袭队（制空 ~150） */
+  F99: { formation: '轮形阵', ships: ['ecv1e', 'ecvl1e', 'edd3e', 'edd3e'] },
+  /* 5-3 A 点航空战：萨马岛清晨来袭的舰载机群（制空 ~156） */
+  F100: { formation: '轮形阵', ships: ['ecvl1f', 'ecvl1e', 'ecl2e', 'edd3e'] },
+  /* 5-5 G 点潜艇伏击：终章航线上的潜水警戒线 */
+  F101: { formation: '梯形阵', ships: ['ess4', 'ess4', 'ess3e', 'eca2e', 'edd3e'] },
 };
 
 /* ---------- 海域定义 ----------
@@ -633,10 +644,10 @@ const MAPS = [
   /* ==================== 4.中太平洋海域（马绍尔/马里亚纳，wiki 6-X） ==================== */
   {
     id: '4-1', name: '马绍尔群岛近海', desc: '挺进中太平洋！深海在环礁之间布下了哨戒线。', stars: 11,
-    brief: '挺进中太平洋。马绍尔群岛的环礁之间，深海布下了第一道哨戒线。\nA 点敌军编成含潜水舰，BOSS 带轻空母；索敌≥35 可抢先进逼。对潜舰艇（驱逐舰、轻巡洋舰）与舰战都要带上。',
-    /* threat：asw ← A 点敌军 F60 含潜水舰；air ← BOSS F63 含轻空母 Nu 级；los ← branch.if.los */
+    brief: '挺进中太平洋。马绍尔群岛的环礁之间，深海布下了第一道哨戒线。\nA 点敌军编成含潜水舰，C 点为航空战节点，BOSS 带轻空母；索敌≥35 可抢先进逼。对潜舰艇（驱逐舰、轻巡洋舰）与舰战都要带上。',
+    /* threat：asw ← A 点敌军 F60 含潜水舰；air ← C 点 mode:'air' 与 BOSS F63 含轻空母 Nu 级；los ← branch.if.los */
     threat: ['air', 'asw', 'los'],
-    threatNote: '本海域考验对潜、索敌与制空。A 点为对潜警戒线（敌军含潜水舰），索敌≥35 可直接切入该线；BOSS 为轻空母旗舰部队，未搭载舰战将丧失制空权。',
+    threatNote: '本海域考验对潜、索敌与制空。A 点为对潜警戒线（敌军含潜水舰），索敌≥35 可直接切入该线；C 点为航空战点：未编入航母的舰队只能以对空炮火被动迎击；BOSS 为轻空母旗舰部队。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 130, boss: 2000 },   // 提督经验（wiki 6-1: 道中+130 / BOSS+2000）
     nodes: {
@@ -647,7 +658,7 @@ const MAPS = [
       S: { type: 'start' },
       A: { type: 'battle', enemy: 'F60' },   // 对潜警戒
       B: { type: 'battle', enemy: 'F61' },
-      C: { type: 'battle', enemy: 'F62' },   // 水雷战队
+      C: { type: 'battle', enemy: 'F97', mode: 'air' },   // 航空战点：环礁上空的舰载机警戒队
       D: { type: 'boss', enemy: 'F63' }
     },
     branch: { at: 'S', if: { los: 35 }, to: ['A'] },   // 索敌≥35 走反潜线；否则走哨戒线
@@ -656,10 +667,10 @@ const MAPS = [
   },
   {
     id: '4-2', name: '夸贾林环礁海域', desc: '世界最大环礁的要塞！夺取铝土补给线并击破守军。', stars: 11,
-    brief: '夸贾林。世界最大的环礁，铝土补给线正从它的泻湖里过。\n敌军以轻空母为核心，制空是这场仗的先手；索敌≥45 可绕开外围哨戒直取 BOSS。',
-    /* threat：air ← A 点/BOSS 敌军含轻空母 Nu 级；los ← branch.if.los */
+    brief: '夸贾林。世界最大的环礁，铝土补给线正从它的泻湖里过。\nA 点为航空战节点：敌军以轻空母为核心，制空是这场仗的先手；索敌≥45 可绕开外围哨戒直取 BOSS。',
+    /* threat：air ← A 点 mode:'air' 与 BOSS 敌军含轻空母 Nu 级；los ← branch.if.los */
     threat: ['air', 'los'],
-    threatNote: '本海域考验制空与索敌。索敌≥45 可切入 B 点铝土补给线；A 点与 BOSS 编成均含敌空母，未编入航母并搭载舰战将丧失制空权。',
+    threatNote: '本海域考验制空与索敌。索敌≥45 可切入 B 点铝土补给线；A 点为航空战点：未编入航母的舰队只能以对空炮火被动迎击；BOSS 编成含敌空母，未搭载舰战将丧失制空权。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 140, boss: 2100 },   // 提督经验（wiki 6-3: 道中+140 / BOSS+2100）
     nodes: {
@@ -668,7 +679,7 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F64' },   // 空袭
+      A: { type: 'battle', enemy: 'F64', mode: 'air' },   // 航空战点：环礁上空的空袭
       B: { type: 'resource', reward: ['baux'] },
       C: { type: 'battle', enemy: 'F65' },
       D: { type: 'boss', enemy: 'F66' }
@@ -679,10 +690,10 @@ const MAPS = [
   },
   {
     id: '4-3', name: '塞班岛攻略', desc: '登陆塞班岛！突破深海航空部队的拦截。', stars: 12,
-    brief: '塞班岛。登陆部队在海上等着，舰队得先解决头顶上的东西。\nA 点与 BOSS 编成均含空母，制空不足会让整场炮战变成单方面挨打；索敌≥55 可直插纵深。',
-    /* threat：air ← A 点敌军 F67 含空母；los ← branch.if.los */
+    brief: '塞班岛。登陆部队在海上等着，舰队得先解决头顶上的东西。\nA 点为航空战节点，敌军以正规空母为核心；索敌≥55 可直插纵深。制空不足会让整场炮战变成单方面挨打。',
+    /* threat：air ← A 点 mode:'air'（敌军 F67 含空母）；los ← branch.if.los */
     threat: ['air', 'los'],
-    threatNote: '本海域是空袭与夜袭的复合线。索敌≥55 可切入 B 点夜袭线；A 点与 BOSS 编成含敌空母，需要舰战争夺制空。',
+    threatNote: '本海域是空袭与夜袭的复合线。索敌≥55 可切入 B 点夜袭线；A 点为航空战点：未编入航母的舰队只能以对空炮火被动迎击；BOSS 编成含敌空母，需要舰战争夺制空。',
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 150, boss: 2400 },   // 提督经验（wiki 6-4: 道中+150 / BOSS+2400）
     nodes: {
@@ -691,7 +702,7 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F67' },   // 空袭
+      A: { type: 'battle', enemy: 'F67', mode: 'air' },   // 航空战点：正规空母的拦截线
       B: { type: 'battle', enemy: 'F68' },   // 夜战舰队
       C: { type: 'battle', enemy: 'F69' },   // 攻略部队
       D: { type: 'boss', enemy: 'F70' }
@@ -702,10 +713,10 @@ const MAPS = [
   },
   {
     id: '4-4', name: '菲律宾海决战', desc: '马里亚纳火鸡射击！深海机动部队倾巢而出，制空权决战！', stars: 12,
-    brief: '马里亚纳。深海机动部队倾巢而出，这是开战以来最大的一次机群集结。\n本海域没有分支，全图都是正面的制空决战。未携带舰战将丧失制空：敌机空袭无从拦截，昼战特殊攻击也全部无法发动。',
-    /* threat：air ← A/B/BOSS 三个节点敌军全部以空母为核心（无分支、无潜艇） */
+    brief: '马里亚纳。深海机动部队倾巢而出，这是开战以来最大的一次机群集结——三个节点全部是航空战节点，大机群遮天蔽日。\n本海域没有分支，全图都是正面的制空决战。未携带舰战将丧失制空：敌机空袭无从拦截，昼战特殊攻击全部无法发动；没有航空母舰的舰队将在每个节点陷入被动防空。',
+    /* threat：air ← A/B/BOSS 三个节点均为 mode:'air' 且敌军全部以空母为核心（无分支、无潜艇） */
     threat: ['air'],
-    threatNote: '马里亚纳火鸡射击 —— 全空袭决战。本图三个节点敌军全部以空母为核心：没有航空母舰的舰队将连续暴露在敌机轰炸之下，请编入航母并搭载舰战夺取制空。',
+    threatNote: '马里亚纳火鸡射击 —— 全空袭决战。本图 A、B 与 BOSS 三个节点均为航空战点且敌军全部以空母为核心，制空压力为全部常规海域最高档：没有航空母舰的舰队将连续暴露在敌机轰炸之下，请编入航母并搭载舰战夺取制空。',
     start: 'S', boss: 'C', gauge: 5,
     admExp: { node: 170, boss: 2700 },   // 提督经验（wiki 6-5 前置：道中+170 / BOSS+2700）
     nodes: {
@@ -714,19 +725,19 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'B'], ['B', 'C']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F71' },   // 空袭前哨
-      B: { type: 'battle', enemy: 'F72' },   // 空袭主力
-      C: { type: 'boss', enemy: 'F73' }      // 机动部队本队
+      A: { type: 'battle', enemy: 'F71', mode: 'air' },   // 航空战点：空袭前哨
+      B: { type: 'battle', enemy: 'F72', mode: 'air' },   // 航空战点：空袭主力（大机群）
+      C: { type: 'boss', enemy: 'F73', mode: 'air' }      // BOSS 航空战：机动部队本队（大机群）
     },
     drops: ['heermann', 'laffey', 'nicholas', 'charlesausburne', 'gearing'],
     bossDrops: ['essex', 'southdakota', 'saratoga']
   },
   {
     id: '4-5', name: '硫磺岛近海', desc: 'BOSS海域！折钵山栖姬镇守的硫磺岛，寸土必争的恶战！', stars: 13,
-    brief: '硫磺岛。折钵山栖姬把这里变成了中太平洋最难啃的一块骨头。\nA 点敌军编成含潜水舰，B 点与 BOSS 均带舰载机；索敌≥60 可抢在敌机出动前完成展开。对潜与制空，一样都不能少。',
-    /* threat：asw ← A 点敌军 F74 含潜水舰；air ← B 点敌军 F75 含空母；los ← branch.if.los */
-    threat: ['air', 'asw', 'los'],
-    threatNote: '本海域考验对潜、制空与索敌。索敌≥60 可切入 B 点空袭线；A 点为对潜警戒（敌军含潜水舰），B 点与 BOSS 编成含敌空母，未搭载舰战将丧失制空权。',
+    brief: '硫磺岛。折钵山栖姬把这里变成了中太平洋最难啃的一块骨头。\n本海域设航空战节点（B 点）与夜战节点（C 点）：B 点机群密集，C 点没有昼战——夜战火力与舰战缺一不可。A 点敌军编成含潜水舰；索敌≥60 可抢在敌机出动前完成展开。',
+    /* threat：asw ← A 点敌军 F74 含潜水舰；air ← B 点 mode:'air'；night ← C 点 mode:'night'；los ← branch.if.los */
+    threat: ['air', 'asw', 'los', 'night'],
+    threatNote: '本海域考验对潜、制空、夜战与索敌。索敌≥60 可切入 B 点空袭线；A 点为对潜警戒（敌军含潜水舰）；B 点为航空战点：未编入航母的舰队只能以对空炮火被动迎击；C 点为夜战点：需要夜战火力支撑。',
     start: 'S', boss: 'D', gauge: 7, need: '4-4',
     admExp: { node: 180, boss: 3300 },   // 提督经验（wiki 6-5: 道中+180 / BOSS+3300）
     nodes: {
@@ -736,8 +747,8 @@ const MAPS = [
     defs: {
       S: { type: 'start' },
       A: { type: 'battle', enemy: 'F74' },   // 对潜警戒
-      B: { type: 'battle', enemy: 'F75' },   // 空袭
-      C: { type: 'battle', enemy: 'F76' },   // 夜战
+      B: { type: 'battle', enemy: 'F75', mode: 'air' },    // 航空战点：空袭
+      C: { type: 'battle', enemy: 'F76', mode: 'night' },  // 夜战点：夜战线
       D: { type: 'boss', enemy: 'F77' }
     },
     branch: { at: 'A', if: { los: 60 }, to: ['B'] },   // 索敌≥60 走空袭线；否则走夜战线
@@ -747,28 +758,32 @@ const MAPS = [
   /* ==================== 5.菲律宾海域（莱特湾，wiki 5-X） ==================== */
   {
     id: '5-1', name: '莱特湾前哨', desc: '菲律宾的大门已经敞开！扫清莱特湾的前哨防线。', stars: 13,
-    brief: '莱特湾前哨。菲律宾的大门已经敞开，深海把机动部队的残部留在了门口。\nBOSS 编成含空母，制空不足则昼战特殊攻击全部无法发动。本海域航路单一，胜负取决于编成而不是路线。',
-    /* threat：air ← BOSS 敌军 F79 含空母 Wo 级（本图无分支、无潜艇） */
-    threat: ['air'],
-    threatNote: '莱特湾的大门。BOSS 编成以空母 Wo 级为核心：未编入航母并搭载舰战将丧失制空权。',
-    start: 'S', boss: 'C', gauge: 5,
+    brief: '莱特湾前哨。菲律宾的大门已经敞开，深海把机动部队的残部留在了门口。\n航路单一但步步惊心：A 点为潜艇伏击点（先期破交的潜水战队），B 点为航空战节点。对潜舰艇与舰战都要带上——两关都过了，才轮到空母旗舰坐镇的 BOSS。',
+    /* threat：asw ← A 点 mode:'sub'；air ← B 点 mode:'air' 与 BOSS F79 含空母 Wo 级（本图无分支） */
+    threat: ['air', 'asw'],
+    threatNote: '本海域考验对潜与制空。A 点为潜艇伏击：未编入驱逐舰、轻巡洋舰将被单方面雷击；B 点为航空战点：需要舰战争夺制空；BOSS 编成以空母 Wo 级为核心。',
+    start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 120, boss: 1800 },   // 提督经验（wiki 5-1: 道中+120 / BOSS+1800）
     nodes: {
-      S: { x: 0, y: 260 }, A: { x: 280, y: 100 }, B: { x: 280, y: 420 }, C: { x: 560, y: 260 }
+      S: { x: 0, y: 260 }, A: { x: 260, y: 120 }, B: { x: 520, y: 260 }, C: { x: 760, y: 120 }, D: { x: 980, y: 260 }
     },
-    edges: [['S', 'A'], ['A', 'B'], ['B', 'C']],
+    edges: [['S', 'A'], ['A', 'B'], ['B', 'C'], ['C', 'D']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F78' },
-      B: { type: 'resource', reward: ['fuel'] },
-      C: { type: 'boss', enemy: 'F79' }
+      A: { type: 'battle', enemy: 'F98', mode: 'sub' },   // 潜艇点：先期破交的潜水战队
+      B: { type: 'battle', enemy: 'F99', mode: 'air' },   // 航空战点：前哨上空的空袭队
+      C: { type: 'resource', reward: ['fuel'] },
+      D: { type: 'boss', enemy: 'F79' }
     },
     drops: ['kidd', 'sumner'],
     bossDrops: ['intrepid', 'northcarolina', 'colorado']
   },
   {
     id: '5-2', name: '苏里高海峡', desc: '夜战的海峡！老战列舰组成的夜战阵线迎击深海舰队！', stars: 13,
-    brief: '苏里高海峡。海峡很窄，双方都没有回避的余地。\n敌编成以战列舰与雷装巡洋舰为主干，正面炮战的火力极厚。装甲与火力不足的舰队会在这里被逐舰拆解——带上扛得住第一轮齐射的舰。',
+    brief: '苏里高海峡。1944 年 10 月 25 日凌晨，老战列舰们在黑暗中排成一字横队——海峡很窄，双方都没有回避的余地。\n本海域全线都是夜战节点：A、B 与 BOSS 三战皆在夜间进行，没有昼战，空母没有用武之地。夜战火力、鱼雷 Cut-in 与照明弹配装是唯一答案；装甲不足的舰队会被逐舰拆解。',
+    /* threat：night ← A/B/BOSS 全线 mode:'night'（史上最后一场战列舰夜战：全线夜战） */
+    threat: ['night'],
+    threatNote: '本海域是史上最后一场战列舰夜战的舞台：全线夜战节点，没有昼战阶段。夜战火力（火力与雷装）决定一切，请把编成位让给驱逐舰、轻巡洋舰与老战列舰——航空母舰在这里无法参战。',
     start: 'S', boss: 'C', gauge: 5,
     admExp: { node: 130, boss: 1900 },   // 提督经验（wiki 5-2: 道中+130 / BOSS+1900）
     nodes: {
@@ -777,16 +792,19 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'B'], ['B', 'C']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F80' },   // 水雷前卫（夜战）
-      B: { type: 'battle', enemy: 'F81' },   // 战列夜战线
-      C: { type: 'boss', enemy: 'F82' }
+      A: { type: 'battle', enemy: 'F80', mode: 'night' },   // 夜战点：水雷前卫
+      B: { type: 'battle', enemy: 'F81', mode: 'night' },   // 夜战点：战列夜战线
+      C: { type: 'boss', enemy: 'F82', mode: 'night' }      // BOSS 夜战：夜战总旗舰
     },
     drops: ['tang', 'archerfish', 'franklin'],
     bossDrops: ['wasp', 'washington', 'hornet']
   },
   {
     id: '5-3', name: '萨马岛近海', desc: '深海中央舰队突破而来！护航舰队全体迎战！', stars: 14,
-    brief: '萨马岛。深海的中央舰队从圣贝纳迪诺方向压了过来，护航舰队全体迎战。\n敌人是清一色的重型水面舰，没有航空战力。这是一场纯粹的炮战消耗——速力与阵型的选择比数量更重要。',
+    brief: '萨马岛。深海的中央舰队从圣贝纳迪诺方向压了过来，护航舰队全体迎战。\n本海域设航空战节点（A 点）与夜战节点（B 点）：清晨的敌机群由舰战应付，入夜后的重打击部队由夜战火力应付。BOSS 是清一色的重型水面舰——速力与阵型的选择比数量更重要。',
+    /* threat：air ← A 点 mode:'air'；night ← B 点 mode:'night' */
+    threat: ['air', 'night'],
+    threatNote: '本海域考验制空与夜战。A 点为航空战点：没有航空母舰的舰队将暴露在敌机轰炸之下；B 点为夜战点：需要夜战火力支撑。BOSS 编成无航空战力，是纯粹的炮战消耗——速力与阵型的选择比数量更重要。',
     start: 'S', boss: 'C', gauge: 6,
     admExp: { node: 140, boss: 2200 },   // 提督经验（wiki 5-3: 道中+140 / BOSS+2200）
     nodes: {
@@ -795,8 +813,8 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'B'], ['B', 'C']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F83' },   // 前卫
-      B: { type: 'battle', enemy: 'F84' },   // 重打击部队
+      A: { type: 'battle', enemy: 'F100', mode: 'air' },   // 航空战点：清晨来袭的舰载机群
+      B: { type: 'battle', enemy: 'F84', mode: 'night' },  // 夜战点：重打击部队
       C: { type: 'boss', enemy: 'F85' }      // 中央舰队（战列舰Re级flagship）
     },
     drops: ['barb', 'gato', 'bunkerhill'],
@@ -804,10 +822,10 @@ const MAPS = [
   },
   {
     id: '5-4', name: '恩加尼奥角', desc: '深海机动部队的诱饵舰队！全歼恩加尼奥角的空母群！', stars: 14,
-    brief: '恩加尼奥角。深海的诱饵舰队把最后一批空母推到了这里。\n敌军机群密度为本作空前，舰战不足者会在第一轮空袭中失去战斗力；索敌≥65 可识破诱饵，避开外围直取 BOSS。',
-    /* threat：air ← A/B/BOSS 敌军全部以空母为核心；los ← branch.if.los */
+    brief: '恩加尼奥角。深海的诱饵舰队把最后一批空母推到了这里。\nA、B 两点均为航空战节点，敌军机群密度为本作空前，舰战不足者会在第一轮空袭中失去战斗力；索敌≥65 可识破诱饵，避开外围直取 BOSS。',
+    /* threat：air ← A/B 点 mode:'air'（A/B/BOSS 敌军全部以空母为核心）；los ← branch.if.los */
     threat: ['air', 'los'],
-    threatNote: '恩加尼奥角 —— 敌机动部队的诱饵舰队。索敌≥65 可直取空袭主力；A、B 与 BOSS 三处敌军全部以空母为核心，需要舰战争夺制空。',
+    threatNote: '恩加尼奥角 —— 敌机动部队的诱饵舰队。索敌≥65 可直取空袭主力；A、B 两点为航空战点：没有航空母舰的舰队将连续暴露在敌机轰炸之下，需要舰战争夺制空；A、B 与 BOSS 三处敌军全部以空母为核心。',
     start: 'S', boss: 'C', gauge: 6,
     admExp: { node: 150, boss: 2400 },   // 提督经验（wiki 5-4: 道中+150 / BOSS+2400）
     nodes: {
@@ -816,9 +834,9 @@ const MAPS = [
     edges: [['S', 'A'], ['A', 'B'], ['A', 'D'], ['D', 'B'], ['B', 'C']],
     defs: {
       S: { type: 'start' },
-      A: { type: 'battle', enemy: 'F86' },   // 空袭前哨
+      A: { type: 'battle', enemy: 'F86', mode: 'air' },   // 航空战点：空袭前哨
       D: { type: 'resource', reward: ['fuel'] },
-      B: { type: 'battle', enemy: 'F87' },   // 空袭主力
+      B: { type: 'battle', enemy: 'F87', mode: 'air' },   // 航空战点：空袭主力（诱饵舰队本队）
       C: { type: 'boss', enemy: 'F88' }      // 机动部队本队
     },
     branch: { at: 'A', if: { los: 65 }, to: ['B'] },   // 索敌≥65 直取空袭主力；否则绕燃料补给线
@@ -827,24 +845,27 @@ const MAPS = [
   },
   {
     id: '5-5', name: '莱特湾决战', desc: 'BOSS海域！深海大和栖姬亲率的联合舰队，最后的决战！', stars: 15,
-    brief: '莱特湾。深海大和栖姬亲率的联合舰队终于现身，这是终章。\n敌军同时具备重炮与舰载机：制空与炮战火力缺一不可，索敌≥70 才能在接敌前保住完整队形。带上你最完整的一支舰队。',
-    /* threat：air ← B 点 F89 与 BOSS F91 含空母 Wo 级；los ← branch.if.los */
-    threat: ['air', 'los'],
-    threatNote: '终章决战。索敌≥70 可切入 B 点空袭线；B 点与 BOSS 编成含敌空母，未搭载舰战将丧失制空权 —— 而对手是深海大和栖姬亲率的联合舰队。',
+    brief: '莱特湾。深海大和栖姬亲率的联合舰队终于现身，这是终章。\n本海域混合全部特殊节点：异常洋流（W）、航空战节点（B）、夜战节点（C）与潜艇伏击点（G）。索敌≥70 走 B 点空袭线，否则走 G 点潜艇警戒线——制空、夜战火力、对潜与电探，缺哪一样都会在某一环被打断。带上你最完整的一支舰队。',
+    /* threat：air ← B 点 mode:'air'；night ← C 点 mode:'night'；asw ← G 点 mode:'sub'；radar ← W 点 whirlpool；los ← branch.if.los */
+    threat: ['air', 'asw', 'night', 'radar', 'los'],
+    threatNote: '终章决战，五项考验并存。索敌≥70 可切入 B 点空袭线；B 点为航空战点：需要舰战争夺制空；C 点为夜战点：需要夜战火力；G 点为潜艇伏击：需要对潜能力；W 点异常洋流按持有燃料扣损，电探可使损失减半——而对手是深海大和栖姬亲率的联合舰队。',
     start: 'S', boss: 'D', gauge: 8, need: '5-4',
     admExp: { node: 160, boss: 2600 },   // 提督经验（wiki 5-5: 道中+160 / BOSS+2600）
     nodes: {
-      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
+      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, W: { x: 420, y: 190 }, G: { x: 420, y: 330 },
+      B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
     },
-    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+    edges: [['S', 'A'], ['A', 'W'], ['W', 'B'], ['A', 'G'], ['G', 'C'], ['B', 'D'], ['C', 'D']],
     defs: {
       S: { type: 'start' },
       A: { type: 'resource', reward: ['fuel'] },
-      B: { type: 'battle', enemy: 'F89' },   // 空袭
-      C: { type: 'battle', enemy: 'F90' },   // 夜战前卫
-      D: { type: 'boss', enemy: 'F91' }      // 联合舰队本队
+      W: { type: 'whirlpool', lossBase: 260 },              // 漩涡：终章航线的异常洋流
+      B: { type: 'battle', enemy: 'F89', mode: 'air' },     // 航空战点：空袭线
+      G: { type: 'battle', enemy: 'F101', mode: 'sub' },    // 潜艇点：潜水警戒线
+      C: { type: 'battle', enemy: 'F90', mode: 'night' },   // 夜战点：夜战前卫
+      D: { type: 'boss', enemy: 'F91' }                     // 联合舰队本队
     },
-    branch: { at: 'A', if: { los: 70 }, to: ['B'] },   // 索敌≥70 走空袭线；否则走夜战线
+    branch: { at: 'A', if: { los: 70 }, to: ['W'] },   // 索敌≥70 走空袭线（经 W 洋流）；否则走潜艇警戒线
     drops: ['indiana', 'westvirginia'],
     bossDrops: ['iowa', 'missouri', 'enterprise', 'saratoga', 'newjersey', 'wisconsin', 'midway']
   }

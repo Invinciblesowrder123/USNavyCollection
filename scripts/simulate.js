@@ -218,9 +218,9 @@ assert('潜艇节点首现于 2-2（A/C 两处）',
 assert('漩涡节点首现于 3-1 W', !!MAPS.find(m => m.id === '3-1').defs.W, 'n=' + whirlNodeN);
 assert('航空战点首现于 2-3 A 点（圣克鲁斯=航母对决）',
   airNodeN >= 1 && MAPS.find(m => m.id === '2-3').defs.A.mode === 'air', 'n=' + airNodeN);
-/* 批次3.2 铺开后的节点总数（只增不减的护栏：铺开新图时这里必须同步更新） */
-assert('特殊节点总数：夜战 5 / 潜艇 6 / 航空战 4 / 漩涡 5',
-  nightNodeN === 5 && subNodeN === 6 && airNodeN === 4 && whirlNodeN === 5,
+/* V0.304 子批 3c 铺满 4-x/5-x 后的节点总数（只增不减的护栏：铺开新图时这里必须同步更新） */
+assert('特殊节点总数：夜战 11 / 潜艇 8 / 航空战 16 / 漩涡 6（V0.304 子批 3c 铺满后）',
+  nightNodeN === 11 && subNodeN === 8 && airNodeN === 16 && whirlNodeN === 6,
   `night=${nightNodeN} sub=${subNodeN} air=${airNodeN} whirl=${whirlNodeN}`);
 /* 每个特殊节点都要有对应海域的作战简报（P0-6：机制与文案同批交付） */
 {
@@ -1150,8 +1150,9 @@ const mapHasWhirl = m => Object.values(m.defs).some(d => d.type === 'whirlpool')
 const mapHasLos = m => { const b = m.branch ? (Array.isArray(m.branch) ? m.branch : [m.branch]) : []; return b.some(x => x.if && x.if.los); };
 const mapHasAir = m => Object.values(m.defs).some(d => (d.type === 'battle' || d.type === 'boss') && d.enemy && Battle.enemyAirPower(d.enemy) > 0);
 const THREAT_RULES = [['asw', mapHasSub], ['night', mapHasNight], ['radar', mapHasWhirl], ['los', mapHasLos], ['air', mapHasAir]];
+/* V0.304 子批 3c：5-2（全夜战）/ 5-3（夜战+航空战）铺开节点后退出无维度词白名单（剩 1-1 / 2-1） */
 const ANNOTATED = ['1-2', '1-3', '1-4', '1-5', '2-2', '2-3', '2-4', '2-5', '3-1', '3-2', '3-3', '3-4', '3-5',
-  '4-1', '4-2', '4-3', '4-4', '4-5', '5-1', '5-4', '5-5'];
+  '4-1', '4-2', '4-3', '4-4', '4-5', '5-1', '5-2', '5-3', '5-4', '5-5'];
 const vocabBad = [], exactBad = [], forwardBad = [];
 let annotatedCount = 0;
 for (const m of MAPS) {
@@ -1949,11 +1950,12 @@ assert('情报室 2-3：无航母 → air 对位不满足，且文案指明「�
 assert('情报室文案区分「航空战点（被动防空）」与「普通图（丧失制空权）」',
   (() => {
     const d23 = intel23NoCV.threats.find(t => t.key === 'air').detail;
-    const d41 = Sortie.intel(1, '4-1').threats.find(t => t.key === 'air').detail;
-    return d23.includes('被动迎击') && d23.includes('航空战点') && !d41.includes('被动迎击');
+    /* V0.304 子批 3c 后 4-1 也有航空战点了 → 负向对照图改为 3-3（C 点敌军含轻空母但无航空战节点） */
+    const d33 = Sortie.intel(1, '3-3').threats.find(t => t.key === 'air').detail;
+    return d23.includes('被动迎击') && d23.includes('航空战点') && !!d33 && !d33.includes('被动迎击');
   })(),
   JSON.stringify([intel23NoCV.threats.find(t => t.key === 'air').detail,
-    Sortie.intel(1, '4-1').threats.find(t => t.key === 'air').detail]));
+    Sortie.intel(1, '3-3').threats.find(t => t.key === 'air').detail]));
 Game.state.fleet[1] = airFleetFighter;
 const intel23CV = Sortie.intel(1, '2-3');
 assert('情报室 2-3：带舰战航母 → air 对位满足（同源自 fleetStats.airWing）',
@@ -3174,6 +3176,84 @@ section('V0.303·任务3.3 隔离负向验证（证明隔离断言不是恒真�
   const pOn = Sortie.startHardWave(pOff, { waves: true });
   assert('负向验证④：开关打开时才真正发起第二波（对照）', pOn.ok === true && Game.state.sortie.wave === 2);
   Sortie.returnHome();
+}
+
+/* ============================================================
+ * V0.304 · 批次1（子批 3c）：4-x/5-x 特殊节点铺满
+ *   依据：design/特殊节点与航空触接设计稿.md §三 海域分布表（2026-09 定稿，不重开讨论）
+ * ============================================================ */
+section('V0.304·批次1 子批 3c：4-x/5-x 特殊节点铺满');
+{
+  /* 任务 1.1 验收断言 1：10 图节点分布与设计稿 §三 一致 */
+  const expect = {
+    '4-1': { C: 'air' },
+    '4-2': { A: 'air' },
+    '4-3': { A: 'air' },
+    '4-4': { A: 'air', B: 'air', C: 'air' },              // 航空战强化（大机群）：全节点航空战
+    '4-5': { B: 'air', C: 'night' },
+    '5-1': { A: 'sub', B: 'air' },
+    '5-2': { A: 'night', B: 'night', C: 'night' },        // 夜战强化：全夜战路线
+    '5-3': { A: 'air', B: 'night' },
+    '5-4': { A: 'air', B: 'air' },
+    '5-5': { B: 'air', C: 'night', G: 'sub', W: 'whirl' } // 终章毕业考：四类混合
+  };
+  const bad = [];
+  for (const id in expect) {
+    const m = MAPS.find(x => x.id === id);
+    if (!m) { bad.push(id + ':不存在'); continue; }
+    for (const nid in expect[id]) {
+      const d = m.defs[nid];
+      const got = !d ? '缺失' : (d.type === 'whirlpool' ? 'whirl' : (d.mode || '无'));
+      if (got !== expect[id][nid]) bad.push(`${id}.${nid} 期望${expect[id][nid]} 实际${got}`);
+    }
+  }
+  assert('10 图节点分布与设计稿 §三 海域分布表一致', bad.length === 0, bad.join('、'));
+  /* 任务 1.1 验收断言 1：每个新战斗节点敌编成可实例化、阵型合法、模板键在库 */
+  const newMaps = Object.keys(expect).map(id => MAPS.find(x => x.id === id));
+  assert('4-x/5-x 全部战斗节点敌编成可实例化且模板在库、阵型合法',
+    newMaps.every(m => Object.values(m.defs).every(d => {
+      if (d.type !== 'battle' && d.type !== 'boss') return true;
+      const ef = ENEMY_FLEETS[d.enemy];
+      return !!ef && ef.ships.length > 0 && ef.ships.every(k => !!DEEP_TEMPLATES[k]) && !!Battle.FORMATIONS[ef.formation];
+    })));
+  /* 任务 1.1 验收断言 2：图连通性（branch 每个 to 目标可达）+ BOSS 可达（新边/重连后复跑） */
+  assert('4-x/5-x 图连通且 BOSS 可达（5-1 加点 / 5-5 重连后）', newMaps.every(m => {
+    const seen = new Set([m.start]); const q = [m.start];
+    while (q.length) { const cur = q.shift(); for (const e of m.edges) if (e[0] === cur && !seen.has(e[1])) { seen.add(e[1]); q.push(e[1]); } }
+    const branchOk = (Array.isArray(m.branch) ? m.branch : (m.branch ? [m.branch] : []))
+      .every(b => !b.to || b.to.every(t => m.edges.some(e => e[0] === b.at && e[1] === t)));
+    return seen.has(m.boss) && branchOk;
+  }));
+  /* 4-4 大机群：目标制空 = 全部常规海域敌编成最高档。
+   * [PLACEHOLDER 修订·主动披露] 任务书草案写「~180」，其前提（2-3 F22=130 为全图最高）与实测不符：
+   * 4-4/5-4 既有编成 F72/F73/F87/F88 实测已达 248。按「不新增数值单位」纪律沿用既有模板，
+   * 实测 A=158 / B=248 / BOSS=248 —— 设计意图「全常规海域最高档的大机群」成立。 */
+  const maxAir = Object.keys(ENEMY_FLEETS).reduce((mx, k) => Math.max(mx, Battle.enemyAirPower(k)), 0);
+  assert('4-4 大机群制空值为全部常规海域敌编成最高档（实测 A=158 / B=248 / BOSS=248）',
+    Battle.enemyAirPower('F71') === 158 && Battle.enemyAirPower('F72') === 248 &&
+    Battle.enemyAirPower('F73') === 248 && maxAir === 248,
+    'max=' + maxAir);
+  /* 5-2 全夜战路线：三个战斗节点（含 BOSS）全部 mode:'night' */
+  const m52 = MAPS.find(m => m.id === '5-2');
+  assert('5-2 全夜战路线（A/B/BOSS 三战皆夜战，史上最后一场战列舰夜战）',
+    ['A', 'B', 'C'].every(nid => m52.defs[nid].mode === 'night'));
+  /* 5-5 终章毕业考：四类特殊节点同时出现（与 3-5 同构） */
+  const m55 = MAPS.find(m => m.id === '5-5');
+  const modes55 = new Set(Object.values(m55.defs).flatMap(d => d.mode ? [d.mode] : (d.type === 'whirlpool' ? ['whirl'] : [])));
+  assert('5-5 四类特殊节点同图（air/night/sub/whirl）',
+    ['air', 'night', 'sub', 'whirl'].every(k => modes55.has(k)), [...modes55].join(','));
+  assert('5-5 漩涡节点 lossBase 存在（防漏配导致无限扣资源）', (m55.defs.W.lossBase || 0) > 0);
+  /* 任务 1.2 验收断言 4：白名单图（1-1/2-1）简报不含任何维度词（5-2/5-3 已退出白名单） */
+  const DIMW = ['制空', '索敌', '对潜', '夜战', '电探'];
+  const pureBad = ['1-1', '2-1'].filter(id => {
+    const m = MAPS.find(x => x.id === id);
+    return DIMW.some(w => (m.brief || '').includes(w));
+  });
+  assert('白名单图（1-1/2-1）作战简报不含维度词', pureBad.length === 0, pureBad.join('、'));
+  /* 任务 1.2：5-2/5-3 退出白名单——显式锚定其威胁维度，防止将来误删 */
+  assert('5-2/5-3 已声明威胁维度（退出无维度词白名单）',
+    MAPS.find(m => m.id === '5-2').threat.join(',') === 'night' &&
+    MAPS.find(m => m.id === '5-3').threat.join(',') === 'air,night');
 }
 
 section('总结');
