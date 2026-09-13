@@ -1646,3 +1646,42 @@ HEARTBEAT 日志保留。生产回到 a4be515（V0.303）状态。
 **测试**：sim **1752 / 0**（1724 → 1752）；migration 42 / 0；E2E 224 / 0；drift 三基线 **12 / 9 / 9 逐位一致**（零引擎改动的证明）。
 
 **已知问题**：F62 / F78 / F83 因节点改配新编成变为未引用（与 V0.302 同类，不清理防误删）；index.html ?v= → 20260913b1（BOM 保留，批次 4 独立清理）。
+## 2026-09-13 V0.304 批次2 — 第二批历史战役（M1 中途岛 / M2 莱特湾）
+
+| 文件 | 改动 |
+|---|---|
+| public/js/data/history.js | HISTORY_BATTLES 追加 M1（admReq 12，require 2CV/CVL + ban BB/BBV；S→A→B(air)→X(air)，M1X 制空 166；M1X2 飞龙残存航空队 161；bossDrops enterprise/hornet）+ M2（admReq 14，混编 require CV≥1+BB≥1+DD≥2；S→A(air)→B(sub)→C(night)→X(air) 全游戏最长战役；M2X 180；M2X2 栗田主力 BB-heavy 无航空；bossDrops newjersey/johnston；简报点明资源压力 坑#25） |
+| public/js/game/progression.js | HONORS 追加 6 个：hist_m1_s「五分钟」/ hist_m1_hard「俯冲轰炸机的黎明」/ hist_m1_cvl「约克城归队」/ hist_m2_s「莱特湾的黎明」/ hist_m2_hard「突入的终点」/ hist_m2_taffy「塔菲三号」 |
+| public/js/game/sortie.js | settleBattle ctx 增加 cvlCount（hist_m1_cvl 判定用，与 ddCount 同源 fleetTypes） |
+| scripts/simulate.js | 「两场战役」硬编码断言全部遍历化（战役数/敌编成模板数/注入量/waveEnemyKeys/荣誉对齐/简报关键字/横幅查重），H1/H2 锚定保留、不写死 4；新增批次2断言段（matchRule 边界 / M2 残弹<50% 实战路径 / 坑#26 栅栏 / 荣誉幂等 / M1·M2 账本一次性） |
+| public/test_flow.html | hist:tabListsBothBattles → hist:tabListsAllBattles（遍历 HISTORY_BATTLES.length）+ M1 禁入渲染 / M2 混编条件 / 资源压力简报 断言 |
+| scripts/hist_balance.js | 新增 M1/M2 测量段；**修正 equipAir 配装效度缺陷**（旧版只装舰战 → CV 对舰输出≈0，系统性低估 CV 队 S 率）；混装 舰战×2+舰爆 |
+
+**hist_balance 规则效力并表（N=300/格，等级 30/60/90）——重大勘误**：
+- **V0.303 评估报告「H1 制空规则方向相反」的结论是测量工具配装偏差造成的**：equipAir 全舰战使 CV 对舰输出≈0。修正后 H1 合规 S 率 51-70% vs 0CV 违规 11-39%（强 2.6~4.6 倍）——H1 规则实际**有效**。
+- M1：合规 vs 0CV = S 66-86% vs 33-60%（−26~33pp，require 有效）；违规 2CV+BB 残留 +7~12pp 软反向（披露）。
+- M2：无BB 违规 @90级 S 51.3% vs 合规 68.7%（BB 轴有效）；无CV 轴反向 +6~17pp（引擎结构性：被动防空 60% 封顶下水面队仍优，披露为观察项）。
+- 判定：M1/M2 规则**维持原案定稿**（迭代回路走完：修测量→重跑→不硬凑数值）。
+
+**测试**：sim **1779 / 0**（1752 → +27）；migration 42/0；E2E **229/0**；drift 三基线 12/9/9 逐位一致。
+既有统计型断言「史实加成方向正确（60 场对照）」仍为 flaky（未播种 ±6 容差），与本次改动无关。
+
+## 2026-09-13 V0.304 批次3 — 远征大成功（cond 编成条件 → 确定性资源 ×1.5）
+
+- maps.js：EXPEDITIONS 8 条中 7 条加 cond + condText（覆盖率 87.5%，ex6 无条件喘息档）——schema：{flagship}/ {types,min}/ {equip:[类别],min}。
+- logistics.js：新增纯函数 checkExCond（与 checkExReq 同风格）；claimExpedition 资源倍率 = (great?2:1)×(condOk?1.5:1)，**确定性判定、零随机数消费**（坑#28：RNG 流既有消费顺序一位未动）；返回值增加 greatCond。士气与经验收益不动（一次只引入一个变量）。
+- ui/logistics.js：远征任务卡显示「★大成功条件：…（资源 ×1.5）」（不满足不拦截，只展示）；领取 toast 追加编成达成提示。
+- 资源收支对照：ex8（720min，基础 2400 资源/趟 = 200/h）→ cond 满足 300/h；与随机大成功叠乘 400/h。
+- 测试：sim 断言 验收12/13/14 全绿（cond 满足×1.5、不满足逐位一致、RNG 消费次数不变、边界含跨舰 equip 累计）；drift 三基线 12/9/9 逐位一致。
+## 2026-09-13 V0.304 批次4 — 技术债 + 测试收尾与交付
+
+- **test_night_split 并入 sim**：分段战斗流程回归段嵌入 simulate.js（复用统一全局环境与 assert，引擎新增全局依赖立刻暴露）；独立薄壳脚本删除（V0.303 报告 §10.8 教训兑现）。sim +21 项。
+- **BOM 清理（独立 commit，内容零变化）**：public/js/game/sortie.js / battle.js / progression.js / public/index.html。
+- **sim 3 处 flaky 根治**（12 连跑全绿）：
+  1. toBoss2 / M2 段：道中战后旗舰偶发大破 → 大破进击拦截 prepareBattle → prepareBattle 失败时修满耐久重试一次（测试关注二波机制/资源压力，不关注损伤管理）；
+  2. 二波战败场景（断言21）：hardFleet 含 3 CV，**舰爆轰炸不消耗弹药**，残弹 0 仍偶发 B 胜 → 归因断言 flaky；改用纯水面编队 + 残弹 0 = 必败构造；
+  3. 统计方向断言「史实加成方向正确」容差 ±6 → ±12：equipAir 配装修正后 CV 队 S 率方差增大，60 场样本差值标准差 ≈5.5，±6 仅约 1σ（实测约 1/12 跑次误报）；±12 ≈ 2σ。
+- **drift_check 行尾免疫（实测事故复盘）**：scripts/ 目录曾意外整目录丢失（原因未明，仅 git rm 单文件操作），git restore 恢复时 **core.autocrlf=true 把三份基线文件 LF→CRLF**，drift_check 逐行比较时行尾 \\r 造成三基线全文件误报漂移（hash 明明一致）。修复：基线文件恢复 LF + drift_check 比较前归一化 \\r
+。**教训：基线类工具文件用 .gitattributes 固定 eol 更稳，或恢复后必跑 drift 验证。**
+- **截图（Gate 4，1440px）**：backup/2026-09-13_V0.304节点与战役二批/实测截图/ —— b1_5-2 全夜战简报 / b1_4-4 大机群简报 / b1_5-5 四类节点 / b2_M1 禁入警示 / b2_M2 资源压力简报 / b2_M2 强敌阶二波横幅。
+- 最终基线：**sim 1800 / 0（12 连跑全绿）· migration 42/0 · E2E 229/0 · drift 12/9/9 逐位一致**；index.html ?v=20260913b23。
