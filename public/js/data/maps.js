@@ -872,15 +872,20 @@ const MAPS = [
 ];
 
 /* ---------- 远征 ---------- */
+/* V0.304 批次3：远征编成条件（cond）—— 满足 → 领取时资源 ×1.5（确定性判定，不新增随机数消费者）。
+ * cond schema（与 req 风格对齐）：{ flagship: 舰种 } / { types: [舰种...], min: n } / { equip: [装备类别...], min: n }。
+ * 对价 = 把优质舰（高练度 CL / 空母 / 带电探舰）从出击舰队挪去远征队——机会成本真实存在。
+ * ×1.5 与各 cond 松紧均为 [PLACEHOLDER]（假设：8 小时远征收益上浮应显著低于重打一次 3-5 的期望收益）。
+ * 覆盖率 7/8（ex6 为无条件喘息档）。 */
 const EXPEDITIONS = [
-  { id: 'ex1', name: '近海哨戒', time: 15, exp: 30, req: { ships: 2 }, reward: { fuel: 60, ammo: 60 }, desc: '在母港近海巡逻警戒。' },
-  { id: 'ex2', name: '补给线巡逻', time: 30, exp: 60, req: { ships: 4, dd: 2 }, reward: { fuel: 120, ammo: 100, steel: 30 }, desc: '护送燃料船队通过补给线。' },
-  { id: 'ex3', name: '护航任务', time: 45, exp: 90, req: { ships: 4, cl_or_dd_flagship: 1 }, reward: { steel: 180, baux: 30 }, desc: '为运输船队提供护航。' },
-  { id: 'ex4', name: '空中侦察', time: 90, exp: 180, req: { ships: 4, cv_or_cvl: 1 }, reward: { baux: 200, fuel: 50 }, desc: '派出舰载机进行远距离航空侦察。' },
-  { id: 'ex5', name: '对潜警戒', time: 120, exp: 240, req: { ships: 4, asw: 2 }, reward: { ammo: 240, steel: 160 }, desc: '扫荡航线上的深海军潜艇。' },
-  { id: 'ex6', name: '海上护卫', time: 180, exp: 360, req: { ships: 5 }, reward: { fuel: 320, steel: 240 }, desc: '护卫大型运输船队横渡太平洋。' },
-  { id: 'ex7', name: '航母特混支援', time: 360, exp: 500, req: { ships: 4, cv_or_cvl: 2 }, reward: { baux: 450, fuel: 200, ammo: 200, devMats: 1 }, desc: '机动部队出击，支援前方战线。' },
-  { id: 'ex8', name: '长距离远征', time: 720, exp: 500, req: { ships: 6 }, reward: { fuel: 800, ammo: 800, steel: 600, baux: 200, devMats: 2 }, desc: '长途奔袭，展示海权的力量！' }
+  { id: 'ex1', name: '近海哨戒', time: 15, exp: 30, req: { ships: 2 }, cond: { flagship: 'DD' }, condText: '驱逐舰旗舰', reward: { fuel: 60, ammo: 60 }, desc: '在母港近海巡逻警戒。' },
+  { id: 'ex2', name: '补给线巡逻', time: 30, exp: 60, req: { ships: 4, dd: 2 }, cond: { types: ['DD'], min: 3 }, condText: '编成含 ≥3 艘驱逐舰', reward: { fuel: 120, ammo: 100, steel: 30 }, desc: '护送燃料船队通过补给线。' },
+  { id: 'ex3', name: '护航任务', time: 45, exp: 90, req: { ships: 4, cl_or_dd_flagship: 1 }, cond: { flagship: 'CL' }, condText: '轻巡洋舰旗舰', reward: { steel: 180, baux: 30 }, desc: '为运输船队提供护航。' },
+  { id: 'ex4', name: '空中侦察', time: 90, exp: 180, req: { ships: 4, cv_or_cvl: 1 }, cond: { types: ['CV', 'CVL'], min: 2 }, condText: '编成含 ≥2 艘空母', reward: { baux: 200, fuel: 50 }, desc: '派出舰载机进行远距离航空侦察。' },
+  { id: 'ex5', name: '对潜警戒', time: 120, exp: 240, req: { ships: 4, asw: 2 }, cond: { flagship: 'AS' }, condText: '修理舰旗舰', reward: { ammo: 240, steel: 160 }, desc: '扫荡航线上的深海军潜艇。' },
+  { id: 'ex6', name: '海上护卫', time: 180, exp: 360, req: { ships: 5 }, reward: { fuel: 320, steel: 240 }, desc: '护卫大型运输船队横渡太平洋（无大成功条件）。' },
+  { id: 'ex7', name: '航母特混支援', time: 360, exp: 500, req: { ships: 4, cv_or_cvl: 2 }, cond: { equip: ['对空电探', '对水电探', '两用电探'], min: 2 }, condText: '舰队装备 ≥2 件电探', reward: { baux: 450, fuel: 200, ammo: 200, devMats: 1 }, desc: '机动部队出击，支援前方战线。' },
+  { id: 'ex8', name: '长距离远征', time: 720, exp: 500, req: { ships: 6 }, cond: { types: ['DD'], min: 3 }, condText: '编成含 ≥3 艘驱逐舰', reward: { fuel: 800, ammo: 800, steel: 600, baux: 200, devMats: 2 }, desc: '长途奔袭，展示海权的力量！' }
 ];
 
 if (typeof module !== 'undefined' && module.exports) {

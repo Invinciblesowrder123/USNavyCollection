@@ -69,14 +69,14 @@ const LogisticsUI = (() => {
             <div class="flex" style="justify-content:space-between;align-items:center">
               <div>
                 <b>${ex.name}</b> <span class="dim">${Util.fmtTime(ex.time * 1000)}</span>
-                <div class="hint">${ex.desc} ｜ 条件：${ex.req.ships || 0}+舰 ｜ 奖励：${rw} ｜ 入手经验：${ex.exp}</div>
+                <div class="hint">${ex.desc} ｜ 条件：${ex.req.ships || 0}+舰 ｜ 奖励：${rw} ｜ 入手经验：${ex.exp}${ex.condText ? ` ｜ <span class="rn-4">★大成功条件：${ex.condText}（资源 ×1.5）</span>` : ''}</div>
               </div>
               ${active
                 ? (left > 0 ? `<span class="countdown" data-until="${st.expeditions[exFleet].end}">${Util.fmtTime(left)}</span>` : `<button class="btn btn-gold btn-sm" data-claimex>完成！领取</button>`)
                 : `<button class="btn btn-sm" data-ex="${ex.id}">派遣</button>`}
             </div></div>`;
         }).join('')}
-        <div class="hint">远征归来获得经验（旗舰1.5倍、可能随机2倍）；全员「闪」状态大幅提高大成功概率（大成功：资源与经验×2）。远征中的舰队不能变更编成。</div>
+        <div class="hint">远征归来获得经验（旗舰1.5倍、可能随机2倍）；全员「闪」状态大幅提高大成功概率（大成功：资源与经验×2）。编成满足「★大成功条件」时资源再 ×1.5（确定性，与随机大成功叠乘）。远征中的舰队不能变更编成。</div>
       </div>`);
 
       root.querySelectorAll('[data-exf]').forEach(b => {
@@ -100,7 +100,7 @@ const LogisticsUI = (() => {
         const r = Logistics.claimExpedition(exFleet);
         if (!r.ok) { UI.toast(r.msg); return; }
         const rw = Object.entries(r.reward).map(([k, v]) => `${({ fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土', devMats: '开发资材' })[k]}+${v}`).join(' ');
-        UI.toast(`远征「${r.ex.name}」${r.great ? '大成功！' : '成功！'}获得 ${rw}`);
+        UI.toast(`远征「${r.ex.name}」${r.great ? '大成功！' : '成功！'}${r.greatCond ? '（编成条件达成，资源×1.5）' : ''}获得 ${rw}`);
         Game.save();
         /* 自动循环：领取成功后自动再派遣同一远征（条件不满足时提示原因） */
         if (localStorage.getItem('usnc_exloop_f' + exFleet) === '1' && r.ex && r.ex.id) {

@@ -32,6 +32,40 @@ const Logistics = (() => {
     return true;
   }
 
+  /* V0.304 批次3：远征编成条件判定（**纯函数**，与 checkExReq 同风格）。
+   * cond schema：{ flagship: 舰种 } / { types: [舰种...], min: n } / { equip: [装备类别...], min: n }。
+   * 满足 → 领取时资源 ×1.5（确定性判定：不新增随机数消费者，RNG 流既有消费顺序一位未动）。 */
+  function checkExCond(fleet, ex) {
+    const cond = ex && ex.cond;
+    if (!cond) return false;
+    const G = GameRef();
+    const st = G.state;
+    const ships = fleet.map(u => st.ships[u]).filter(Boolean);
+    if (!ships.length) return false;
+    const typeOf = u => { const s = st.ships[u]; return s ? G.shipDef(s).type : null; };
+    if (cond.flagship) {
+      const flag = fleet.length ? typeOf(fleet[0]) : null;
+      if (flag !== cond.flagship) return false;
+    }
+    if (cond.types) {
+      const types = ships.map(s => G.shipDef(s).type);
+      const have = types.filter(t => cond.types.includes(t)).length;
+      if (have < (cond.min || 1)) return false;
+    }
+    if (cond.equip) {
+      const cats = Array.isArray(cond.equip) ? cond.equip : [cond.equip];
+      let have = 0;
+      for (const s of ships) {
+        for (const eid of (s.equipped || [])) {
+          const e = st.equipment[eid];
+          if (e && cats.includes((typeof EquipmentData !== 'undefined' && EquipmentData[e.id]) ? EquipmentData[e.id].cat : null)) have++;
+        }
+      }
+      if (have < (cond.min || 1)) return false;
+    }
+    return true;
+  }
+
   function startExpedition(fleetIdx, exId) {
     const G = GameRef();
     const st = G.state;
@@ -67,8 +101,12 @@ const Logistics = (() => {
     const sparkled = fleetShips.filter(s => s.morale >= 50).length;
     const great = fleetShips.length && sparkled === fleetShips.length
       ? Util.chance(0.95) : Util.chance(0.15);
+    /* V0.304 批次3：编成条件达成 → 资源 ×1.5（确定性档，与既有随机大成功 ×2 叠乘）。
+     * 判定零随机数消费；Math.round 只在 ×1.5 产生小数时起作用（全部基础奖励为 10 的倍数，实为恒等）。 */
+    const condOk = checkExCond(st.fleet[fleetIdx], ex);
+    const mult = (great ? 2 : 1) * (condOk ? 1.5 : 1);
     const rew = {};
-    for (const k in ex.reward) rew[k] = (ex.reward[k] || 0) * (great ? 2 : 1);
+    for (const k in ex.reward) rew[k] = Math.round((ex.reward[k] || 0) * mult);
     G.gain(rew);
     /* 提督经验（wiki：远征一览入手经验值即提督经验，大成功×2，失败×0.3） */
     const expBase = ex.exp || Math.min(500, Math.round(ex.time * 2));
@@ -90,7 +128,7 @@ const Logistics = (() => {
       rank: null,
       perfect: false, taiha: false, failed: false, mvpUid: null
     });
-    return { ok: true, ex, reward: rew, great };
+    return { ok: true, ex, reward: rew, great, greatCond: condOk };
   }
 
   /* ============ 补给 ============ */
@@ -226,7 +264,7 @@ const Logistics = (() => {
     return fleets;
   }
 
-  return { startExpedition, claimExpedition, checkExReq, supplyCost, supplyFleet, supplyShipCost, supplyShip, repairCost, startRepair, cancelRepair, practiceReady, PracticeGen };
+  return { startExpedition, claimExpedition, checkExReq, checkExCond, supplyCost, supplyFleet, supplyShipCost, supplyShip, repairCost, startRepair, cancelRepair, practiceReady, PracticeGen };
 })();
 
 if (typeof window !== 'undefined') window.Logistics = Logistics;
