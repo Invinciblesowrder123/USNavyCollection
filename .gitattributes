@@ -1,0 +1,4 @@
+# 对拍基线摘要：内容为逐字节敏感的指纹行，禁止任何行尾转换
+# （本机 core.autocrlf=true 曾把基线 LF→CRLF，造成 drift_check 三基线全文件误报漂移，2026-09-13）
+scripts/battle_digest.baseline*.txt -text
+*.png -text

@@ -1685,3 +1685,8 @@ HEARTBEAT 日志保留。生产回到 a4be515（V0.303）状态。
 。**教训：基线类工具文件用 .gitattributes 固定 eol 更稳，或恢复后必跑 drift 验证。**
 - **截图（Gate 4，1440px）**：backup/2026-09-13_V0.304节点与战役二批/实测截图/ —— b1_5-2 全夜战简报 / b1_4-4 大机群简报 / b1_5-5 四类节点 / b2_M1 禁入警示 / b2_M2 资源压力简报 / b2_M2 强敌阶二波横幅。
 - 最终基线：**sim 1800 / 0（12 连跑全绿）· migration 42/0 · E2E 229/0 · drift 12/9/9 逐位一致**；index.html ?v=20260913b23。
+## 2026-09-13 V0.304 交付评审勘误（追加）
+
+- **未引用敌编成实测 14 个**（初稿口径 9 个偏紧）：F04/F10/F11/F12/F20/F25/F30/F36/F47/F51/F58（历史遗留，仅 archive 出现）+ F62/F78/F83（本批改配）。审计工具 scripts/audit_unused_fleets.py 入库（要点：剔除键定义行与注释，否则定义被误计为引用 → 假阴性）。
+- **commit 2c58c47 混装如实订正**：除 4 文件 BOM 外还携带 test_night_split.js 删除（142 行）——git rm 暂存的删除被随后的裸 git commit 一并提交。已推送远端，不做历史重写；回溯以交付报告 §4.3 为准。后续规范：一 commit 一语义，提交前 git diff --cached --stat 对拍，提交后 git show --stat 复核。
+- **.gitattributes 已补**：scripts/battle_digest.baseline*.txt -text（锁定对拍基线行尾，杜绝 autocrlf 漂移误报复发）。
