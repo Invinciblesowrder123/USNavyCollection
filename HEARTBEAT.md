@@ -1690,3 +1690,15 @@ HEARTBEAT 日志保留。生产回到 a4be515（V0.303）状态。
 - **未引用敌编成实测 14 个**（初稿口径 9 个偏紧）：F04/F10/F11/F12/F20/F25/F30/F36/F47/F51/F58（历史遗留，仅 archive 出现）+ F62/F78/F83（本批改配）。审计工具 scripts/audit_unused_fleets.py 入库（要点：剔除键定义行与注释，否则定义被误计为引用 → 假阴性）。
 - **commit 2c58c47 混装如实订正**：除 4 文件 BOM 外还携带 test_night_split.js 删除（142 行）——git rm 暂存的删除被随后的裸 git commit 一并提交。已推送远端，不做历史重写；回溯以交付报告 §4.3 为准。后续规范：一 commit 一语义，提交前 git diff --cached --stat 对拍，提交后 git show --stat 复核。
 - **.gitattributes 已补**：scripts/battle_digest.baseline*.txt -text（锁定对拍基线行尾，杜绝 autocrlf 漂移误报复发）。
+## 2026-09-14 修复 generate_ai_art.js 重写 index.json 丢映射的 bug
+
+**症状**：跑一次生成后 index.json 被重写为「文件名 stem → 文件名」的清单
+（fletcher_secretary_a → fletcher_secretary_a.png），丢失人工维护的 _note
+与正确映射（fletcher → fletcher_secretary_a.png），游戏内立绘回退到 SVG 占位。
+
+**根因**：脚本末尾用 OUT_DIR 目录扫描重建整个清单，而文件名 stem 与 shipId
+不是恒等映射（secretary 系列立绘文件名带后缀）。
+
+**修法**：重写逻辑改为「读旧 index → 保留 _note 与既有映射 → 只追加/更新本次
+targets 的条目」。已验证：index.json 恢复正常（git checkout），语法检查过。
+

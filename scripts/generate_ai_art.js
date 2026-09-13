@@ -245,12 +245,19 @@ const workers = Array.from({ length: CONC }, async () => {
 });
 await Promise.all(workers);
 
-const MANIFEST2 = {};
-for (const f of fs.readdirSync(OUT_DIR)) {
-  const m = f.match(/^(.+)\.(png|jpg|jpeg|webp)$/i);
-  if (m) MANIFEST2[m[1]] = f;
+/* index.json 重建：保留人工维护的 _note 与既有映射（文件名 stem ≠ shipId，
+ * 例如 fletcher_secretary_a.png 的正确 key 是 fletcher），只追加/更新新生成的条目 */
+const NOTE = 'AI 立绘映射。key = shipId（改造态追加 _kai / _kai2），value = art/ai 下的文件名。无对应条目则回退 art/portraits/<id>.svg 占位立绘。';
+let index = { _note: NOTE };
+try {
+  const prev = JSON.parse(fs.readFileSync(path.join(OUT_DIR, 'index.json'), 'utf8'));
+  for (const [k, v] of Object.entries(prev)) if (k !== '_note') index[k] = v;
+} catch (e) { /* 首次生成无旧清单 */ }
+for (const t of targets) {
+  const f = MANIFEST[t.id];
+  if (f) index[t.id] = f;
 }
-fs.writeFileSync(path.join(OUT_DIR, 'index.json'), JSON.stringify(MANIFEST2, null, 0));
+fs.writeFileSync(path.join(OUT_DIR, 'index.json'), JSON.stringify(index, null, 1));
 console.log(`\n完成: 生成 ${ok} / 跳过 ${skip} / 失败 ${fail}，已更新 public/art/ai/index.json（${Object.keys(MANIFEST2).length} 张）`);
 if (fails.length) {
   console.log('失败清单:');
