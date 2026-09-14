@@ -64,6 +64,9 @@ scripts/
   probe_recon_variance.js    方向五 T 不利频率的**测量效度探针**（`npm run probe:recon`）：干净状态下重复测量，给差值均值/标准差/阈值余量
   probe_airpower.js          敌编成制空值探针（定档与配平用）
   shot.js                    无头截图工具（Gate 4 人工核对）
+  smoke_account.js           账号可用性冒烟（`npm run smoke:account [-- --user=X --pass=Y]`）：
+                             真服务器 + 真 Cookie + 真 index.html 引导路径，证明"某账号能进游戏"；
+                             含错密码负向对照；临时的同源登录页跑完即删，不常驻 public/
   generate_art.js            SVG 立绘生成器
   generate_ai_art.js         智谱 CogView AI 立绘生成
   create_admin.js            管理员账号

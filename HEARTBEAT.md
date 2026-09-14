@@ -1763,3 +1763,24 @@ E2E 229/0。**public/_shot_homeport.html**：新增 ?ship= 切换秘书舰。
 - **修复后验证：`npm run sim` 连跑 60 次全绿（0/60）**。
 - **教训**：单次「12 连跑全绿」不足以支撑"无 flaky"结论 —— 约 5%/跑次的假失败在 12 次里有 ~46% 概率全绿通过。
   统计/状态耦合型断言必须靠 soak（≥40 轮）+ 效度抽检，而不是"上次是绿的"。
+
+---
+
+## 2026-09-14 — 账号供给：test001 / test001（给另一个 agent 游玩）+ 账号冒烟工具固化
+
+**完成：**
+- 新建 `test001` / `test001`（role=user）：**走产品自己的注册接口** `POST /api/auth/register`
+  （用户名 6 位 + 密码 8 位，满足 `validPw` 的 6~64 下限）→ **未改产品代码、未写数据层脚本**。
+  与 `test`（4 位密码，只能在数据层建）的差别仅在于此。
+- **role=user 开不了测试模式**：`main.js` 有 `Account.isAdmin()` 闸门，`state.js::isTestMode()` 同样要求 admin。
+  日后需要无限资源 / 秒建时，把 `users.json` 里该账号的 role 改成 `admin`（一行），不要绕前端闸门。
+- 新增 **`scripts/smoke_account.js`**（`npm run smoke:account [-- --user=X --pass=Y]`）：
+  真服务器 + 真 HttpOnly Cookie + 真 `index.html` 引导路径（`Account.restore()` → `enterGame` → 母港），
+  含**错密码负向对照**（独立 profile → 必须停在登录页）。同源临时登录页**运行时生成、结束时删除**，
+  不常驻 `public/`（带默认凭据的登录页不该被静态托管）。
+- 冒烟实测（`test001`）：A1 登录 200 role=user · A2 脱离登录页 + 顶栏 `@test001` + 母港已渲染 ·
+  B1 错密码 401 · B2 停在登录页/无母港/无账号 · 云存档 6003B · 一号舰队 2 艘 · `version=7` → **RESULT=PASS**。
+- 现有账号（5）：`admin`[admin] · `cdptest50271` · `cdptest1863` · `test`[user] · `test001`[user]。
+- **未动引擎**：无 `battle.js` 改动、不涉随机数基线；本次只新增脚本与文档。
+
+**下一步：** 把 `test001` 交给另一个 agent 游玩（`npm start` → http://localhost:3000）。

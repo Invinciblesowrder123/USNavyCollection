@@ -11,6 +11,7 @@
     "test": "node scripts/simulate.js",
     "test:migration": "node scripts/test_save_migration.js",
     "test:e2e": "node scripts/e2e.js",
+    "smoke:account": "node scripts/smoke_account.js",
     "drift": "node scripts/drift_check.js --against scripts/battle_digest.baseline.txt",
     "drift:v0302": "node scripts/drift_check.js --no-hist --no-waves --against scripts/battle_digest.baseline_v0302.txt",
     "drift:archive": "node scripts/drift_check.js --no-touch --no-hist --no-waves --against scripts/battle_digest.baseline_v0301.txt",

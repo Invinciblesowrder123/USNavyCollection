@@ -128,6 +128,32 @@ USNavyCollection/
 - 失败归因：`game/sortie.js::attributionLines()` 是**纯函数**（输入 result/nodeDef/fleet/state → 输出归因行）；覆盖 sub / night / 制空不足 / 索敌失败 / 红脸。
   只在败局输出。结算结果里 `recon`/`myAir`/`enAir`/`airSup`/`airKey` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。结算结果里 `recon`/`myAir`/`enAir`/`airSup` 由 `battle.js` 挂载（夜战节点 `recon=null`，不得误判为索敌失败）。
 
+## 账号系统速查（2026-09-14 核对，别再把路径写错）
+
+- 后端 `auth.js` + `server.js`：**路由挂在 `/api` 下**（`app.use('/api', auth.router)`）——
+  登录是 **`POST /api/auth/login`**，不是 `/auth/login`（写错会拿到 express 的 404 HTML，容易被误判成"账号没建好"）。
+- 存储：`data/users.json`（`{ salt, hash, role, createdAt }`，`hash = scryptSync(pw, salt, 64).toString('hex')`）
+  + `data/saves/<username>.json`（云存档）；`data/` 不入库（含 users.json 与 API key）。
+- 规则：用户名 2~20 位（中英文/数字/`_`/`-`；`admin` 为保留名）；**普通用户密码 6~64 位**；
+  `admin` 走 `npm run admin`（`ensureAdmin`），**不套用密码下限**（默认 admin/admin，幂等）。
+- ⚠️ **登录路径没有密码长度校验**（后端登录只比对散列；前端 `#lgPw` 只有 `maxlength=64`、无 `minlength`）——
+  所以"短密码能登进去"是正常的；被拒的只有**注册/创建**那一步。
+- 需要 4 位以内密码的测试账号：**不要改 `validPw`**（那是产品规则），用一次性脚本按同样算法直接写 `users.json`
+  （2026-09-14 建 `test`/`test`、role=user 即此法），并做端到端验证：起临时端口 →
+  `POST /api/auth/login` 正例（200 + `Set-Cookie`）与两条负例（错密码 / 不存在用户 → 401）。
+- **≥6 位就老老实实走正常注册接口**：`test001`/`test001`（名 6 位 + 密码 8 位，给另一个 agent 游玩用）
+  2026-09-14 经 `POST /api/auth/register` 建成，role=user，**未碰数据层、未改产品代码**。
+- **role=user 就开不了测试模式**：`main.js` 有 `Account.isAdmin()` 闸门，`state.js::isTestMode()` 同样要求 admin。
+  需要无限资源/秒建时把 `users.json` 的 role 改成 `admin`（一行），别去绕前端闸门。
+- 现有账号（5）：`admin`[admin] · `cdptest50271` · `cdptest1863` · `test`[user·4位密码·数据层建] · `test001`[user·注册路径建]。
+- 可复用脚本（工作区根）：`_lsusers.js` 列账号 · `_register_test001.js` 注册+端到端验证 · `_verify_test_login.js` 登录验证。
+- **账号可用性冒烟（仓库内，已固化）**：`npm run smoke:account [-- --user=X --pass=Y]`
+  （`scripts/smoke_account.js`）= 真服务器 + 真 HttpOnly Cookie + 真 `index.html` 引导路径，
+  断言"脱离登录页 / 顶栏显示账号 / 母港已渲染"，并带**错密码负向对照**（独立 profile 必须停在登录页）。
+  同源临时登录页运行时生成、结束时删除，**不常驻 `public/`**。
+- 判定"进没进游戏"的可靠 DOM 标记：`<main id="screen" class="home-screen">`（进）vs `body.unauth`（没进）。
+  别拿屏幕内文案当标记（"母港舰娘"那句在**编成**页，不在母港 —— 曾因此假失败一次）。
+
 ## 当前进度状态
 
 **v0.2 完成（2026-08-04）**：强化与改修工厂（参照 kcwiki 近代化改修 + 明石的改修工厂）。
