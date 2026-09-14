@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>codex / medals preview</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="top-ident">
+        <span class="logo">★ 美舰收藏</span>
+        <span id="admiralInfo" class="admiral"></span>
+      </div>
+      <div class="top-res"><div id="resBar" class="resbar"></div></div>
+    </header>
+    <nav id="navbar"></nav>
+    <main id="screen"></main>
+  </div>
+  <div id="toast"></div>
+  <div id="modal-root"></div>
+  <div id="sub-modal-root"></div>
+  <script src="js/core/utils.js"></script>
+  <script src="js/data/equipment.js"></script>
+  <script src="js/data/ships.js"></script>
+  <script src="js/data/live2d.js"></script>
+  <script src="js/data/maps.js"></script>
+  <script src="js/data/history.js"></script>
+  <script src="js/data/quests.js"></script>
+  <script src="js/core/state.js"></script>
+  <script src="js/game/battle.js"></script>
+  <script src="js/game/factory.js"></script>
+  <script src="js/game/improve.js"></script>
+  <script src="js/game/logistics.js"></script>
+  <script src="js/game/progression.js"></script>
+  <script src="js/game/sortie.js"></script>
+  <script src="js/game/acquisition.js"></script>
+  <script src="js/ui/common.js"></script>
+  <script src="js/ui/homeport.js"></script>
+  <script src="js/ui/library.js"></script>
+  <script src="js/ui/medals.js"></script>
+  <script>
+    /* 图鉴 / 军需处 人工核对页（V0.305）
+     * case: library 图鉴主屏 / locked 锁定卡获取途径 / detail 无实例降级 / medals 军需处
+     *       confirm 兑换二次确认 / nav 只看导航与顶栏（1440 / 1080 破版复核）
+     * 用法：npm start 后打开 http://127.0.0.1:3000/_shot_codex.html?case=medals
+     *      npm run shot -- "_shot_codex.html?case=medals" "../backup/x/medals.png" 1440x900 */
+    window.addEventListener('load', function () {
+      var q = new URLSearchParams(location.search);
+      var c = q.get('case') || 'library';
+      Game.newGame();
+      Game.gain({ fuel: 50000, ammo: 50000, steel: 50000, baux: 50000 });
+
+      /* 造一支有编成的舰队 + 部分图鉴进度（让图鉴同时出现"已登录"与"锁定"卡片） */
+      ['iowa', 'enterprise', 'essex', 'southdakota', 'fletcher', 'kidd'].forEach(function (id) {
+        var s = Game.createShip(id, 80);
+        Game.equipDefaults(s.uid);
+        s.hp = Game.shipStats(s.uid).hpMax;
+        s.supply = { fuel: 1, ammo: 1 };
+        if (Game.state.fleet[1].length < 6) Game.state.fleet[1].push(s.uid);
+      });
+      ['gun16in_50', 'f6f5', 'sbdvs2', 'ap_mk8', 'radar_sg', 'dc_team', 'supply_oiler'].forEach(function (id) {
+        Game.createEquip(id);
+      });
+      /* 造几条真实口径的产出记录（不要伪造 lib:* 里程碑键 —— 那会让截图显示"6.7% 却已领 25%"） */
+      Progression.grantMedals([
+        { id: 'map:1-1', n: 1, name: '海域首通 1-1' },
+        { id: 'map:1-2', n: 1, name: '海域首通 1-2' },
+        { id: 'obj:1-2-s', n: 1, name: '海域作战目标' },
+        { id: 'hist:H1:firstClear', n: 2, name: 'H1 常规阶首通' }
+      ]);
+      Progression.grantMedalWeekly('weekly:hist:H1', 1, '每周首次史实重演');
+      Progression.grantMedals([{ id: 'demo:fund', n: 6 }]);
+
+      var scr = document.getElementById('screen');
+      UI.refreshTop();
+
+      if (c === 'nav') { UI.go('medals'); return; }
+
+      if (c === 'medals') { UI.go('medals'); return; }
+
+      if (c === 'confirm') {
+        UI.go('medals');
+        var b = scr.querySelector('[data-buy="supply_oiler"]');
+        if (b) b.click();
+        return;
+      }
+
+      UI.go('library');
+      if (c === 'library') return;
+
+      if (c === 'locked') {
+        /* 切到装备页签更容易找到"未登录"条目，但舰船页签的锁定卡更贴近日常 */
+        var lk = scr.querySelector('.lib-card.locked[data-libship]');
+        if (lk) lk.click();
+        return;
+      }
+
+      if (c === 'detail') {
+        /* 无实例降级：把某舰的全部实例摘掉、保留图鉴登录 */
+        var uids = Object.keys(Game.state.ships);
+        var id = Game.state.ships[uids[0]].id;
+        uids.filter(function (u) { return Game.state.ships[u].id === id; })
+          .forEach(function (u) { delete Game.state.ships[u]; });
+        UI.go('library');
+        var card = scr.querySelector('.lib-card:not(.locked)[data-libship="' + id + '"]');
+        if (card) card.click();
+        return;
+      }
+    });
+  </script>
+</body>
+</html>

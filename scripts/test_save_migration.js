@@ -111,6 +111,36 @@ function v5Save() {
   };
 }
 
+/* v6 → v7：战功章（V0.305 军需处）+ 编成预设槽；只补键、不动既有数值 */
+function v6Save() {
+  return {
+    saveVersion: 6, version: 6,
+    admiral: { name: '提督', level: 50, exp: 0 },
+    resources: { fuel: 950, ammo: 940, steel: 930, baux: 920, screws: 15, devMats: 22 },
+    ships: {
+      s1: {
+        uid: 's1', id: 'iowa', kai: 2, lv: 95, hp: 90, morale: 49, equipped: [], modern: {}, supply: { fuel: 1, ammo: 1 },
+        record: {
+          sorties: 55, expeditions: 9, sWin: 38, taiha: 3, failures: 4, perfect: 15, bossKills: 20, lastBoss: '深海大和栖姬',
+          firstClear: { '1-1': 1700000000000, '1-4': 1700000000003 },
+          objectives: { '1-2-s': 1700000000004 },
+          historic: { H1: { clearAt: 1700000000001, hardWin: 1700000000002 } },
+          honors: [{ id: 'first_sortie', at: 1700000000005 }], remodelAt: [1700000000006]
+        }
+      }
+    },
+    equipment: { e1: { uid: 'e1', id: 'gun16in_50', star: 4, locked: true } },
+    fleet: { 1: ['s1'], 2: [], 3: [], 4: [] },
+    library: { ships: { iowa: true }, equips: { gun16in_50: true } },
+    stats: {
+      sink: 30, sortie: 88, win: 70, sWin: 40, bossSWin: { '1-1': 5 },
+      historic: { 'H1:firstClear': 1700000000000 },
+      objectives: { '1-2-s': 1700000000001 }
+    },
+    mapProgress: {}
+  };
+}
+
 console.log('\n== 存档迁移专项测试 ==');
 
 /* v1 旧档 → 当前版本 */
@@ -194,7 +224,7 @@ check('v4 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV4)) ==
 
 /* v5 → v6：补 record.historic（V0.303），且不动既有履历数值与账本 */
 const fromV5 = Game.migrateSave(v5Save());
-check('v5 档升级到当前版本（v6）', fromV5.saveVersion === 6 && fromV5.version === 6 && CUR === 6);
+check('v5 档升级到当前版本', fromV5.saveVersion === CUR && fromV5.version === CUR, 'CUR=' + CUR);
 check('v5 档补齐 record.historic 为空对象',
   fromV5.ships.s1.record.historic && typeof fromV5.ships.s1.record.historic === 'object' &&
   Object.keys(fromV5.ships.s1.record.historic).length === 0,
@@ -222,8 +252,8 @@ check('v5 迁移后的 record 结构与新建结构一致',
     honors: [{ id: 'first_sortie', at: 1700000000003 }], remodelAt: [1700000000004]
   })));
 check('v5 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV5)) === JSON.stringify(fromV5));
-/* 全链路：v1 旧档一路迁到 v6，也必须带齐 historic（链路无缺口） */
-check('v1 旧档一路迁移到 v6 同样带齐 record.historic',
+/* 全链路：v1 旧档一路迁到当前版本，也必须带齐 historic（链路无缺口） */
+check('v1 旧档一路迁移到当前版本同样带齐 record.historic',
   fromV1.ships.s40.record.historic && Object.keys(fromV1.ships.s40.record.historic).length === 0 &&
   JSON.stringify(fromV1.ships.s40.record) === JSON.stringify(Game.defaultRecord()));
 check('v6 档的战役账本已存在（新档同形状）',
@@ -237,6 +267,58 @@ check('v6 档的战役账本已存在（新档同形状）',
     });
     return s.stats.historic['H1:firstClear'] === 1700000000000;
   })());
+
+/* ============ v6 → v7：战功章（V0.305）+ 编成预设槽 ============
+ * 只补键、不动任何既有数值；本函数是这三个键的**唯一补写点**（坑 #30）。 */
+const fromV6 = Game.migrateSave(v6Save());
+check('v6 档升级到当前版本（v7）', fromV6.saveVersion === CUR && fromV6.version === CUR && CUR === 7, 'CUR=' + CUR);
+check('v6 档补齐战功章余额为 0', fromV6.stats.medals === 0, String(fromV6.stats.medals));
+check('v6 档补齐章账本为空结构',
+  fromV6.stats.medalLedger && typeof fromV6.stats.medalLedger === 'object' &&
+  typeof fromV6.stats.medalLedger.once === 'object' && typeof fromV6.stats.medalLedger.weekly === 'object' &&
+  Object.keys(fromV6.stats.medalLedger.once).length === 0 && Object.keys(fromV6.stats.medalLedger.weekly).length === 0,
+  JSON.stringify(fromV6.stats.medalLedger));
+check('v6 档补齐编成预设槽为空数组', Array.isArray(fromV6.presets) && fromV6.presets.length === 0,
+  JSON.stringify(fromV6.presets));
+check('v6 档迁移不覆盖既有战役账本与全局统计',
+  fromV6.stats.historic['H1:firstClear'] === 1700000000000 &&
+  fromV6.stats.objectives['1-2-s'] === 1700000000001 &&
+  fromV6.stats.sortie === 88 && fromV6.stats.sWin === 40);
+check('v6 档迁移不覆盖履历与资源',
+  fromV6.ships.s1.record.sorties === 55 &&
+  fromV6.ships.s1.record.historic['H1'].hardWin === 1700000000002 &&
+  fromV6.ships.s1.record.firstClear['1-4'] === 1700000000003 &&
+  fromV6.resources.screws === 15 && fromV6.resources.devMats === 22);
+check('v6 档迁移不覆盖舰队 / 图鉴 / 装备',
+  JSON.stringify(fromV6.fleet[1]) === JSON.stringify(['s1']) &&
+  fromV6.library.ships.iowa === true && fromV6.library.equips.gun16in_50 === true &&
+  fromV6.equipment.e1.star === 4 && fromV6.equipment.e1.locked === true);
+check('v6 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV6)) === JSON.stringify(fromV6));
+
+/* 全链路：v1 旧档一路迁到 v7，也必须带齐章字段与预设槽（链路无缺口） */
+check('v1 旧档一路迁移到当前版本同样带齐战功章字段与预设槽',
+  fromV1.stats && fromV1.stats.medals === 0 &&
+  fromV1.stats.medalLedger && typeof fromV1.stats.medalLedger.once === 'object' &&
+  Array.isArray(fromV1.presets));
+
+/* 章账本形状不完整时的补形（迁移器自身健壮性） */
+check('v6 档章账本残缺 → 补形但保留已有条目',
+  (() => {
+    const s = Game.migrateSave(Object.assign(v6Save(), {
+      stats: Object.assign({}, v6Save().stats, { medals: 7, medalLedger: { once: { 'map:1-1': 1 } } })
+    }));
+    return s.stats.medals === 7 && s.stats.medalLedger.once['map:1-1'] === 1 &&
+      typeof s.stats.medalLedger.weekly === 'object';
+  })());
+
+/* 坑 #30 负向断言：normalizeSave **不许**补这些新键（补了就绕过迁移器，迁移测试变空转） */
+{
+  const raw = { resources: { fuel: 1 }, ships: {}, equipment: {} };
+  const n = Game.normalizeSave(raw);
+  check('normalizeSave 不补战功章字段（坑 #30：新键只能由迁移器补）',
+    n.stats === undefined || n.stats.medals === undefined);
+  check('normalizeSave 不补编成预设槽（同上）', n.presets === undefined);
+}
 
 /* 损坏存档 */
 const damaged = Game.migrateSave({ saveVersion: CUR, resources: null, fleet: null, ships: null, equipment: null, library: null });

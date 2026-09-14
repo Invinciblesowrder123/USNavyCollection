@@ -10,7 +10,7 @@
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
-  const CURRENT_SAVE_VERSION = 6;
+  const CURRENT_SAVE_VERSION = 7;
   const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
@@ -71,7 +71,8 @@ const Game = (() => {
     sortie: null,                       // {mapId, fleetIdx, node, path[]}
     practice: { date: '', fleets: [] },
     improve: { date: '', count: 0 },    // 改修工厂每日次数
-    stats: { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {}, historic: {} },
+    presets: [],                        // 编成预设（V0.305 批次3）：[{name, ships:[shipId...], at}]
+    stats: { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {}, historic: {}, medals: 0, medalLedger: { once: {}, weekly: {} } },
     lastSave: Date.now()
   };
 
@@ -439,6 +440,10 @@ const Game = (() => {
     state.fleetUnlock = { 3: false, 4: false };
     state.ships = {};
     state.equipment = {};
+    /* 图鉴登录表必须一起归零 —— 否则"开新档"会残留上一档的收集记录
+     * （2026-09-14 V0.305 测试中发现：原先漏了这一行；生产路径上 newGame 只在
+     *  初始空状态被触发，所以此前没有暴露，但它让"新档"语义不完整） */
+    state.library = { ships: {}, equips: {} };
     state.equipCap = EQUIP_CAP_DEFAULT;
     state.firstShipLocked = false;
     state.construction = [];
@@ -450,7 +455,8 @@ const Game = (() => {
     state.sortie = null;
     state.practice = { date: '', fleets: [] };
     state.improve = { date: '', count: 0 };
-    state.stats = { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {}, historic: {} };
+    state.presets = [];
+    state.stats = { sink: 0, sortie: 0, win: 0, sWin: 0, expedition: 0, build: 0, develop: 0, repair: 0, modernize: 0, remodel: 0, practice: 0, bossSWin: {}, historic: {}, medals: 0, medalLedger: { once: {}, weekly: {} } };
     state.lastSave = Date.now();
     for (const sid of STARTER_IDS) {
       const s = createShip(sid, 10);
@@ -604,7 +610,29 @@ const Game = (() => {
     return save;
   }
 
-  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5, 5: migrateV5ToV6 };
+  /* v6 -> v7：战功章（V0.305 军需处）+ 编成预设（V0.305 批次3）。
+   * 新增 `st.stats.medals`（余额）+ `st.stats.medalLedger`（产出记账，防重复领取）+
+   * `st.presets`（编成预设槽）。**只补键，不动任何已有数值**。
+   * 注意：本函数是这三个键的**唯一补写点** —— `normalizeSave` 依然不补新字段（坑 #3 / #19 / #30：
+   * 补了就绕过迁移器，迁移测试失效）。 */
+  function migrateV6ToV7(data) {
+    const save = cloneSave(data);
+    if (!save.stats || typeof save.stats !== 'object') save.stats = {};
+    if (typeof save.stats.medals !== 'number' || !isFinite(save.stats.medals)) save.stats.medals = 0;
+    save.stats.medals = Math.max(0, Math.floor(save.stats.medals));
+    const led = save.stats.medalLedger;
+    if (!led || typeof led !== 'object') save.stats.medalLedger = { once: {}, weekly: {} };
+    else {
+      if (!led.once || typeof led.once !== 'object') led.once = {};
+      if (!led.weekly || typeof led.weekly !== 'object') led.weekly = {};
+    }
+    if (!Array.isArray(save.presets)) save.presets = [];
+    save.saveVersion = 7;
+    save.version = 7;
+    return save;
+  }
+
+  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5, 5: migrateV5ToV6, 6: migrateV6ToV7 };
   function normalizeSave(save) {
     if (!save.resources || typeof save.resources !== 'object') {
       save.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 };

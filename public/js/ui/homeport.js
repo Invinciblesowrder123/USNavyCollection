@@ -607,6 +607,16 @@ const Homeport = (() => {
               </div>`;
             }).join('')}
           </div>
+          <div class="section-title">编成预设 <span class="dim">（按舰名保存；载入时自动挑选可用实例，缺员会报出缺哪几艘）</span></div>
+          <div class="btn-row preset-bar">
+            <button class="btn btn-sm" data-preset-save>保存当前编成</button>
+            ${(st.presets || []).map((p, i) => `
+              <span class="preset-chip">
+                <button class="btn btn-sm" data-preset-load="${i}">载入：${UI.esc(p.name)}（${(p.ships || []).length}）</button>
+                <button class="btn btn-sm btn-red" data-preset-del="${i}" title="删除该预设">×</button>
+              </span>`).join('')}
+            ${(st.presets || []).length ? '' : '<span class="dim">尚无预设（上限 8 个）</span>'}
+          </div>
           <div class="section-title">母港舰娘（拖拽图标编入舰队；舰队内拖拽可调整/换位；拖回母港区脱出舰队）</div>
           <div class="roster-tools">
             <span class="dim">舰种</span>
@@ -626,6 +636,30 @@ const Homeport = (() => {
         </div>`;
 
       root.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => formation(root, parseInt(b.dataset.f, 10))));
+
+      /* ---- 编成预设（V0.305 批次3） ---- */
+      root.querySelectorAll('[data-preset-save]').forEach(b => b.addEventListener('click', () => {
+        const r = Progression.saveFleetPreset(fleetIdx);
+        if (!r.ok) { UI.toast(r.msg); return; }
+        Game.save();
+        UI.toast(`已保存预设「${r.name}」`);
+        render();
+      }));
+      root.querySelectorAll('[data-preset-load]').forEach(b => b.addEventListener('click', () => {
+        const r = Progression.loadFleetPreset(fleetIdx, parseInt(b.dataset.presetLoad, 10));
+        if (!r.ok) { UI.toast(r.msg); return; }
+        Game.save();
+        UI.toast(r.missing.length
+          ? `载入「${r.name}」：编入 ${r.count} 艘，缺 ${r.missing.length} 艘（${r.missing.join('、')}）`
+          : `载入「${r.name}」：编入 ${r.count} 艘`);
+        render();
+      }));
+      root.querySelectorAll('[data-preset-del]').forEach(b => b.addEventListener('click', () => {
+        if (!confirm('删除该编成预设？')) return;
+        Progression.removeFleetPreset(parseInt(b.dataset.presetDel, 10));
+        Game.save();
+        render();
+      }));
 
       /* ---- 舰种筛选 / 排序 ---- */
       root.querySelectorAll('.roster-tools [data-type]').forEach(el =>

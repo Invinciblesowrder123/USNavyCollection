@@ -24,6 +24,7 @@
 <script src="js/game/logistics.js"></script>
 <script src="js/game/progression.js"></script>
 <script src="js/game/sortie.js"></script>
+<script src="js/game/acquisition.js"></script>
 <script src="js/ui/common.js"></script>
 <script src="js/ui/secretary-live2d.js"></script>
 <script src="js/ui/homeport.js"></script>
@@ -33,6 +34,7 @@
 <script src="js/ui/logistics.js"></script>
 <script src="js/ui/quests.js"></script>
 <script src="js/ui/library.js"></script>
+<script src="js/ui/medals.js"></script>
 <script>
   window.__errors = [];
   window.onerror = function (msg, src, line) { window.__errors.push(msg + ' @' + (src || '').split('/').pop() + ':' + line); };
@@ -199,7 +201,10 @@
       const rmM = Progression.modernize(tgt.uid, [Game.createShip('benson', 1).uid]);
       R(rmM.ok, 'modernize:synthesize', JSON.stringify(rmM));
       /* 顶部一级菜单 + 工厂近代化改修页签 */
-      R(document.querySelectorAll('#navbar button').length === 11, 'nav:topmenu', 'n=' + document.querySelectorAll('#navbar button').length);
+      /* 一级菜单条目数 = 司令部 4（母港/任务/图鉴/军需处）+ 舰队行动 2 + 后勤与生产 6 = 12（V0.305 军需处 +1） */
+      const navBtnsAll = document.querySelectorAll('#navbar button');
+      R(navBtnsAll.length === 12, 'nav:topmenu', 'n=' + navBtnsAll.length);
+      R([].slice.call(navBtnsAll).every(b => !!UI.Screens[b.dataset.s]), 'nav:allTargetsExist');
       UI.go('factory', 'modernize');
       R(document.querySelector('#screen').innerHTML.includes('近代化改修') && document.querySelector('#screen').innerHTML.includes('剩余可改修'), 'screen:factory-modernize');
       document.querySelector('#screen').querySelector('[data-mod-target]').click();
@@ -301,6 +306,140 @@
       onlyBox.checked = true;
       onlyBox.dispatchEvent(new Event('change'));
       R(document.querySelectorAll('#screen .lib-card.locked').length === 0, 'library:onlyOwned');
+
+      /* ===== V0.305 图鉴深化：获取途径 / 三态详情 / 收集率里程碑 ===== */
+      document.querySelector('#screen [data-tab="ships"]').click();
+      /* 先把「只看已获得」取消，否则一个锁定卡都拿不到（上一条断言刚把它勾上） */
+      const ownedBox2 = document.querySelector('#screen [data-fowned]');
+      if (ownedBox2 && ownedBox2.checked) { ownedBox2.checked = false; ownedBox2.dispatchEvent(new Event('change')); }
+      const lockedCard = document.querySelector('#screen .lib-card.locked[data-libship]');
+      R(!!lockedCard, 'v305:lockedCardClickable');
+      if (lockedCard) {
+        lockedCard.click();
+        const lockHtml = document.querySelector('#modal-root').innerHTML;
+        R(lockHtml.indexOf('获取途径') >= 0 && lockHtml.indexOf('未登录') >= 0, 'v305:lockedRouteModal', lockHtml.slice(0, 80));
+        R(lockHtml.indexOf('undefined') < 0, 'v305:lockedRouteNoUndefined');
+        R(/掉落|可建造|任务奖励|初始赠送|暂无获取途径/.test(lockHtml), 'v305:lockedRouteText');
+        R(document.querySelector('#screen').innerHTML.indexOf('？？？') >= 0, 'v305:lockedNameStillMasked');
+        document.querySelector('#modal-root').innerHTML = '';
+      }
+      /* 已获得条目 → 复用舰娘详情弹窗（有实例时） */
+      const ownedCard = document.querySelector('#screen .lib-card:not(.locked)[data-libship]');
+      R(!!ownedCard, 'v305:ownedCardClickable');
+      if (ownedCard) {
+        ownedCard.click();
+        R(document.querySelector('#modal-root').innerHTML.indexOf('耐久') >= 0, 'v305:ownedReusesShipDetail');
+        document.querySelector('#modal-root').innerHTML = '';
+      }
+      /* 无实例（曾获得但已解体）→ 降级面板，不出现 undefined（坑 #35） */
+      {
+        /* 注意：同一个舰船 id 可能有多个实例（初始赠送 + 后续建造），必须全部摘掉才进入降级分支 */
+        const uids0 = Object.keys(Game.state.ships);
+        const goneId = uids0.length ? Game.state.ships[uids0[0]].id : null;
+        const gone = goneId ? uids0.filter(u => Game.state.ships[u].id === goneId).map(u => [u, Game.state.ships[u]]) : [];
+        if (goneId && gone.length) {
+          for (const kv of gone) delete Game.state.ships[kv[0]];
+          UI.go('library');
+          const c2 = document.querySelector('#screen .lib-card:not(.locked)[data-libship="' + goneId + '"]');
+          R(!!c2, 'v305:codexOnlyCardPresent', goneId + ' x' + gone.length);
+          if (c2) {
+            c2.click();
+            const h2 = document.querySelector('#modal-root').innerHTML;
+            R(h2.indexOf('当前无该') >= 0 && h2.indexOf('获取途径') >= 0 && h2.indexOf('undefined') < 0,
+              'v305:codexOnlyDegrade', h2.slice(0, 120));
+            document.querySelector('#modal-root').innerHTML = '';
+          }
+          for (const kv of gone) Game.state.ships[kv[0]] = kv[1];
+        }
+      }
+      /* 里程碑区块：百分比判定 + 100% 只给纪念荣誉 */
+      UI.go('library');
+      const msHtml = document.querySelector('#screen').innerHTML;
+      R(msHtml.indexOf('收集率里程碑') >= 0, 'v305:milestoneBlock');
+      R(msHtml.indexOf('25%') >= 0 && msHtml.indexOf('50%') >= 0 && msHtml.indexOf('75%') >= 0, 'v305:milestoneTiersPercent');
+      R(msHtml.indexOf('100%') >= 0 && msHtml.indexOf('纪念荣誉') >= 0, 'v305:milestone100HonorOnly');
+      R(Progression.LIB_MILESTONES.join(',') === '25,50,75', 'v305:milestoneNoHundredTier');
+      R(typeof Acquisition === 'object' && Acquisition.shipRoutes('fletcher').length > 0, 'v305:acquisitionApi');
+      R(Acquisition.unimplemented('equip').length === 6, 'v305:unimplementedMarked', Acquisition.unimplemented('equip').join(','));
+
+      /* ===== V0.305 军需处 ===== */
+      UI.go('medals');
+      const medHtml = document.querySelector('#screen').innerHTML;
+      R(medHtml.indexOf('军需处') >= 0 && medHtml.indexOf('战功章') >= 0, 'v305:medalsScreen');
+      R(medHtml.indexOf('兑换') >= 0 && medHtml.indexOf('产出记录') >= 0, 'v305:medalsSections');
+      R(document.querySelectorAll('#screen [data-buy]').length === Progression.MEDAL_SHOP.length, 'v305:medalsShopItems',
+        'n=' + document.querySelectorAll('#screen [data-buy]').length);
+      R(document.querySelectorAll('#screen .medal-src-row').length === Progression.MEDAL_SOURCES.length, 'v305:medalSourceRows');
+      R(medHtml.indexOf('每周首次') >= 0, 'v305:medalWeeklySourceShown');
+      UI.refreshTop();   // 顶栏由 tick() 刷新；测试里显式刷一次再断言（否则 #resBar 仍是空的）
+      R(document.querySelector('#resBar').innerHTML.indexOf('ico-medal') >= 0, 'v305:medalInTopBar');
+      R(Progression.medalBalance() >= 1 && Progression.medalBalance() === Game.state.stats.medals,
+        'v305:medalEarnedBySortie', 'bal=' + Progression.medalBalance());
+      const medalResEl = document.querySelector('#resBar .ico-medal');
+      R(!!medalResEl && medalResEl.parentElement.textContent.indexOf(String(Progression.medalBalance())) >= 0,
+        'v305:medalTopBarMatchesBalance', medalResEl ? medalResEl.parentElement.textContent : '(无)');
+      /* 余额为 0 时兑换按钮禁用（先清空，避免受前面 1-1 首通产出的影响） */
+      while (Progression.medalBalance() > 0) Progression.spendMedals(1);
+      UI.go('medals');
+      const buyPoor = document.querySelector('#screen [data-buy="dc_team"]');
+      R(!!buyPoor && buyPoor.disabled, 'v305:medalBuyDisabledWhenPoor');
+
+      /* 兑换：二次确认 → 取消不扣章 → 确认扣章并发放（消耗品自动上锁） */
+      Progression.grantMedals([{ id: 'e2e:fund', n: 5 }]);
+      UI.go('medals');
+      const balBefore = Progression.medalBalance();
+      const buyOk = document.querySelector('#screen [data-buy="dc_team"]');
+      R(!!buyOk && !buyOk.disabled, 'v305:medalBuyEnabled');
+      buyOk.click();
+      const cHtml = document.querySelector('#modal-root').innerHTML;
+      R(cHtml.indexOf('兑换确认') >= 0 && cHtml.indexOf('消耗') >= 0, 'v305:medalConfirmModal', cHtml.slice(0, 80));
+      R(cHtml.indexOf('不返还') >= 0, 'v305:medalConfirmWarns');
+      document.querySelector('#modal-root [data-close]').click();
+      R(document.querySelector('#modal-root').innerHTML === '' && Progression.medalBalance() === balBefore, 'v305:medalCancelNoCost');
+
+      document.querySelector('#screen [data-buy="dc_team"]').click();
+      document.querySelector('#modal-root [data-medal-confirm]').click();
+      R(Progression.medalBalance() === balBefore - 2, 'v305:medalBought', 'bal=' + Progression.medalBalance());
+      R(document.querySelector('#modal-root').innerHTML === '', 'v305:medalModalClosed');
+      R(Object.values(Game.state.equipment).some(e => e.id === 'dc_team' && e.locked === true), 'v305:medalItemLocked');
+      /* 周限项：买一次后按钮转为「本周已兑换」且禁用 */
+      document.querySelector('#screen [data-buy="screws5"]').click();
+      document.querySelector('#modal-root [data-medal-confirm]').click();
+      const wkBtn = document.querySelector('#screen [data-buy="screws5"]');
+      R(!!wkBtn && wkBtn.disabled && wkBtn.textContent.indexOf('本周') >= 0, 'v305:medalWeeklyLimit', wkBtn ? wkBtn.textContent : '');
+      R(document.querySelector('#screen').innerHTML.indexOf('周限购') >= 0 || document.querySelector('#screen').innerHTML.indexOf('每周') >= 0, 'v305:medalWeeklyLabelShown');
+
+      /* 导航：新增军需处入口且不破版（司令部 4 + 舰队行动 2 + 后勤 6 = 12） */
+      const navBtns = document.querySelectorAll('#navbar button');
+      R(navBtns.length === 12, 'v305:navCount', 'n=' + navBtns.length);
+      R(document.querySelector('#navbar').textContent.indexOf('军需处') >= 0, 'v305:navMedalsEntry');
+      const navEl = document.querySelector('#navbar');
+      R(navEl.scrollWidth <= navEl.clientWidth + 1, 'v305:navNoOverflow', navEl.scrollWidth + '>' + navEl.clientWidth);
+      const navGroups = [].slice.call(document.querySelectorAll('#navbar .nav-group'));
+      R(navGroups.length === 3 && navGroups.every(g => g.scrollWidth <= g.clientWidth + 1), 'v305:navGroupsFit',
+        navGroups.map(g => g.scrollWidth + '/' + g.clientWidth).join(' '));
+      UI.go('medals');
+      R(document.querySelector('#navbar button.active') && document.querySelector('#navbar button.active').textContent.indexOf('军需处') >= 0, 'v305:navMedalsActive');
+
+      /* ===== V0.305 编成预设 ===== */
+      UI.go('formation', 1);
+      R(document.querySelector('#screen').innerHTML.indexOf('编成预设') >= 0, 'v305:presetBar');
+      const presetIds = Game.state.fleet[1].map(u => Game.state.ships[u] && Game.state.ships[u].id).filter(Boolean);
+      const saveBtn = document.querySelector('#screen [data-preset-save]');
+      R(!!saveBtn && presetIds.length > 0, 'v305:presetSaveBtn', 'n=' + presetIds.length);
+      if (saveBtn && presetIds.length) {
+        saveBtn.click();
+        R(Game.state.presets.length === 1 && JSON.stringify(Game.state.presets[0].ships) === JSON.stringify(presetIds),
+          'v305:presetSaved', JSON.stringify(Game.state.presets[0] && Game.state.presets[0].ships));
+        R(!!document.querySelector('#screen [data-preset-load]') && !!document.querySelector('#screen [data-preset-del]'),
+          'v305:presetButtonsRendered');
+        Game.state.fleet[1] = [];
+        document.querySelector('#screen [data-preset-load]').click();
+        R(JSON.stringify(Game.state.fleet[1].map(u => Game.state.ships[u] && Game.state.ships[u].id).filter(Boolean)) === JSON.stringify(presetIds),
+          'v305:presetRoundTrip', JSON.stringify(Game.state.fleet[1]));
+      }
+      R(Progression.removeFleetPreset(0).ok && Game.state.presets.length === 0, 'v305:presetRemoved');
+      R(!Progression.removeFleetPreset(0).ok, 'v305:presetRemoveInvalid');
 
       /* ===== 方向一：出击前情报室 ===== */
       R(typeof Sortie.intel === 'function' && Sortie.intel(1, '2-2') !== null, 'intel:engineApi');
@@ -434,7 +573,7 @@
       /* ===== 方向二：舰历 ===== */
       /* V0.304 起：荣誉总数遍历化（通用 8 锚定 + 战役荣誉随战役数增长，不写死总数） */
       R(typeof Progression.recordSummary === 'function' &&
-        Progression.HONORS.filter(h => !/^hist_/.test(h.id)).length === 8 &&
+        Progression.HONORS.filter(h => !/^hist_/.test(h.id) && !/^codex_/.test(h.id)).length === 8 &&
         Progression.HONORS.length >= Progression.HONORS.filter(h => /^hist_/.test(h.id)).length + 8,
         'record:honorCount');
       /* 取一艘真正打过仗的舰（前面的流程会 unshift 维斯塔尔，fleet[1][0] 未必参战过） */

@@ -68,6 +68,8 @@
       const ch = Progression.resetDue();
       if (ch.length) Progression.resetQuests(ch);
       Progression.checkDynamic();
+      /* 图鉴收集率里程碑（V0.305）：达成即自动发放战功章（走章账本，幂等） */
+      Progression.checkLibraryMilestones();
       UI.tick();
     }, 1000);
 

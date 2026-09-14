@@ -761,9 +761,29 @@ const Sortie = (() => {
       if (parts.length) result.log.push(`新获得荣誉：${parts.join('、')}（${names.join('、')}）`);
     }
 
+    /* ---- 战功章产出（V0.305 军需处）----
+     * **唯一调用点**（坑 #31）：首通 / 作战目标 / 战役三层 / 每周史实重演 全部在这里一次性结算，
+     * 逐项查账本 → 记账 → 加余额；同一次结算被重复调用也只发一次。
+     * 产出必须落进战报（result.log）—— 这是玩家唯一能感知章从哪来的地方，不许静默发放。 */
+    const medalOut = Progression.grantMedalRewards({
+      mapId: map.id,
+      cleared: !!cleared,
+      objectives: objResults.filter(o => o.ok).map(o => o.id),
+      historic: (histBattle && histReward)
+        ? {
+          id: histBattle.id,
+          firstClear: histReward.granted.includes('firstClear'),
+          histForm: histReward.granted.includes('histForm'),
+          hard: histReward.granted.includes('hard')
+        }
+        : null
+    });
+    for (const g of medalOut.granted) result.log.push(`战功章 +${g.n}（${g.name}）`);
+    for (const g of medalOut.weekly) result.log.push(`战功章 +${g.n}（${g.name}，每周限 1 枚）`);
+
     return {
       ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true,
-      admExp: admGain, honors: honorOut,
+      admExp: admGain, honors: honorOut, medals: medalOut,
       historic: histBattle ? histBattle.id : null, hard: histHard, wave: histWave, histReward, histMatch
     };
   }

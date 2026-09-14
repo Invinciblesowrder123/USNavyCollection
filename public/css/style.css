@@ -1363,3 +1363,77 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
   .hist-rule { font-size: 12px; }
   .hist-hard-box .sb-body { font-size: 11.5px; }
 }
+
+/* ============================================================
+ * 图鉴深化 + 军需处（V0.305）—— 获取途径 / 收集率里程碑 / 战功章兑换
+ * 只补新类，不改既有 .lib-* / .resbar 结构，保证 1440px / 1080px 不破版。
+ * ============================================================ */
+.ico-medal { background: #ffd76a; box-shadow: 0 0 0 1px rgba(255, 215, 106, .45); }
+
+/* ---- 图鉴：可点击卡片 ---- */
+.lib-card.clickable { cursor: pointer; transition: border-color .12s, transform .12s; }
+.lib-card.clickable:hover { border-color: var(--gold); transform: translateY(-2px); }
+.lib-card.clickable.locked:hover { opacity: 0.75; }
+
+/* ---- 图鉴：获取途径列表 ---- */
+.lib-routes { margin: 4px 0 0; padding-left: 18px; }
+.lib-routes li { font-size: 12.5px; line-height: 1.7; color: var(--text); }
+.lib-routes li.none { color: var(--orange); }
+
+/* ---- 图鉴：收集率里程碑 ---- */
+.lib-ms { display: flex; flex-direction: column; gap: 6px; }
+.lib-ms-line { font-size: 12.5px; }
+.lib-ms-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 3px; }
+.ms-chip {
+  border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px;
+  font-size: 11.5px; color: var(--dim); background: var(--panel2);
+}
+.ms-chip.ready { color: var(--gold); border-color: var(--gold); }
+.ms-chip.got { color: var(--gold); border-color: var(--gold); background: rgba(232, 194, 74, .12); }
+
+/* ---- 军需处 ---- */
+.medal-head {
+  display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
+  margin: 6px 0 4px;
+}
+.medal-bal { font-size: 15px; }
+.medal-bal b { color: var(--gold); font-size: 20px; }
+.medal-cost { color: var(--gold); }
+
+.medal-shop { display: flex; flex-direction: column; gap: 6px; }
+.medal-shop-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 12px;
+}
+.medal-shop-item.blocked { opacity: 0.6; }
+.msi-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.msi-name { font-size: 13.5px; }
+.msi-tag { font-size: 11.5px; }
+.msi-side { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.msi-cost { color: var(--gold); font-weight: bold; font-size: 13.5px; }
+
+.medal-confirm-box { margin: 6px 0; }
+.medal-confirm-name { font-size: 15px; margin-bottom: 4px; }
+
+.medal-src { display: flex; flex-direction: column; gap: 3px; }
+.medal-src-row {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  font-size: 12.5px; padding: 3px 6px; border-radius: 4px;
+}
+.medal-src-row.done { background: rgba(232, 194, 74, .07); }
+.medal-src-row b { color: var(--gold); }
+.medal-src-row .msr-name { flex: 1 1 320px; min-width: 200px; }
+.medal-src-row .msr-earn { color: var(--gold); }
+
+/* 1080px：兑换行换行不溢出 */
+@media (max-width: 1180px) {
+  .medal-shop-item { flex-wrap: wrap; }
+  .msi-main { flex: 1 1 100%; }
+  .medal-src-row .msr-name { flex: 1 1 100%; min-width: 0; }
+}
+
+/* ---- 编成预设（V0.305 批次3） ---- */
+.preset-bar { flex-wrap: wrap; }
+.preset-chip { display: inline-flex; align-items: center; gap: 2px; }
+.preset-chip .btn + .btn { padding-left: 7px; padding-right: 7px; }

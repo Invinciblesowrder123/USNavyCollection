@@ -25,7 +25,8 @@ const UI = (() => {
       _: ['后勤', '入渠 · 补给 · 远征 · 演习']
     },
     quests: ['任务', '目标与奖励总览'],
-    library: ['图鉴', '舰船与装备收集记录']
+    library: ['图鉴', '舰船与装备收集记录'],
+    medals: ['军需处', '战功章兑换 · 产出记录']
   };
 
   function go(name, arg) {
@@ -54,7 +55,8 @@ const UI = (() => {
       ['司令部', [
         ['home', '🏠 母港', ''],
         ['quests', '📋 任务', ''],
-        ['library', '📖 图鉴', '']
+        ['library', '📖 图鉴', ''],
+        ['medals', '🎖 军需处', '']
       ]],
       ['舰队行动', [
         ['sortie', '⚔️ 出击', ''],
@@ -286,9 +288,12 @@ const UI = (() => {
     const cap = Game.resourceCap();
     const item = (ico, v, c) =>
       `<span class="res${c > 0 && v >= c ? ' full' : ''}"><span class="ico ${ico}"></span><b>${v}</b>${c ? `<span class="dim">/${c}</span>` : ''}</span>`;
+    /* 战功章（V0.305）：与螺丝/开发资材同区；余额来源唯一 = Progression.medalBalance() */
+    const medals = (typeof Progression !== 'undefined' && Progression.medalBalance) ? Progression.medalBalance() : 0;
     return item('ico-fuel', r.fuel, cap) + item('ico-ammo', r.ammo, cap) +
       item('ico-steel', r.steel, cap) + item('ico-baux', r.baux, cap) +
-      item('ico-screw', r.screws || 0, 0) + item('ico-devmat', r.devMats || 0, 0);
+      item('ico-screw', r.screws || 0, 0) + item('ico-devmat', r.devMats || 0, 0) +
+      item('ico-medal', medals, 0);
   }
 
   function refreshTop() {

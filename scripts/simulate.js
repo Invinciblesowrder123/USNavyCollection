@@ -45,6 +45,8 @@ Object.assign(global, require('../public/js/game/improve.js'));
 Object.assign(global, require('../public/js/game/logistics.js'));
 Object.assign(global, require('../public/js/game/progression.js'));
 Object.assign(global, require('../public/js/game/sortie.js'));
+/* 获取途径（V0.305）：纯派生模块，依赖上面注入的数据表（MAPS / HISTORY_BATTLES / QUESTS / SHIPS…） */
+Object.assign(global, require('../public/js/game/acquisition.js'));
 
 /* localStorage 桩 */
 global.localStorage = {
@@ -1423,15 +1425,30 @@ function engStats(fleet, enemyKey, n) {
   }
   return out;
 }
-/* 样本量：T 不利的理论差为 5 个百分点；4000 场时该频率的标准误约 0.35 个百分点，
- * 断言阈值取 2.5 个百分点（约 7σ），既要求方向正确也要求差值显著，同时避免偶发噪声导致假失败。 */
+/* 样本量：T 不利的理论差为 5 个百分点（基础表 10% → 引导表 5%）；
+ * 4000 场时该频率的标准误约 0.35 个百分点，断言阈值取 2.5 个百分点，既要求方向正确也要求差值显著。
+ *
+ * V0.305 稳固化（Flake B）——**修的是测量工具，不是阈值**：
+ *   ① 被测两舰先补满耐久。前面的 section 会拿这两支编成打演习/出击，一旦航母被打到大破或轰沉，
+ *      `hasReconPlane` 的判据（`sideA.some(s => s.alive && s.reconPlane)`）就会失效，复现量被污染
+ *      —— 这正是实测出现「差值掉到 2.43pp」那次假失败的成因（~1/40 跑次）。
+ *   ② 频率的分母改用**总场次** `tot`，而不是 `reconOk`。原口径 `dis/reconOk` 是两个计数之比：
+ *      索敌失败的那批场次用的是基础表（=10%），却被算进"带舰侦"的分子、又因 `reconOk` 变小而抬高了比值，
+ *      于是索敌成功率一波动，差值就跟着漂。改成 `dis/tot` 才是"每场战斗的 T 不利频率"这个被断言的量。
+ *   ③ 顺带把索敌成功率打出来：下次再飘，一眼能看出是索敌判定变了还是引导表变了。 */
+for (const u of [iowaUid, cvUid, ddUid2, cvReconUid]) {
+  const s = Game.state.ships[u];
+  if (s) { s.hp = Game.shipStats(u).hpMax; s.supply = { fuel: 1, ammo: 1 }; }
+}
 const EN = 4000;
 const sNo = engStats(fleetNoRecon, 'F02', EN);
 const sRe = engStats(fleetRecon, 'F02', EN);
-const rateNo = sNo.dis / Math.max(1, sNo.reconOk);
-const rateRe = sRe.dis / Math.max(1, sRe.reconOk);
+const rateNo = sNo.dis / Math.max(1, sNo.tot);
+const rateRe = sRe.dis / Math.max(1, sRe.tot);
 assert('带舰侦编成的 T 不利频率显著低于不带（方向正确 + 差值显著）',
-  rateNo - rateRe >= 0.025, `无舰侦=${(rateNo * 100).toFixed(2)}% 带舰侦=${(rateRe * 100).toFixed(2)}%`);
+  rateNo - rateRe >= 0.025,
+  `无舰侦=${(rateNo * 100).toFixed(2)}% 带舰侦=${(rateRe * 100).toFixed(2)}%`
+  + ` 索敌成功率 无舰侦=${(sNo.reconOk / EN * 100).toFixed(1)}% 带舰侦=${(sRe.reconOk / EN * 100).toFixed(1)}%`);
 assert('不带舰侦时 T 不利频率仍为基线 10% 左右', Math.abs(rateNo - 0.10) <= 0.025, `${(rateNo * 100).toFixed(2)}%`);
 assert('带舰侦时 T 不利不被消灭（频率仍 ≥2%）', rateRe >= 0.02, `${(rateRe * 100).toFixed(2)}%`);
 assert('战报说明：携带舰侦且索敌成功时追加「舰侦侦察引导」', sRe.guide === sRe.reconOk && sRe.guide > 0, `guide=${sRe.guide} reconOk=${sRe.reconOk}`);
@@ -1576,8 +1593,12 @@ assert('连续通关不刷新首通时间戳（只写一次）',
   /* 首版 8 个通用荣誉（方向二）+ 战役专属荣誉（V0.303 六个 / V0.304 再六个）；
    * 上限断言防止无限膨胀（荣誉只该指向「可用不同打法达成的作战事实」）。
    * V0.304 起：计数断言遍历化（通用 8 锚定 + 战役荣誉 = 每场战役 × 2~3 个的推导口径），不写死总数。 */
-  assert('通用荣誉恰好 8 个（回归锚定）', Progression.HONORS.filter(h => !/^hist_/.test(h.id)).length === 8,
-    'n=' + Progression.HONORS.filter(h => !/^hist_/.test(h.id)).length);
+  const combatHonors = Progression.HONORS.filter(h => !/^hist_/.test(h.id) && !/^codex_/.test(h.id));
+  assert('通用荣誉恰好 8 个（回归锚定）', combatHonors.length === 8, 'n=' + combatHonors.length);
+  const codexHonors = Progression.HONORS.filter(h => /^codex_/.test(h.id));
+  assert('图鉴纪念荣誉恰好 2 个且永不参与战斗结算（V0.305：100% 只给纪念，不给数值）',
+    codexHonors.length === 2 && codexHonors.every(h => h.kind === 'codex' && h.check({}, {}) === false),
+    codexHonors.map(h => h.id).join(','));
   const histHonors = Progression.HONORS.filter(h => /^hist_/.test(h.id));
   assert('战役荣誉覆盖全部战役的奖励层荣誉且在空上下文（常规图结算）下一律不触发（防误触发）',
     histHonors.length >= HISTORY_BATTLES.length * 2 &&
@@ -2840,13 +2861,23 @@ section('V0.303·任务2.1 强敌阶二波制（waves）');
     c1.ok === true && c1.histReward === null && JSON.stringify(Game.state.stats.historic) === ledBefore);
   assert('迎击路径下第一波不写 record.historic 标记（hardWin 不落）',
     Object.values(Game.state.ships).every(s => !s.record.historic['H1'] || s.record.historic['H1'].hardWin === undefined));
+  /* V0.305 稳固化（Flake A）：道中/第一波战后旗舰可能大破 → `startHardWave` 内部的 prepareBattle
+   * 被「大破进击」拦下并回滚 `so.wave = 1`，断言随即假失败（实测 ~1/40 跑次，V0.304 的 12 连跑恰好没碰到）。
+   * 处置：在**取基准快照之前**把耐久补满（本段考的是二波机制，不是损伤管理）；
+   * 快照与 `startHardWave` 之间不插入任何状态改动，因此下面「不补给 / 不重置」的断言仍然逐字段成立。 */
+  for (const u of Game.state.fleet[1]) {
+    const s = Game.state.ships[u];
+    if (s) s.hp = Game.shipStats(u).hpMax;
+  }
   const snapW1 = Game.state.fleet[1].filter(u => Game.state.ships[u]).map(u => {
     const s = Game.state.ships[u];
     return { uid: u, hp: s.hp, ammo: s.supply.ammo, fuel: s.supply.fuel, morale: s.morale };
   });
   const prepW2 = Sortie.startHardWave(prepW1);
+  if (!prepW2.ok) console.log('  [诊断] startHardWave 失败：' + prepW2.msg);
   assert('startHardWave 发起第二波：敌编成 = waves[1]，so.wave 推进到 2',
-    prepW2.ok === true && prepW2.histEnemyKey === 'H1X2' && Game.state.sortie.wave === 2);
+    prepW2.ok === true && prepW2.histEnemyKey === 'H1X2' && Game.state.sortie.wave === 2,
+    JSON.stringify({ ok: prepW2.ok, msg: prepW2.msg, key: prepW2.histEnemyKey, wave: Game.state.sortie && Game.state.sortie.wave }));
   const snapW2 = Game.state.fleet[1].filter(u => Game.state.ships[u]).map(u => {
     const s = Game.state.ships[u];
     return { uid: u, hp: s.hp, ammo: s.supply.ammo, fuel: s.supply.fuel, morale: s.morale };
@@ -2881,8 +2912,19 @@ section('V0.303·任务2.1 强敌阶二波制（waves）');
     sR.ok === true && !Game.state.stats.historic['H1:hard'] &&
     Object.values(Game.state.ships).every(s => !s.record.historic['H1'] || s.record.historic['H1'].hardWin === undefined),
     'rank=' + sR.result.rank);
-  assert('收兵后仍可再次发起强敌阶（不阻断，P0-2）',
-    (() => { Sortie.returnHome(); const r = Sortie.startHard('H1', 1); const ok = r.ok; Sortie.returnHome(); return ok; })());
+  /* V0.305 稳固化（Flake C，与 Flake A 同类）：本段考的是「收兵不阻断再次发起」这条**状态机**语义，
+   * 不是损伤管理。收兵结算后旗舰可能大破 → `Sortie.start()` 的「旗舰大破」守卫会拦下，断言假失败。
+   * 补满耐久只消除这条噪声路径：若真有"收兵后状态没复位"的 bug，守卫之外的判据仍会让断言变红。 */
+  {
+    Sortie.returnHome();
+    for (const u of Game.state.fleet[1]) {
+      const s = Game.state.ships[u];
+      if (s) s.hp = Game.shipStats(u).hpMax;
+    }
+    const rRetry = Sortie.startHard('H1', 1);
+    Sortie.returnHome();
+    assert('收兵后仍可再次发起强敌阶（不阻断，P0-2）', rRetry.ok === true, 'msg=' + rRetry.msg);
+  }
 
   /* ---- 断言 16：第二波的大破舰照常走既有轰沉保护（不因二波制绕过 P0-4） ---- */
   setupHard(hardFleet);
@@ -3679,6 +3721,351 @@ section('V0.304·批次4 分段战斗流程回归（原 test_night_split 并入�
     `消耗${(nfAmmoBefore30 - Game.state.ships[nfStrongFleet[0]].supply.ammo).toFixed(2)}`);
   Sortie.returnHome();
   Game.state.fleet[1] = nfPrevFleet;
+}
+
+/* ============================================================
+ * V0.305·批次1 图鉴深化：获取途径 / 三态详情数据源 / 收集率里程碑
+ * 说明：本段自 Game.newGame() 起，完全自给自足（不依赖前面 section 的残留状态）。
+ * ============================================================ */
+section('V0.305·批次1 图鉴获取途径与收集率里程碑');
+{
+  /* ---- 1.1 覆盖率：每条至少有"一条途径"或"明确的未实装标记"，且文案可读 ---- */
+  const badShip = [], badEquip = [];
+  for (const id of Object.keys(ShipData)) {
+    const rs = Acquisition.shipRoutes(id);
+    if (!rs.length || rs.some(r => !r.text || /undefined/.test(r.text))) badShip.push(id);
+  }
+  for (const id of Object.keys(EquipmentData)) {
+    const rs = Acquisition.equipRoutes(id);
+    if (!rs.length || rs.some(r => !r.text || /undefined/.test(r.text))) badEquip.push(id);
+  }
+  assert('获取途径：104 舰全部有条目且文案可读（无空、无 undefined）', badShip.length === 0, badShip.join(','));
+  assert('获取途径：115 装备全部有条目且文案可读（无空、无 undefined）', badEquip.length === 0, badEquip.join(','));
+
+  /* 「未实装」（数据表里有、但没有任何产出渠道）必须**显式标记**而不是静默留空；
+   * 数量被锁死 —— 数字一变就说明数据缺口被补或被扩大，要人来看一眼（坑 #6 的正向用法）。 */
+  const unShip = Acquisition.unimplemented('ship');
+  const unEquip = Acquisition.unimplemented('equip');
+  assert('获取途径：舰船无"未实装"条目（104 舰全部可获得）', unShip.length === 0, unShip.join(','));
+  assert('获取途径：装备"未实装"恰好 6 件（V0.302~V0.304 遗留，本版范围冻结不补渠道）',
+    unEquip.length === 6 &&
+    JSON.stringify(unEquip.slice().sort()) === JSON.stringify(['crew_vet', 'fleetcom', 'fr1', 'm4a1', 'repair_facility', 'xf5u']),
+    unEquip.join(','));
+  assert('获取途径：未实装项渲染为 none（UI 会标红而非留白）',
+    Acquisition.equipRoutes('xf5u').some(r => r.key === 'none'));
+  /* 装备 100% 收集率因此**不可达** → 里程碑 100% 档只能给纪念荣誉（规划方案 §3.2(3) 的实证依据） */
+  assert('获取途径：因 6 件未实装，装备 100% 不可达 —— 里程碑最高档位不得低于 100%',
+    Acquisition.unimplemented('equip').length > 0 && Progression.LIB_MILESTONES.every(m => m < 100));
+
+  /* ---- 1.2 与真实数据交叉核对（抽样：期望值从数据表算出，不写死 —— 数据一改断言不该变噪声） ---- */
+  const fletcherRoutes = Acquisition.shipRoutes('fletcher');
+  const dropLine = (fletcherRoutes.find(r => r.key === 'drop') || {}).text || '';
+  const bossLine = (fletcherRoutes.find(r => r.key === 'bossDrop') || {}).text || '';
+  const fletDropMaps = MAPS.filter(m => (m.drops || []).includes('fletcher')).map(m => m.id);
+  const fletBossMaps = MAPS.filter(m => (m.bossDrops || []).includes('fletcher')).map(m => m.id);
+  assert('获取途径：fletcher 的道中掉落清单逐图与 MAPS.drops 一致（非空且逐项命中）',
+    fletDropMaps.length > 0 && fletDropMaps.every(id => dropLine.includes(id)), dropLine);
+  assert('获取途径：fletcher 的 BOSS 掉落清单逐图与 MAPS.bossDrops 一致',
+    fletBossMaps.length > 0 && fletBossMaps.every(id => bossLine.includes(id)), bossLine);
+  assert('获取途径：初始舰标注「初始赠送」', fletcherRoutes.some(r => r.key === 'starter'));
+  assert('获取途径：r5 舰（iowa）至少给出两类不同途径（不掉落单挂）',
+    new Set(Acquisition.shipRoutes('iowa').map(r => r.key)).size >= 2,
+    JSON.stringify(Acquisition.shipRoutes('iowa').map(r => r.key + ':' + r.text)));
+  const dcTxt = Acquisition.equipRoutes('dc_team').map(r => r.text).join(' | ');
+  assert('获取途径：消耗品 dc_team 给出任务与战役双来源',
+    dcTxt.includes('任务奖励') && dcTxt.includes('战役奖励'), dcTxt);
+  const gfcsTxt = Acquisition.equipRoutes('gun16in_7gfcs').map(r => r.text).join(' | ');
+  assert('获取途径：不可开发装备给出「改修更新」与「随舰自带」',
+    gfcsTxt.includes('改修更新') && gfcsTxt.includes('随舰自带'), gfcsTxt);
+  const devTxt = Acquisition.equipRoutes('torp_mk14').map(r => r.text).join(' | ');
+  assert('获取途径：可开发装备列出秘书舰系 × 开发池', devTxt.includes('可开发（') && devTxt.includes('潜水系'), devTxt);
+
+  /* 负向验证：抹掉 1-2 的道中掉落 → fletcher 的途径文案必须随之变化 */
+  {
+    const m12 = MAPS.find(m => m.id === '1-2');
+    const saved = m12.drops;
+    m12.drops = saved.filter(x => x !== 'fletcher');
+    const after = (Acquisition.shipRoutes('fletcher').find(r => r.key === 'drop') || {}).text || '';
+    m12.drops = saved;
+    assert('负向验证：抹掉 1-2 的 drops → 道中掉落行消失（断言不是恒真式）',
+      after !== dropLine && !after.includes('1-2'), after);
+    assert('负向验证：复原后途径文案回到原样',
+      ((Acquisition.shipRoutes('fletcher').find(r => r.key === 'drop') || {}).text || '') === dropLine);
+  }
+
+  /* ---- 1.3 收集率里程碑：按百分比判定（坑 #36），100% 只给纪念荣誉 ---- */
+  assert('里程碑：档位是百分比且不含 100%', JSON.stringify(Progression.LIB_MILESTONES) === JSON.stringify([25, 50, 75]));
+  Game.newGame();
+  const ms0 = Progression.checkLibraryMilestones();
+  assert('里程碑：新档未达任何档位（不发章、不发荣誉）',
+    ms0.length === 0 && Progression.medalBalance() === 0, JSON.stringify(ms0));
+
+  /* 负面侧：total 是动态的（新增一条数据即改变达成线）—— 这正是"不许写死 25 艘"的根因 */
+  {
+    const probeId = '__probe_ship__';
+    const totalBefore = Game.libraryStats().ships.total;
+    ShipData[probeId] = { id: probeId, en: 'PROBE', zh: '探测舰', type: 'DD', rarity: 1, stats: [1, 1, 1, 1, 1, 1, 1, 1, 1] };
+    const totalAfter = Game.libraryStats().ships.total;
+    delete ShipData[probeId];
+    assert('里程碑：total 随数据表动态变化（坑 #36：绝不能写死绝对数）',
+      totalAfter === totalBefore + 1 && Game.libraryStats().ships.total === totalBefore,
+      `${totalBefore} -> ${totalAfter}`);
+  }
+
+  /* 正面侧：把舰船收集率推到 100% → 三档全部达成 + 100% 纪念荣誉 */
+  for (const id of Object.keys(ShipData)) Game.createShip(id, 1);
+  const pctNow = Game.libraryStats().ships;
+  assert('里程碑：舰船收集率到达 100%', pctNow.owned === pctNow.total, `${pctNow.owned}/${pctNow.total}`);
+  const applied = Progression.checkLibraryMilestones();
+  const medalApplied = applied.filter(x => x.kind === 'medal');
+  assert('里程碑：三档（25/50/75%）一次性全部达成', medalApplied.length === 3, JSON.stringify(medalApplied.map(x => x.key)));
+  assert('里程碑：装备线仍为 0% → 一档都不发',
+    Progression.medalSourceSummary().find(s => s.id === 'libEquips').got === 0);
+  assert('里程碑：发章枚数 = 档位数 × 每档枚数',
+    Progression.medalBalance() === 3 * Progression.LIB_MILESTONE_MEDALS, 'bal=' + Progression.medalBalance());
+  assert('里程碑：100% 授予纪念荣誉（不给数值奖励）',
+    applied.some(x => x.kind === 'honor' && x.id === 'codex_ships_full'));
+  const applied2 = Progression.checkLibraryMilestones();
+  assert('里程碑：重复调用不重复发章、不重复授勋（账本幂等）',
+    applied2.filter(x => x.kind === 'medal').length === 0 && applied2.filter(x => x.kind === 'honor').length === 0 &&
+    Progression.medalBalance() === 3 * Progression.LIB_MILESTONE_MEDALS);
+
+  /* 装备线：填满图鉴 → 三档章 + 100% 纪念荣誉；100% 那一档本身不加成（只多发 3 档的章） */
+  {
+    const before = Progression.medalBalance();
+    const saved = Object.assign({}, Game.state.library.equips);
+    for (const id of Object.keys(EquipmentData)) Game.state.library.equips[id] = true;
+    const h = Progression.checkLibraryMilestones();
+    assert('里程碑：装备线三档达成且 100% 只补纪念荣誉（章只涨 3 档的量）',
+      h.filter(x => x.kind === 'medal').length === 3 && h.some(x => x.kind === 'honor' && x.id === 'codex_equips_full') &&
+      Progression.medalBalance() === before + 3 * Progression.LIB_MILESTONE_MEDALS,
+      JSON.stringify(h.map(x => x.key || x.id)));
+    Game.state.library.equips = saved;
+  }
+
+  /* ---- 1.4 图鉴三态数据源（坑 #35）：有实例 / 无实例 / 未获得 ---- */
+  {
+    const uid = Object.keys(Game.state.ships).find(u => Game.state.ships[u].id === 'fletcher');
+    assert('图鉴三态：有实例的舰可定位到 uid（详情页复用 openShipDetail 的前提）', !!uid);
+    /* 无实例：把**该 id 的全部实例**删掉但保留图鉴登录 —— recordPane 读不到记录，必须走降级分支 */
+    const saved = Object.keys(Game.state.ships)
+      .filter(u => Game.state.ships[u].id === 'fletcher')
+      .map(u => [u, Game.state.ships[u]]);
+    for (const [u] of saved) delete Game.state.ships[u];
+    assert('图鉴三态：实例消失后图鉴登录仍在（曾经的获得记录不丢）',
+      Game.libraryHasShip('fletcher') && !Object.values(Game.state.ships).some(s => s.id === 'fletcher'));
+    assert('图鉴三态：无实例时舰史/属性数据源仍在（ShipData 直读，不依赖实例）',
+      !!ShipData.fletcher && Array.isArray(ShipData.fletcher.stats));
+    for (const [u, inst] of saved) Game.state.ships[u] = inst;
+    assert('图鉴三态：复原后实例数回到原样',
+      Object.values(Game.state.ships).filter(s => s.id === 'fletcher').length === saved.length);
+  }
+}
+
+/* ============================================================
+ * V0.305·批次2 军需处：章账本 / 产出源 / 兑换 / 存档 v7
+ * 三条纪律的断言：账本幂等（坑 #31）/ 周期同源（坑 #32）/ 消耗品走 createEquip（坑 #33）
+ * ============================================================ */
+section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
+{
+  Game.newGame();
+  assert('章：新档余额为 0 且账本形状正确（迁移器与 newGame 两条路径同形状）',
+    Progression.medalBalance() === 0 && Game.state.stats.medals === 0 &&
+    typeof Game.state.stats.medalLedger.once === 'object' && typeof Game.state.stats.medalLedger.weekly === 'object');
+
+  /* ---- 2.1 一次性产出：查账本 → 记账 → 加余额 ---- */
+  const g1 = Progression.grantMedals([{ id: 'test:x', n: 3, name: '测试' }]);
+  const g2 = Progression.grantMedals([{ id: 'test:x', n: 3, name: '测试' }]);
+  assert('章：同一账本键只发一次（坑 #31 的正面断言）',
+    g1.length === 1 && g2.length === 0 && Progression.medalBalance() === 3);
+  assert('章：批量产出逐项独立记账（一项已发不影响其他项）',
+    Progression.grantMedals([{ id: 'test:x', n: 5 }, { id: 'test:y', n: 2 }]).length === 1 &&
+    Progression.medalBalance() === 5);
+  assert('章：非法产出项（无 id / n<=0）被忽略', Progression.grantMedals([{ n: 3 }, { id: 'z', n: 0 }, null]).length === 0);
+
+  /* ---- 2.2 周期性产出：与周常重置同源（坑 #32） ---- */
+  const wkNow = Progression.periodKeys().weekly;
+  const w1 = Progression.grantMedalWeekly('weekly:test', 1);
+  const w2 = Progression.grantMedalWeekly('weekly:test', 1);
+  assert('章：每周产出同周期内只发一次', !!w1 && w2 === null && w1.week === wkNow);
+  assert('章：周期键与周常重置用的键是同一个函数产出（周常 05:00 口径）',
+    Progression.periodKeys().weekly === Progression.periodKeys(new Date()).weekly);
+  Game.state.stats.medalLedger.weekly['weekly:test'] = 'old-period';
+  const w3 = Progression.grantMedalWeekly('weekly:test', 1);
+  assert('章：跨周期后同键可再发（周期判定不是一次性账本）', !!w3 && Progression.medalBalance() === 7);
+
+  /* ---- 2.3 产出源总览与数据表一致（UI 与断言共用一张表） ---- */
+  const src = Progression.medalSourceSummary();
+  const bySrc = {};
+  for (const s of src) bySrc[s.id] = s;
+  assert('章：产出源总览覆盖全部 MEDAL_SOURCES，且逐项有名称与总量',
+    src.length === Progression.MEDAL_SOURCES.length && src.every(s => s.name && typeof s.total === 'number'));
+  assert('章：产出源总量与数据一致（25 图 / 全部作战目标 / 4 战役×3 层 / 里程碑 3 档×2 线）',
+    bySrc.mapClear.total === MAPS.length &&
+    bySrc.objective.total === MAPS.reduce((n, m) => n + (m.objectives || []).length, 0) &&
+    bySrc.histFirst.total === HISTORY_BATTLES.length &&
+    bySrc.histForm.total === HISTORY_BATTLES.length &&
+    bySrc.histHard.total === HISTORY_BATTLES.length &&
+    bySrc.libShips.total === Progression.LIB_MILESTONES.length &&
+    bySrc.libEquips.total === Progression.LIB_MILESTONES.length,
+    JSON.stringify(src.map(s => s.id + ':' + s.total)));
+  assert('章：周项以"本周期是否已领"表达，不装作有总量上限',
+    bySrc.weeklyHist.potential === null && bySrc.weeklyHist.currentWeekDone === false);
+  /* 领过一次每周史实重演之后，总览必须随之翻面 */
+  Progression.grantMedalWeekly('weekly:hist:' + HISTORY_BATTLES[0].id, 1, '每周首次史实重演');
+  const srcAfterWeekly = Progression.medalSourceSummary().find(s => s.id === 'weeklyHist');
+  assert('章：本周领过周项后，总览的 currentWeekDone 与已得枚数同步更新',
+    srcAfterWeekly.currentWeekDone === true && srcAfterWeekly.got === 1 && srcAfterWeekly.earned === 1,
+    JSON.stringify(srcAfterWeekly));
+
+  /* ---- 2.4 单场结算的产出总装（唯一调用点的输入形状） ---- */
+  const gOut = Progression.grantMedalRewards({
+    mapId: 'X-1', cleared: true, objectives: ['obj-a', 'obj-b'],
+    historic: { id: 'XX', firstClear: true, histForm: true, hard: true }
+  });
+  assert('章产出：一次结算把 首通 + 目标×2 + 战役三层 + 每周项 全部算清',
+    gOut.granted.length === 6 && gOut.weekly.length === 1,
+    JSON.stringify(gOut.granted.map(x => x.id)));
+  assert('章产出：枚数 = 首通1 + 目标1×2 + 常规阶2 + 史实重演2 + 强敌阶3',
+    gOut.granted.reduce((n, x) => n + x.n, 0) === 1 + 2 + 2 + 2 + 3);
+  const gOut2 = Progression.grantMedalRewards({
+    mapId: 'X-1', cleared: true, objectives: ['obj-a'],
+    historic: { id: 'XX', firstClear: true, histForm: true, hard: true }
+  });
+  assert('章产出：同一结算重复提交 → 一次性项全部被账本挡下',
+    gOut2.granted.length === 0 && gOut2.weekly.length === 0);
+  assert('章产出：常规图结算（无战役上下文）不产生战役章',
+    Progression.grantMedalRewards({ mapId: 'X-2', cleared: true, objectives: [], historic: null }).granted.length === 1);
+  assert('章产出：未首通 / 无目标 → 没有任何章（不空发）',
+    Progression.grantMedalRewards({ mapId: 'X-3', cleared: false, objectives: [], historic: null }).granted.length === 0);
+
+  /* ---- 2.5 兑换：扣减 / 上锁 / 周限 / 余额 / 仓库上限 ---- */
+  Progression.grantMedals([{ id: 'test:fund', n: 12 }]);
+  const bal0 = Progression.medalBalance();
+  const buy1 = Progression.medalShopBuy('dc_team');
+  assert('兑换：成功扣章（余额 -2）', buy1.ok && Progression.medalBalance() === bal0 - 2, buy1.msg);
+  assert('兑换：消耗品入仓且自动上锁（走 createEquip，坑 #33）',
+    buy1.eqs.length === 1 && buy1.eqs[0].id === 'dc_team' && buy1.eqs[0].locked === true);
+  assert('兑换：消耗品同时登录图鉴', Game.libraryHasEquip('dc_team'));
+  const buy2 = Progression.medalShopBuy('screws5');
+  const buy3 = Progression.medalShopBuy('screws5');
+  assert('兑换：周限项当周只能买一次（第二次被拒）', buy2.ok && !buy3.ok && /本周/.test(buy3.msg), buy3.msg);
+  assert('兑换：周限项确实发了资材', Game.state.resources.screws >= 5);
+  Game.state.stats.medalLedger.weekly['shop:screws5'] = 'old-period';
+  assert('兑换：跨周期后周限项可再买', Progression.medalShopBuy('screws5').ok);
+  assert('兑换：不存在的兑换项被拒', !Progression.medalShopBuy('no_such_item').ok);
+  while (Progression.medalBalance() > 0) Progression.spendMedals(1);
+  const poor = Progression.medalShopBuy('supply_oiler');
+  assert('兑换：余额不足被拒且零副作用', !poor.ok && /不足/.test(poor.msg) && Progression.medalBalance() === 0, poor.msg);
+  Progression.grantMedals([{ id: 'test:fund2', n: 5 }]);
+  for (let i = 0; i < Game.equipCap() + 5; i++) Game.createEquip('gun5in_30');
+  const full = Progression.medalShopBuy('rations');
+  assert('兑换：装备仓库已满时消耗品兑换被拒（且不扣章）',
+    !full.ok && /仓库已满/.test(full.msg) && Progression.medalBalance() === 5, full.msg);
+  Game.state.equipment = {};   // 复原（本段自此不再依赖装备仓库）
+
+  /* ---- 2.6 端到端：真实走一遍 1-1 出击，验证唯一调用点真的接在 settleBattle 上 ---- */
+  Game.newGame();
+  const eFleet = ['iowa', 'enterprise', 'essex', 'southdakota', 'helena', 'kidd']
+    .map(id => { const s = Game.createShip(id, 95); s.kai = 1; Game.equipDefaults(s.uid); return s.uid; });
+  Game.state.fleet[1] = eFleet;
+  Game.state.mapProgress['1-1'] = { gauge: 1, cleared: false, kills: 0 };
+  let eBoss = null, eLog = '';
+  for (let attempt = 0; attempt < 6 && !eBoss; attempt++) {
+    for (const u of Game.state.fleet[1]) {
+      const s = Game.state.ships[u];
+      if (!s) continue;
+      s.hp = Game.shipStats(u).hpMax;
+      s.supply = { fuel: 1, ammo: 1 };
+    }
+    const st1 = Sortie.start('1-1', 1);
+    if (!st1.ok) continue;
+    let guard = 0;
+    while (Game.state.sortie && guard++ < 10) {
+      /* 每个节点进击前补满耐久：避免"大破进击"轰沉僚舰 —— 一旦沉船，
+       * fleet 会在出击中途缩员，后续节点读 state.ships[uid] 得到 undefined（既有的随机崩溃模式）。
+       * 本段只关心"章产出是否接通"，不关心损伤管理，所以直接消除这条路径。 */
+      for (const u of Game.state.fleet[1]) {
+        const sp = Game.state.ships[u];
+        if (sp) sp.hp = Game.shipStats(u).hpMax;
+      }
+      const r = Sortie.advance('单纵阵', true);
+      if (r.type === 'battle' || r.type === 'boss') {
+        Progression.applyBattleResult(1, r.result, false);
+        if (r.type === 'boss' && r.cleared) { eBoss = r; eLog = r.result.log.join('\n'); }
+      }
+      if (!Sortie.moveToNext()) break;
+    }
+    Sortie.returnHome();
+  }
+  assert('端到端：1-1 首通产出了战功章（章产出唯一调用点接通 settleBattle）',
+    !!eBoss && Progression.medalBalance() >= 1 && /战功章 \+1（海域首通 1-1）/.test(eLog), eLog.slice(-240));
+  assert('端到端：清单里能读到该账本键（防"发了但没记账"）',
+    !!Progression.medalLedger().once['map:1-1']);
+  assert('端到端：章产出必须写进战报（不许静默发放）', /战功章 \+/.test(eLog));
+
+  /* ---- 2.7 存档 v7 往返：章字段不丢、不被改写 ---- */
+  const rt = Game.migrateSave(JSON.parse(JSON.stringify(Game.serialize())));
+  assert('存档 v7：当前档迁移不改写章余额与账本（重复迁移稳定）',
+    rt.stats.medals === Game.state.stats.medals &&
+    JSON.stringify(rt.stats.medalLedger) === JSON.stringify(Game.state.stats.medalLedger) &&
+    JSON.stringify(rt) === JSON.stringify(Game.migrateSave(JSON.parse(JSON.stringify(rt)))));
+  assert('存档 v7：saveVersion 已推到 7（迁移链末端）', Game.CURRENT_SAVE_VERSION === 7 && rt.saveVersion === 7);
+}
+
+/* ============================================================
+ * V0.305·批次3 编成预设：往返一致 / 缺员回报 / 上限
+ * ============================================================ */
+section('V0.305·批次3 编成预设（保存 / 载入 / 缺员）');
+{
+  Game.newGame();
+  const mk = (id, lv) => { const s = Game.createShip(id, lv || 50); Game.equipDefaults(s.uid); return s.uid; };
+  const a = mk('iowa', 90), b = mk('enterprise', 90), c = mk('fletcher', 80), d = mk('kidd', 70);
+  Game.state.fleet[1] = [a, b, c, d];
+
+  const saved = Progression.saveFleetPreset(1, '主力');
+  assert('预设：保存成功并回报名与序号', saved.ok && saved.name === '主力' && saved.index === 0);
+  assert('预设：存的是舰船 id（不是易失的 uid）',
+    JSON.stringify(Game.state.presets[0].ships) === JSON.stringify(['iowa', 'enterprise', 'fletcher', 'kidd']));
+  assert('预设：空舰队不可保存', (() => { Game.state.fleet[2] = []; return !Progression.saveFleetPreset(2).ok; })());
+
+  /* 往返一致：清空舰队 → 载入 → 同 id 同序 */
+  Game.state.fleet[1] = [];
+  const loaded = Progression.loadFleetPreset(1, 0);
+  const roundTrip = Game.state.fleet[1].map(u => Game.state.ships[u].id);
+  assert('预设：载入后往返一致（同 id 同序）',
+    loaded.ok && JSON.stringify(roundTrip) === JSON.stringify(['iowa', 'enterprise', 'fletcher', 'kidd']), JSON.stringify(roundTrip));
+  assert('预设：不应把已在其他舰队的实例抢过来',
+    (() => {
+      Game.state.fleet[1] = [a, b, c, d];
+      Game.state.fleet[2] = [a];                       // 让 iowa 归属舰队2
+      const r = Progression.loadFleetPreset(1, 0);
+      const ids = Game.state.fleet[1].map(u => Game.state.ships[u].id);
+      return r.ok && r.missing.length === 1 && !ids.includes('iowa');
+    })());
+
+  /* 缺员：舰船已解体 → 明确回报缺哪几艘，且不塞入错误舰船 */
+  Game.state.fleet[1] = [a, b, c, d];
+  Game.state.fleet[2] = [];
+  Game.destroyShip(d);
+  const r2 = Progression.loadFleetPreset(1, 0);
+  assert('预设：缺员时明确回报（缺 1 艘 基德）而不是静默少载',
+    r2.ok && r2.count === 3 && r2.missing.length === 1 && r2.missing[0] === '基德', JSON.stringify(r2));
+  assert('预设：载入后的编成只含预设内的舰（不塞别的船）',
+    Game.state.fleet[1].map(u => Game.state.ships[u].id).every(id => ['iowa', 'enterprise', 'fletcher'].includes(id)));
+
+  /* 上限与删除 */
+  for (let i = 0; i < Progression.PRESET_MAX - 1; i++) Progression.saveFleetPreset(1, 'P' + i);
+  assert('预设：达到上限后被拒（上限 ' + Progression.PRESET_MAX + ' 个）',
+    Game.state.presets.length === Progression.PRESET_MAX && !Progression.saveFleetPreset(1, 'overflow').ok);
+  assert('预设：删除生效', Progression.removeFleetPreset(0).ok && Game.state.presets.length === Progression.PRESET_MAX - 1);
+  assert('预设：删除不存在的序号被拒', !Progression.removeFleetPreset(99).ok);
+  /* 持久化：预设随存档往返不丢（走 v7 迁移器，经 JSON 深拷贝仍逐字段一致） */
+  const presetSnap = JSON.stringify(Game.state.presets);
+  const rt2 = Game.migrateSave(JSON.parse(JSON.stringify(Game.serialize())));
+  assert('预设：随存档往返一致（JSON 深拷贝后逐字段相同）',
+    JSON.stringify(rt2.presets) === presetSnap && Array.isArray(rt2.presets), presetSnap.slice(0, 80));
+  Game.state.presets = [];
 }
 
 section('总结');

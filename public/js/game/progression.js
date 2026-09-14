@@ -249,13 +249,22 @@ const Progression = (() => {
   /* ============ 任务追踪 ============ */
   const RESET_DAILY = 'daily', RESET_WEEKLY = 'weekly', RESET_MONTHLY = 'monthly';
 
+  /* 周期键（**唯一来源**）：每日/每周/每月重置与「每周只能领一次的章产出」「军需处周限购」
+   * 必须读同一套键 —— 否则两条时间窗会错位（坑 #32）。
+   * 注意：每周键沿用既有实现（自 epoch 起 7 天分桶），本版**不改其边界语义** ——
+   * 保证章的可领周期与周常任务的重置严格同步（若哪天要改成「每周一 05:00」，必须两处一起改）。 */
+  function periodKeys(now) {
+    const d = now ? new Date(now) : new Date();
+    return {
+      daily: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`,
+      weekly: `${d.getFullYear()}-W${Math.floor(d.getTime() / (7 * 864e5))}`,
+      monthly: `${d.getFullYear()}-${d.getMonth()}`
+    };
+  }
+
   function resetDue() {
     const st = GameRef().state;
-    const now = new Date();
-    const dayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
-    const weekKey = `${now.getFullYear()}-W${Math.floor(now.getTime() / (7 * 864e5))}`;
-    const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
-    const keys = { daily: dayKey, weekly: weekKey, monthly: monthKey };
+    const keys = periodKeys();
     const changed = [];
     for (const k in keys) {
       if (st['reset_' + k] !== keys[k]) {
@@ -265,7 +274,7 @@ const Progression = (() => {
     }
     if (changed.includes('daily')) {
       /* 每日重置改修工厂次数 */
-      st.improve = { date: dayKey, count: 0 };
+      st.improve = { date: keys.daily, count: 0 };
     }
     return changed;
   }
@@ -390,7 +399,16 @@ const Progression = (() => {
     { id: 'hist_m2_hard', name: '「突入的终点」', desc: '莱特湾：强敌阶（第二波）S 胜', kind: 'fleet',
       check: c => c.historic === 'M2' && !!c.histFinal && !!c.hard && !c.failed && c.rank === 'S' },
     { id: 'hist_m2_taffy', name: '「塔菲三号」', desc: '莱特湾：BOSS S 胜、编成含 ≥2 驱逐舰且无人沉没', kind: 'fleet',
-      check: c => c.historic === 'M2' && !!c.histFinal && !c.failed && c.rank === 'S' && (c.ddCount || 0) >= 2 && !!c.histNoSunk }
+      check: c => c.historic === 'M2' && !!c.histFinal && !c.failed && c.rank === 'S' && (c.ddCount || 0) >= 2 && !!c.histNoSunk },
+    /* ---- 图鉴全收集纪念荣誉（V0.305）----
+     * 这两条**不是战斗荣誉**：`check` 恒 false，因此 `recordBattleResult` 永远不会授予它们；
+     * 唯一授予入口是 `checkLibraryHonors()`（收集率 100% 时授予第一舰队旗舰）。
+     * 它们存在于 HONORS 里，只是为了让荣誉墙能显示"还有这个目标"（规划方案 §3.2(3)：
+     * 100% 档只给纪念性标记，不给任何数值奖励 —— 因为装备收集率 100% 在现有数据下不可达）。 */
+    { id: 'codex_ships_full', name: '「舰艇图鉴全录」', desc: '舰船图鉴收集率 100%（纪念性标记，无数值奖励）', kind: 'codex',
+      check: () => false },
+    { id: 'codex_equips_full', name: '「装备图鉴全录」', desc: '装备图鉴收集率 100%（纪念性标记，无数值奖励）', kind: 'codex',
+      check: () => false }
   ];
   const HONOR_BY_ID = (() => { const m = {}; for (const h of HONORS) m[h.id] = h; return m; })();
 
@@ -584,6 +602,269 @@ const Progression = (() => {
     return { firstClear: !!led[battleId + ':firstClear'], histForm: !!led[battleId + ':histForm'], hard: !!led[battleId + ':hard'] };
   }
 
+  /* ============ 战功章（V0.305 · 军需处） ============
+   * 定位：**高难内容 → 战功章 → 只兑换消耗品与资材**（不卖舰娘、不卖大宗资源；规划方案 §4.2 硬约束）。
+   * 三条纪律（坑 #31 / #32 / #33）：
+   *   ① 产出记账一律「查账本 → 记账 → 加余额」—— 同一场结算被多个路径打到也只发一次；
+   *   ② 周期性产出读 `periodKeys().weekly`，与周常重置**同源**；
+   *   ③ 消费只走 `medalShopBuy()`（内部走 grantRewardBundle），不另开第二套发放通道。
+   * 设计张力（规划方案 §4.3）：一次性成就的总量是有限的，所以必须保留一条**每周 1 枚**的
+   * 可重复产出，否则军需处会退化成"换完即止的毕业清单"。 */
+  const LIB_MILESTONES = [25, 50, 75];     // 收集率里程碑档位（百分比；坑 #36：绝不写死绝对数）
+  const LIB_MILESTONE_MEDALS = 2;          // 每档给几枚章
+
+  /* 产出源说明表 —— UI 展示与断言共同遍历的**唯一来源**（禁止在 UI 另写一份清单） */
+  const MEDAL_SOURCES = [
+    { id: 'mapClear',   name: '海域首通（常规 25 图）',                n: 1, kind: 'once' },
+    { id: 'objective',  name: '海域作战目标达成（14 个）',              n: 1, kind: 'once' },
+    { id: 'histFirst',  name: '战役·常规阶首通（4 场）',                n: 2, kind: 'once' },
+    { id: 'histForm',   name: '战役·史实重演（史实编成 S 胜，4 场）',     n: 2, kind: 'once' },
+    { id: 'histHard',   name: '战役·强敌阶首通（4 场）',                n: 3, kind: 'once' },
+    { id: 'libShips',   name: `图鉴收集率里程碑（舰船 ${LIB_MILESTONES.join('/')}%）`, n: LIB_MILESTONE_MEDALS, kind: 'once' },
+    { id: 'libEquips',  name: `图鉴收集率里程碑（装备 ${LIB_MILESTONES.join('/')}%）`, n: LIB_MILESTONE_MEDALS, kind: 'once' },
+    { id: 'weeklyHist', name: '每周首次「史实重演」S 胜（每周限 1 枚）', n: 1, kind: 'weekly' }
+  ];
+
+  /* 兑换表（规划方案 §4.4 建议稿，全部为 [PLACEHOLDER]）：
+   * 回调定价**只改这张表**，不动任何引擎代码。 */
+  const MEDAL_SHOP = [
+    { id: 'dc_team',      name: '应急修理要员', cost: 2, limit: 'none',   reward: { item: ['dc_team'] } },
+    { id: 'supply_oiler', name: '洋上补给',     cost: 3, limit: 'none',   reward: { item: ['supply_oiler'] } },
+    { id: 'rations',      name: '战斗粮食',     cost: 1, limit: 'none',   reward: { item: ['rations'] } },
+    { id: 'screws5',      name: '改修资材 ×5',  cost: 2, limit: 'weekly', reward: { screws: 5 } },
+    { id: 'devMats5',     name: '开发资材 ×5',  cost: 1, limit: 'weekly', reward: { devMats: 5 } }
+  ];
+
+  /* 运行时补形（**不是** normalizeSave 的替代品）：v6 档必须经 migrateV6ToV7 才有这两个键
+   * （坑 #30）。这里只为「测试模式直改 state / 异常档」兜底，保证任何入口都不会读到 undefined。 */
+  function ensureMedalState(st) {
+    if (!st.stats || typeof st.stats !== 'object') st.stats = {};
+    if (typeof st.stats.medals !== 'number' || !isFinite(st.stats.medals)) st.stats.medals = 0;
+    st.stats.medals = Math.max(0, Math.floor(st.stats.medals));
+    const led = st.stats.medalLedger;
+    if (!led || typeof led !== 'object') st.stats.medalLedger = { once: {}, weekly: {} };
+    else {
+      if (!led.once || typeof led.once !== 'object') led.once = {};
+      if (!led.weekly || typeof led.weekly !== 'object') led.weekly = {};
+    }
+    return st.stats.medalLedger;
+  }
+  function medalBalance() {
+    const st = GameRef().state;
+    return (st.stats && typeof st.stats.medals === 'number') ? st.stats.medals : 0;
+  }
+  function medalLedger() {
+    const led = GameRef().state.stats && GameRef().state.stats.medalLedger;
+    return { once: Object.assign({}, (led && led.once) || {}), weekly: Object.assign({}, (led && led.weekly) || {}) };
+  }
+
+  /* 一次性产出：查账本 → 记账 → 加余额（幂等，坑 #31） */
+  function grantMedals(list) {
+    const st = GameRef().state;
+    const led = ensureMedalState(st);
+    const out = [];
+    for (const it of (list || [])) {
+      if (!it || !it.id || !(it.n > 0)) continue;
+      if (led.once[it.id]) continue;              // 已发过 → 跳过
+      led.once[it.id] = Date.now();
+      st.stats.medals += it.n;
+      out.push({ id: it.id, n: it.n, name: it.name || it.id });
+    }
+    return out;
+  }
+  /* 周期性产出：同一周期内只发一次（本周期键与周常重置同源，坑 #32） */
+  function grantMedalWeekly(bucket, n, name) {
+    const st = GameRef().state;
+    const led = ensureMedalState(st);
+    const wk = periodKeys().weekly;
+    if (led.weekly[bucket] === wk) return null;
+    led.weekly[bucket] = wk;
+    st.stats.medals += n;
+    return { id: bucket, n, name: name || bucket, week: wk };
+  }
+  function spendMedals(n) {
+    const st = GameRef().state;
+    ensureMedalState(st);
+    if (st.stats.medals < n) return false;
+    st.stats.medals -= n;
+    return true;
+  }
+
+  /* 单场出击的章产出总入口 —— **唯一调用点**是 `sortie.js::settleBattle()`
+   * （坑 #31：同一场战斗可能同时达成 首通 + 作战目标 + 史实重演，三处产出必须一次性算清）。 */
+  function grantMedalRewards(ctx) {
+    const c = ctx || {};
+    const list = [];
+    if (c.cleared && c.mapId) list.push({ id: 'map:' + c.mapId, n: 1, name: `海域首通 ${c.mapId}` });
+    for (const oid of (c.objectives || [])) if (oid) list.push({ id: 'obj:' + oid, n: 1, name: '海域作战目标' });
+    const h = c.historic;
+    if (h && h.id) {
+      if (h.firstClear) list.push({ id: `hist:${h.id}:firstClear`, n: 2, name: `${h.id} 常规阶首通` });
+      if (h.histForm) list.push({ id: `hist:${h.id}:histForm`, n: 2, name: `${h.id} 史实重演` });
+      if (h.hard) list.push({ id: `hist:${h.id}:hard`, n: 3, name: `${h.id} 强敌阶首通` });
+    }
+    const granted = grantMedals(list);
+    const weekly = [];
+    if (h && h.id && h.histForm) {
+      const w = grantMedalWeekly(`weekly:hist:${h.id}`, 1, '每周首次史实重演');
+      if (w) weekly.push(w);
+    }
+    return { granted, weekly };
+  }
+
+  /* 图鉴收集率里程碑（批次1 任务1.3）：百分比判定 + 章账本；100% 档只给纪念性荣誉 */
+  function checkLibraryMilestones() {
+    const G = GameRef();
+    const s = G.libraryStats();
+    const out = [];
+    for (const line of ['ships', 'equips']) {
+      const total = (s[line] && s[line].total) || 0;
+      const owned = (s[line] && s[line].owned) || 0;
+      if (!total) continue;
+      const pct = owned / total * 100;
+      for (const m of LIB_MILESTONES) {
+        if (pct + 1e-9 < m) continue;
+        const key = `lib:${line}:${m}`;
+        const got = grantMedals([{
+          id: key, n: LIB_MILESTONE_MEDALS,
+          name: `图鉴收集率 ${m}%（${line === 'ships' ? '舰船' : '装备'}）`
+        }]);
+        if (got.length) out.push({ kind: 'medal', line, milestone: m, key, n: LIB_MILESTONE_MEDALS });
+      }
+    }
+    out.push(...checkLibraryHonors(s));
+    return out;
+  }
+  /* 100% 纪念荣誉：授予第一舰队旗舰（提督成就口径，与"她和你一起打过什么"的舰历荣誉不同，
+   * 已在交付报告与 HONORS 注释中披露） */
+  function checkLibraryHonors(stats) {
+    const G = GameRef();
+    const st = G.state;
+    const s = stats || G.libraryStats();
+    const flag = st.fleet && st.fleet[1] && st.fleet[1][0];
+    if (!flag || !st.ships[flag]) return [];
+    const ids = [];
+    if (s.ships.total && s.ships.owned >= s.ships.total) ids.push('codex_ships_full');
+    if (s.equips.total && s.equips.owned >= s.equips.total) ids.push('codex_equips_full');
+    if (!ids.length) return [];
+    return grantHonors(flag, ids).map(id => ({ kind: 'honor', id, uid: flag }));
+  }
+
+  /* 产出源总览（军需处 UI 展示"章从哪来"；与 MEDAL_SOURCES 同一份表驱动） */
+  function medalSourceSummary() {
+    const st = GameRef().state;
+    const led = (st.stats && st.stats.medalLedger) || { once: {}, weekly: {} };
+    const once = led.once || {}, weekly = led.weekly || {};
+    const wk = periodKeys().weekly;
+    const maps = (typeof MAPS !== 'undefined' && MAPS) || [];
+    const battles = (typeof HISTORY_BATTLES !== 'undefined' && HISTORY_BATTLES) || [];
+    const cnt = {};
+    const bump = (id, got, n) => {
+      const c = cnt[id] || (cnt[id] = { total: 0, got: 0, earned: 0 });
+      c.total++; if (got) { c.got++; c.earned += n; }
+    };
+    for (const m of maps) bump('mapClear', !!once['map:' + m.id], 1);
+    for (const m of maps) for (const o of (m.objectives || [])) bump('objective', !!once['obj:' + o.id], 1);
+    for (const b of battles) {
+      bump('histFirst', !!once[`hist:${b.id}:firstClear`], 2);
+      bump('histForm', !!once[`hist:${b.id}:histForm`], 2);
+      bump('histHard', !!once[`hist:${b.id}:hard`], 3);
+    }
+    for (const line of ['ships', 'equips']) {
+      for (const m of LIB_MILESTONES) {
+        bump(line === 'ships' ? 'libShips' : 'libEquips', !!once[`lib:${line}:${m}`], LIB_MILESTONE_MEDALS);
+      }
+    }
+    const weeklyGot = battles.filter(b => weekly['weekly:hist:' + b.id] === wk).length;
+    return MEDAL_SOURCES.map(s => {
+      if (s.kind === 'weekly') {
+        return { id: s.id, name: s.name, n: s.n, kind: s.kind, total: battles.length, got: weeklyGot,
+          earned: weeklyGot * s.n, potential: null, currentWeekDone: weeklyGot > 0 };
+      }
+      const c = cnt[s.id] || { total: 0, got: 0, earned: 0 };
+      return { id: s.id, name: s.name, n: s.n, kind: s.kind, total: c.total, got: c.got, earned: c.earned, potential: c.total * s.n };
+    });
+  }
+  /* 兑换表状态（UI 渲染；限购判定与产出同源同表） */
+  function medalShopState() {
+    const st = GameRef().state;
+    const bal = medalBalance();
+    const led = (st.stats && st.stats.medalLedger) || { weekly: {} };
+    const wk = periodKeys().weekly;
+    return MEDAL_SHOP.map(it => {
+      const used = it.limit === 'weekly' && ((led.weekly || {})['shop:' + it.id] === wk);
+      return {
+        id: it.id, name: it.name, cost: it.cost, limit: it.limit, reward: it.reward,
+        affordable: bal >= it.cost, weeklyUsed: used,
+        left: it.limit === 'weekly' ? (used ? 0 : 1) : null
+      };
+    });
+  }
+  /* 兑换（**唯一消费入口**）：余额 → 限购 → 仓库上限 → 扣章 → 发放。
+   * 消耗品经 grantRewardBundle → createEquip 入仓，自动上锁规则已覆盖（坑 #33）。 */
+  function medalShopBuy(id) {
+    const G = GameRef();
+    const st = G.state;
+    const it = MEDAL_SHOP.find(x => x.id === id);
+    if (!it) return { ok: false, msg: '没有这个兑换项' };
+    ensureMedalState(st);
+    if (st.stats.medals < it.cost) return { ok: false, msg: `战功章不足（持有 ${st.stats.medals} / 需要 ${it.cost}）` };
+    const wk = periodKeys().weekly;
+    if (it.limit === 'weekly' && st.stats.medalLedger.weekly['shop:' + it.id] === wk) {
+      return { ok: false, msg: '本周已兑换过（周限购项随周常一起重置）' };
+    }
+    const needEq = [].concat(it.reward.equip || [], it.reward.item || []).length;
+    if (!G.isTestMode() && needEq > 0 && G.equipCapWouldExceed(needEq)) {
+      return { ok: false, msg: `装备仓库已满（${G.equipIdleCount()}/${G.equipCap()}）！请先解体或用掉部分装备。` };
+    }
+    /* 先记账再发放：发放抛错也不会变成"可重复领取" */
+    st.stats.medals -= it.cost;
+    if (it.limit === 'weekly') st.stats.medalLedger.weekly['shop:' + it.id] = wk;
+    const r = grantRewardBundle(it.reward);
+    return { ok: true, shop: it, cost: it.cost, eqs: r.eqs, itemIds: r.itemIds };
+  }
+
+  /* ============ 编成预设（V0.305 批次3） ============
+   * 存**舰船 id**（不是 uid）—— uid 会因解体/改造/换位失效，id 才是"编成意图"。
+   * 载入时按 id 顺序从未编入其他舰队的实例里挑（优先未上锁、等级高）；
+   * 有缺员时**明确回报缺了哪几艘**，不静默少载（规范 P0-5：可执行的信息）。 */
+  const PRESET_MAX = 8;
+  function fleetPresetList() { return (GameRef().state.presets || []).slice(); }
+  function saveFleetPreset(fleetIdx, name) {
+    const st = GameRef().state;
+    if (!Array.isArray(st.presets)) st.presets = [];
+    const ids = (st.fleet[fleetIdx] || []).map(u => st.ships[u] && st.ships[u].id).filter(Boolean);
+    if (!ids.length) return { ok: false, msg: '舰队为空，没什么可保存的' };
+    if (st.presets.length >= PRESET_MAX) return { ok: false, msg: `预设最多 ${PRESET_MAX} 个，请先删除一个` };
+    const nm = String(name || '').trim() || `预设 ${st.presets.length + 1}`;
+    st.presets.push({ name: nm, ships: ids, at: Date.now() });
+    return { ok: true, name: nm, index: st.presets.length - 1 };
+  }
+  function removeFleetPreset(idx) {
+    const st = GameRef().state;
+    if (!Array.isArray(st.presets) || !st.presets[idx]) return { ok: false, msg: '预设不存在' };
+    st.presets.splice(idx, 1);
+    return { ok: true };
+  }
+  function loadFleetPreset(fleetIdx, idx) {
+    const st = GameRef().state;
+    const p = (st.presets || [])[idx];
+    if (!p) return { ok: false, msg: '预设不存在' };
+    const inOther = [1, 2, 3, 4].filter(f => f !== fleetIdx)
+      .reduce((a, f) => a.concat(st.fleet[f] || []), []);
+    const picked = [], missing = [], used = new Set();
+    for (const id of (p.ships || [])) {
+      const cand = Object.values(st.ships)
+        .filter(s => s && s.id === id && !inOther.includes(s.uid) && !used.has(s.uid))
+        .sort((a, b) => (!!a.locked === !!b.locked) ? (b.lv - a.lv) : (a.locked ? 1 : -1));
+      if (cand.length) { picked.push(cand[0].uid); used.add(cand[0].uid); }
+      else missing.push((typeof ShipData !== 'undefined' && ShipData[id] && ShipData[id].zh) || id);
+    }
+    if (!picked.length) return { ok: false, msg: '预设中的舰船当前都不可用（可能已解体或在其他舰队）', missing };
+    st.fleet[fleetIdx] = picked;
+    return { ok: true, name: p.name, count: picked.length, missing };
+  }
+
   /* 出击结果经验结算（UI 路径：ship exp + 任务进度通知）
    * opts.noQuest（V0.303）：历史战役专用 —— 战役**不计入常规任务计数**（周常「出击 X 次」等），
    * 但舰娘经验照给（她确实出过战）。默认不传 = 既有行为，逐位不变。 */
@@ -689,7 +970,14 @@ const Progression = (() => {
     HONORS, HONOR_BY_ID, ensureRecord, grantHonors, recordBattleResult, recordSummary,
     grantObjectiveRewards, objectiveLedger,
     /* 历史战役（V0.303）：奖励通道 + 全局防刷账本 */
-    grantRewardBundle, grantHistoricRewards, historicLedger, historicRewardState
+    grantRewardBundle, grantHistoricRewards, historicLedger, historicRewardState,
+    /* 战功章与军需处（V0.305）：周期键 / 产出 / 兑换 / 收集率里程碑 */
+    periodKeys, medalBalance, medalLedger, grantMedals, grantMedalWeekly, spendMedals,
+    grantMedalRewards, checkLibraryMilestones, checkLibraryHonors,
+    medalSourceSummary, medalShopState, medalShopBuy,
+    LIB_MILESTONES, LIB_MILESTONE_MEDALS, MEDAL_SOURCES, MEDAL_SHOP,
+    /* 编成预设（V0.305 批次3） */
+    PRESET_MAX, fleetPresetList, saveFleetPreset, loadFleetPreset, removeFleetPreset
   };
 })();
 
