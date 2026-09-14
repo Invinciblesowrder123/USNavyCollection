@@ -1,40 +1,508 @@
-/* 分层立绘数据 —— 由 ArtPipeline/install_live2d.py 自动生成，勿手改 */
-/* layers 行格式: [层名, 文件名, left, top, width, height] */
+/* 分层立绘数据 —— 由 ArtPipeline/live2d_v2 自动生成，勿手改。按角色合并。 */
 window.LIVE2D_SETS = {
-  fletcher: {
-    canvas: 1024,
-    dir: 'art/live2d/fletcher/',
-    origin: [531, 250],
-    bbox: [275, 29, 476, 987],
-    neck: 'neck',
-    eyelid: '__eyelid',
-    mouth: 'mouth',
-    head: ['face', 'ears-l', 'ears-r', 'mouth', 'nose', 'eyewhite-l', 'eyewhite-r', 'irides-l', 'irides-r', 'eyelash-l', 'eyelash-r', 'eyebrow-l', 'eyebrow-r', 'front hair', 'headwear'],
-    layers: [
-      ['back hair', 'back_hair.png', 413, 38, 225, 199],
-      ['footwear', 'footwear.png', 409, 765, 220, 251],
-      ['legwear', 'legwear.png', 418, 524, 188, 283],
-      ['handwear-r', 'handwear_r.png', 275, 258, 197, 318],
-      ['bottomwear', 'bottomwear.png', 376, 423, 283, 296],
-      ['topwear', 'topwear.png', 436, 219, 180, 223],
-      ['neck', 'neck.png', 505, 186, 52, 70],
-      ['face', 'face.png', 440, 64, 138, 166],
-      ['mouth', 'mouth.png', 505, 198, 24, 8],
-      ['handwear-l', 'handwear_l.png', 579, 263, 172, 335],
-      ['ears-r', 'ears_r.png', 450, 166, 29, 38],
-      ['eyewhite-r', 'eyewhite_r.png', 463, 159, 29, 25],
-      ['eyewhite-l', 'eyewhite_l.png', 526, 144, 33, 26],
-      ['irides-r', 'irides_r.png', 471, 160, 20, 23],
-      ['ears-l', 'ears_l.png', 566, 145, 26, 42],
-      ['eyebrow-l', 'eyebrow_l.png', 510, 126, 49, 11],
-      ['nose', 'nose.png', 498, 177, 13, 14],
-      ['irides-l', 'irides_l.png', 533, 145, 21, 25],
-      ['eyebrow-r', 'eyebrow_r.png', 453, 140, 29, 16],
-      ['eyelash-r', 'eyelash_r.png', 455, 152, 37, 29],
-      ['eyelash-l', 'eyelash_l.png', 515, 138, 52, 25],
-      ['front hair', 'front_hair.png', 427, 52, 157, 142],
-      ['headwear', 'headwear.png', 437, 29, 143, 65],
-      ['__eyelid', 'eyelid.png', 463, 144, 96, 40],
-    ]
-  }
+ "fletcher": {
+  "canvas": 1024,
+  "dir": "art/live2d/fletcher/",
+  "origin": [
+   531,
+   250
+  ],
+  "bbox": [
+   275,
+   29,
+   476,
+   987
+  ],
+  "neck": "neck",
+  "eyelid": "__eyelid",
+  "mouth": "mouth",
+  "deltas": {
+   "eyes_closed": "eyes_closed",
+   "mouth_open": "mouth_open",
+   "mouth_smile": "mouth_smile"
+  },
+  "head": [
+   "face",
+   "ears-l",
+   "ears-r",
+   "mouth",
+   "nose",
+   "eyewhite-l",
+   "eyewhite-r",
+   "irides-l",
+   "irides-r",
+   "eyelash-l",
+   "eyelash-r",
+   "eyebrow-l",
+   "eyebrow-r",
+   "front hair",
+   "headwear"
+  ],
+  "layers": [
+   [
+    "back hair",
+    "back_hair.png",
+    413,
+    38,
+    237,
+    199
+   ],
+   [
+    "footwear",
+    "footwear.png",
+    409,
+    740,
+    220,
+    276
+   ],
+   [
+    "legwear",
+    "legwear.png",
+    390,
+    495,
+    229,
+    312
+   ],
+   [
+    "handwear-r",
+    "handwear_r.png",
+    275,
+    242,
+    226,
+    334
+   ],
+   [
+    "bottomwear",
+    "bottomwear.png",
+    376,
+    394,
+    283,
+    325
+   ],
+   [
+    "topwear",
+    "topwear.png",
+    436,
+    190,
+    198,
+    252
+   ],
+   [
+    "neck",
+    "neck.png",
+    505,
+    186,
+    52,
+    52
+   ],
+   [
+    "face",
+    "face.png",
+    440,
+    64,
+    138,
+    166
+   ],
+   [
+    "mouth",
+    "mouth.png",
+    505,
+    198,
+    24,
+    8
+   ],
+   [
+    "handwear-l",
+    "handwear_l.png",
+    579,
+    263,
+    172,
+    335
+   ],
+   [
+    "ears-r",
+    "ears_r.png",
+    450,
+    166,
+    29,
+    38
+   ],
+   [
+    "eyewhite-r",
+    "eyewhite_r.png",
+    463,
+    159,
+    29,
+    25
+   ],
+   [
+    "eyewhite-l",
+    "eyewhite_l.png",
+    526,
+    144,
+    33,
+    26
+   ],
+   [
+    "irides-r",
+    "irides_r.png",
+    471,
+    160,
+    20,
+    23
+   ],
+   [
+    "ears-l",
+    "ears_l.png",
+    566,
+    145,
+    26,
+    42
+   ],
+   [
+    "eyebrow-l",
+    "eyebrow_l.png",
+    510,
+    126,
+    49,
+    11
+   ],
+   [
+    "nose",
+    "nose.png",
+    498,
+    177,
+    13,
+    14
+   ],
+   [
+    "irides-l",
+    "irides_l.png",
+    533,
+    145,
+    21,
+    25
+   ],
+   [
+    "eyebrow-r",
+    "eyebrow_r.png",
+    453,
+    140,
+    29,
+    16
+   ],
+   [
+    "eyelash-r",
+    "eyelash_r.png",
+    455,
+    152,
+    37,
+    29
+   ],
+   [
+    "eyelash-l",
+    "eyelash_l.png",
+    515,
+    138,
+    52,
+    25
+   ],
+   [
+    "front hair",
+    "front_hair.png",
+    427,
+    52,
+    157,
+    142
+   ],
+   [
+    "headwear",
+    "headwear.png",
+    437,
+    29,
+    143,
+    65
+   ],
+   [
+    "__eyelid",
+    "eyelid.png",
+    463,
+    144,
+    96,
+    40
+   ],
+   [
+    "eyes_closed",
+    "eyes_closed.png",
+    432,
+    104,
+    156,
+    103
+   ],
+   [
+    "mouth_open",
+    "mouth_open.png",
+    477,
+    170,
+    80,
+    64
+   ],
+   [
+    "mouth_smile",
+    "mouth_smile.png",
+    477,
+    170,
+    80,
+    64
+   ]
+  ]
+ },
+ "lexington": {
+  "canvas": 1024,
+  "dir": "art/live2d/lexington/",
+  "origin": [
+   531,
+   250
+  ],
+  "bbox": [
+   349,
+   39,
+   342,
+   970
+  ],
+  "neck": "neck",
+  "eyelid": "__eyelid",
+  "mouth": "mouth",
+  "deltas": {
+   "mouth_open": "mouth_open",
+   "mouth_smile": "mouth_smile"
+  },
+  "head": [
+   "face",
+   "ears-l",
+   "ears-r",
+   "mouth",
+   "nose",
+   "eyewhite-l",
+   "eyewhite-r",
+   "irides-l",
+   "irides-r",
+   "eyelash-l",
+   "eyelash-r",
+   "eyebrow-l",
+   "eyebrow-r",
+   "front hair",
+   "headwear"
+  ],
+  "layers": [
+   [
+    "handwear-r",
+    "handwear_r.png",
+    450,
+    361,
+    60,
+    59
+   ],
+   [
+    "back hair",
+    "back_hair.png",
+    349,
+    39,
+    342,
+    403
+   ],
+   [
+    "footwear",
+    "footwear.png",
+    457,
+    871,
+    106,
+    138
+   ],
+   [
+    "legwear",
+    "legwear.png",
+    398,
+    481,
+    203,
+    446
+   ],
+   [
+    "bottomwear",
+    "bottomwear.png",
+    396,
+    466,
+    217,
+    242
+   ],
+   [
+    "topwear",
+    "topwear.png",
+    401,
+    159,
+    222,
+    379
+   ],
+   [
+    "neck",
+    "neck.png",
+    490,
+    150,
+    50,
+    69
+   ],
+   [
+    "handwear-l",
+    "handwear_l.png",
+    387,
+    223,
+    251,
+    264
+   ],
+   [
+    "ears-r",
+    "ears_r.png",
+    454,
+    132,
+    25,
+    37
+   ],
+   [
+    "ears-l",
+    "ears_l.png",
+    549,
+    130,
+    22,
+    36
+   ],
+   [
+    "face",
+    "face.png",
+    464,
+    87,
+    99,
+    112
+   ],
+   [
+    "nose",
+    "nose.png",
+    507,
+    153,
+    8,
+    15
+   ],
+   [
+    "mouth",
+    "mouth.png",
+    501,
+    173,
+    26,
+    10
+   ],
+   [
+    "eyebrow-r",
+    "eyebrow_r.png",
+    468,
+    127,
+    34,
+    8
+   ],
+   [
+    "eyebrow-l",
+    "eyebrow_l.png",
+    521,
+    125,
+    33,
+    8
+   ],
+   [
+    "eyelash-r",
+    "eyelash_r.png",
+    465,
+    133,
+    35,
+    18
+   ],
+   [
+    "eyelash-l",
+    "eyelash_l.png",
+    524,
+    132,
+    37,
+    16
+   ],
+   [
+    "eyewhite-r",
+    "eyewhite_r.png",
+    472,
+    137,
+    26,
+    13
+   ],
+   [
+    "eyewhite-l",
+    "eyewhite_l.png",
+    527,
+    135,
+    27,
+    13
+   ],
+   [
+    "irides-r",
+    "irides_r.png",
+    480,
+    137,
+    15,
+    12
+   ],
+   [
+    "irides-l",
+    "irides_l.png",
+    531,
+    136,
+    16,
+    12
+   ],
+   [
+    "front hair",
+    "front_hair.png",
+    436,
+    52,
+    152,
+    235
+   ],
+   [
+    "headwear",
+    "headwear.png",
+    448,
+    43,
+    130,
+    78
+   ],
+   [
+    "__eyelid",
+    "eyelid.png",
+    472,
+    135,
+    82,
+    15
+   ],
+   [
+    "mouth_open",
+    "mouth_open.png",
+    473,
+    145,
+    82,
+    66
+   ],
+   [
+    "mouth_smile",
+    "mouth_smile.png",
+    473,
+    145,
+    82,
+    66
+   ]
+  ]
+ }
 };

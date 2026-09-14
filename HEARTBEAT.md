@@ -1702,3 +1702,12 @@ HEARTBEAT 日志保留。生产回到 a4be515（V0.303）状态。
 **修法**：重写逻辑改为「读旧 index → 保留 _note 与既有映射 → 只追加/更新本次
 targets 的条目」。已验证：index.json 恢复正常（git checkout），语法检查过。
 
+## 2026-09-14 列克星敦分层立绘装机（live2d_v2 第二角色）+ live2d.js 多角色合并
+
+**新增**：public/art/live2d/lexington/ 26 层（live2d_v2 全链路：CogView→rembg→See-through→
+跨视图补全→原图回填→嘴部差分），G1 0.94 / G3 4px / G4 全 PASS（ArtPipeline 报告）。
+**js/data/live2d.js**：改为多角色合并格式（JSON 兼容），现含 fletcher+lexington；
+装配器（ArtPipeline 侧）已改为解析-合并-写回，杜绝整表覆盖洗掉其他角色（同 index.json 教训）。
+**public/js/ui/secretary-live2d.js**：恢复差分渲染版（眨眼 eyelid 贴片 / 说话张嘴差分 / 微笑差分），
+E2E 229/0。**public/_shot_homeport.html**：新增 ?ship= 切换秘书舰。
+用户已确认弗莱彻 demo 验收通过并要求列克星敦装机。
