@@ -56,7 +56,7 @@ public/
   art/live2d/                分层立绘素材（近似 Live2D，每舰一目录）
 
 scripts/
-  simulate.js                引擎回归测试（1871 项断言，含分段战斗流程回归段）
+  simulate.js                引擎回归测试（1890 项断言，含分段战斗流程回归段与军需处集成层断言）
   test_save_migration.js     存档迁移专项测试（54 项，含 v6→v7 战功章迁移）
   e2e.js                     无头浏览器 E2E（275 项，自动起停服务器）
   drift_check.js             战斗数值对拍工具 + 三基线（V0.301 / V0.302 / 当前；含行尾免疫）
@@ -67,6 +67,8 @@ scripts/
   smoke_account.js           账号可用性冒烟（`npm run smoke:account [-- --user=X --pass=Y]`）：
                              真服务器 + 真 Cookie + 真 index.html 引导路径，证明"某账号能进游戏"；
                              含错密码负向对照；临时的同源登录页跑完即删，不常驻 public/
+  sim_soak.js                sim 连跑（`npm run sim:soak [轮数]`，默认 40）：逐轮落盘、
+                             失败轮打印 ✗ 行与上下文，结尾给出本次可排除的假失败率下界
   generate_art.js            SVG 立绘生成器
   generate_ai_art.js         智谱 CogView AI 立绘生成
   create_admin.js            管理员账号
@@ -97,10 +99,16 @@ archive/                     历史版本快照（4 份，见 VERSION_HISTORY.md
 
 ---
 
-## V0.305 图鉴深化 + 军需处（2026-09-14）
+## V0.305 图鉴深化 + 军需处（2026-09-14；2026-09-15 评审整改）
 
 **给游戏里那堆"只读的成就"接上出口。** 本版第一次做**货币**：把高难内容的产物换成可支配的战功章。
 预期**零 `battle.js` 引擎改动** —— drift 三基线全程逐位一致就是本版本的验收项。
+
+> ⚠️ **评审整改（2026-09-15）**：交付评审判 **CONCERNS / 1 条 P0** —— 本版唯一的**可重复**章产出源
+> 「每周首次史实重演 S 胜 +1」**自第二周起永不发放**（把 V0.303 的一次性账本标记当成了周期性触发条件），
+> 军需处因此会退化成"换完即止的毕业清单"。已修 + **红绿验证**（缺陷形态下恰好 3 条新断言变红），
+> 并补齐**集成层断言**（`Sortie.start → prepareBattle → settleBattle` 真实链路，禁止喂 flag）。
+> 详见 `design/评审_V0.305_整改说明.md`。**教训：新的绿不等于新的对 —— 跨模块机制必须有集成层断言。**
 
 ### 图鉴深化（收集端）
 
@@ -247,9 +255,10 @@ archive/                     历史版本快照（4 份，见 VERSION_HISTORY.md
 ## 测试与质量保证
 
 ```bash
-npm test                # 引擎回归（1800 项断言，含账号 / 数据完整性 / 平衡护栏 / 历史战役 / 分段战斗流程）
-npm run test:migration  # 存档迁移专项（42 项，含 v5→v6 战役标记）
-npm run test:e2e        # 无头浏览器 E2E（229 项，自动起停服务器）
+npm test                # 引擎回归（1890 项断言，含账号 / 数据完整性 / 平衡护栏 / 历史战役 / 分段战斗流程）
+npm run test:migration  # 存档迁移专项（54 项，含 v6→v7 战功章迁移）
+npm run test:e2e        # 无头浏览器 E2E（275 项，自动起停服务器）
+npm run sim:soak 40     # sim 连跑 40 轮（逐轮落盘；只能排除 p ≥ 7.2%，不是"无 flaky"的证明）
 
 npm run drift           # 战斗数值对拍：12 组场景（9 常规 + 3 本版新机制）与当前基线逐位比对
 npm run drift:v0302     # 关掉 V0.303 全部新机制（--no-hist --no-waves），必须逐位回到 V0.302 基线

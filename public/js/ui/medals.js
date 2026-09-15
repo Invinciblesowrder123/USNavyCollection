@@ -85,7 +85,7 @@ const Medals = (() => {
             <span class="medal-bal">🎖 <b>${bal}</b> <span class="dim">枚战功章</span></span>
             <span class="dim">图鉴收集率：舰船 ${lib.ships.owned}/${lib.ships.total} · 装备 ${lib.equips.owned}/${lib.equips.total}</span>
           </div>
-          ${bal === 0 ? '<div class="hint">还没有战功章。海域首通 / 作战目标 / 战役 / 图鉴收集率里程碑都会产出战功章；每周首次「史实重演」S 胜另给 1 枚。详见下方产出记录。</div>' : ''}
+          ${bal === 0 ? '<div class="hint">还没有战功章。海域首通 / 作战目标 / 战役 / 图鉴收集率里程碑都会产出战功章；每场战役每周首次「史实重演」S 胜另给 1 枚。详见下方产出记录。</div>' : ''}
           ${capFull ? '<div class="hint">装备仓库已满，消耗品无法入仓 —— 请先解体或用掉部分装备。</div>' : ''}
           <div class="section-title">兑换 <span class="dim">（不兑换舰娘与大宗资源）</span></div>
           <div class="medal-shop">${shop.map(shopCard).join('')}</div>

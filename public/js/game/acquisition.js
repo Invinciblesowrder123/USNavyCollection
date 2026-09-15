@@ -6,7 +6,8 @@
  *   舰船：MAPS[].drops / MAPS[].bossDrops / HISTORY_BATTLES[].bossDrops / def.build /
  *         QUESTS[].reward.ship / STARTER_IDS
  *   装备：ed.dev（开发池）/ IMPROVE[].update.to（改修更新）/ SHIPS[].equip（随舰自带）/
- *         QUESTS[].reward.equip|item / HISTORY_BATTLES[].rewards.*.equip|item
+ *         QUESTS[].reward.equip|item / HISTORY_BATTLES[].rewards.*.equip|item /
+ *         Progression.MEDAL_SHOP（军需处兑换，V0.305 补：本版两个新特性必须互相认识）
  *
  * 为什么单独成文件：图鉴 UI 与 simulate.js 必须用**同一套判定**（禁止在 UI 另写一套，
  * 规范 P2-2 / 禁止事项 6），而 UI 文件（public/js/ui/*）不参与 headless 测试。
@@ -120,6 +121,17 @@ const Acquisition = (() => {
       if (hr && [].concat(hr.equip || [], hr.item || []).includes(id)) hn.push(`${b.id}·强敌阶首通`);
     }
     if (hn.length) out.push({ key: 'hist', text: `战役奖励：${uniq(hn).join('、')}` });
+
+    /* 军需处兑换（V0.305 军需处）：章 → 消耗品。
+     * 必须收录 —— 否则本版两个新特性互不相认（交付评审 G-2）：图鉴的功能定位是"知道去哪拿"，
+     * 而本版给消耗品补的**最可靠出口**（可重复、不受掉落概率影响）恰恰不在里面。
+     * 数据源是 Progression.MEDAL_SHOP（运行时常量）；拿不到就跳过，保持模块对数据表缺失的容错。 */
+    const shop = (typeof Progression !== 'undefined' && Progression.MEDAL_SHOP) || [];
+    const shopHit = shop.filter(it => {
+      const rw = it.reward || {};
+      return [].concat(rw.item || [], rw.equip || []).includes(id);
+    });
+    if (shopHit.length) out.push({ key: 'medalShop', text: `军需处兑换（战功章 ×${shopHit[0].cost}）` });
 
     return markUnimplemented(out);
   }

@@ -8,6 +8,7 @@
     "art": "node scripts/generate_art.js",
     "art-ai": "node scripts/generate_ai_art.js",
     "sim": "node scripts/simulate.js",
+    "sim:soak": "node scripts/sim_soak.js",
     "test": "node scripts/simulate.js",
     "test:migration": "node scripts/test_save_migration.js",
     "test:e2e": "node scripts/e2e.js",

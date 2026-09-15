@@ -3774,6 +3774,16 @@ section('V0.305·批次1 图鉴获取途径与收集率里程碑');
   const dcTxt = Acquisition.equipRoutes('dc_team').map(r => r.text).join(' | ');
   assert('获取途径：消耗品 dc_team 给出任务与战役双来源',
     dcTxt.includes('任务奖励') && dcTxt.includes('战役奖励'), dcTxt);
+  /* 军需处兑换必须被收录（交付评审 G-2）：图鉴的功能定位是"知道去哪拿"，
+   * 而军需处是本版给消耗品补的**唯一可重复、不受掉落概率影响**的出口 ——
+   * 首版两个新特性互不相认（各自完整、接线处没人看），与 P0 同源。 */
+  assert('获取途径：军需处可兑换的消耗品都在图鉴里标出「军需处兑换」',
+    ['dc_team', 'supply_oiler', 'rations'].every(id => Acquisition.equipRoutes(id).some(r => r.key === 'medalShop')),
+    ['dc_team', 'supply_oiler', 'rations'].map(id => id + '=' + Acquisition.equipRoutes(id).map(r => r.key).join('/')).join(' | '));
+  assert('获取途径：军需处渠道与 MEDAL_SHOP 同源对拍（不另写一份清单）',
+    Progression.MEDAL_SHOP.filter(it => [].concat((it.reward && it.reward.item) || []).length)
+      .every(it => Acquisition.equipRoutes(it.reward.item[0]).some(r => r.key === 'medalShop')),
+    JSON.stringify(Progression.MEDAL_SHOP.map(it => it.id)));
   const gfcsTxt = Acquisition.equipRoutes('gun16in_7gfcs').map(r => r.text).join(' | ');
   assert('获取途径：不可开发装备给出「改修更新」与「随舰自带」',
     gfcsTxt.includes('改修更新') && gfcsTxt.includes('随舰自带'), gfcsTxt);
@@ -3918,19 +3928,27 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
     srcAfterWeekly.currentWeekDone === true && srcAfterWeekly.got === 1 && srcAfterWeekly.earned === 1,
     JSON.stringify(srcAfterWeekly));
 
-  /* ---- 2.4 单场结算的产出总装（唯一调用点的输入形状） ---- */
+  /* ---- 2.4 单场结算的产出总装（**原语层**：只验证函数对给定 ctx 的处理） ----
+   * ⚠️ 命名纪律（交付评审 §2.3）：本节**不是**端到端。它把 histForm:true 直接喂进 ctx，
+   * 因此对「真实接线有没有把它设成 false」零分辨力 —— V0.305 首版的 P0 正是被这样遮蔽的
+   * （断言名写着"全部算清"，实质是同义反复）。真实链路覆盖在 2.8，那里禁止手工构造 ctx。
+   * 战役 id 刻意用**合成值**（不是真战役）：避免污染真账本，本节只考察输入形状。 */
   const gOut = Progression.grantMedalRewards({
     mapId: 'X-1', cleared: true, objectives: ['obj-a', 'obj-b'],
-    historic: { id: 'XX', firstClear: true, histForm: true, hard: true }
+    historic: { id: 'PROBE', firstClear: true, histForm: true, hard: true }
   });
-  assert('章产出：一次结算把 首通 + 目标×2 + 战役三层 + 每周项 全部算清',
+  assert('章产出（原语层）：给定"三层全达成"的 ctx → 算出 首通 + 目标×2 + 战役三层 + 周项',
     gOut.granted.length === 6 && gOut.weekly.length === 1,
     JSON.stringify(gOut.granted.map(x => x.id)));
-  assert('章产出：枚数 = 首通1 + 目标1×2 + 常规阶2 + 史实重演2 + 强敌阶3',
-    gOut.granted.reduce((n, x) => n + x.n, 0) === 1 + 2 + 2 + 2 + 3);
+  assert('章产出（原语层）：枚数与 MEDAL_SOURCES 表一致（表与发放逻辑对拍，评审 R-8）',
+    gOut.granted.reduce((n, x) => n + x.n, 0) ===
+      1 + 2 * Progression.MEDAL_SOURCES.find(s => s.id === 'objective').n +
+      Progression.MEDAL_SOURCES.find(s => s.id === 'histFirst').n +
+      Progression.MEDAL_SOURCES.find(s => s.id === 'histForm').n +
+      Progression.MEDAL_SOURCES.find(s => s.id === 'histHard').n);
   const gOut2 = Progression.grantMedalRewards({
     mapId: 'X-1', cleared: true, objectives: ['obj-a'],
-    historic: { id: 'XX', firstClear: true, histForm: true, hard: true }
+    historic: { id: 'PROBE', firstClear: true, histForm: true, hard: true }
   });
   assert('章产出：同一结算重复提交 → 一次性项全部被账本挡下',
     gOut2.granted.length === 0 && gOut2.weekly.length === 0);
@@ -4011,6 +4029,160 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
     JSON.stringify(rt.stats.medalLedger) === JSON.stringify(Game.state.stats.medalLedger) &&
     JSON.stringify(rt) === JSON.stringify(Game.migrateSave(JSON.parse(JSON.stringify(rt)))));
   assert('存档 v7：saveVersion 已推到 7（迁移链末端）', Game.CURRENT_SAVE_VERSION === 7 && rt.saveVersion === 7);
+
+  /* ---- 2.8 【集成层 · P0 回归】每周可重复产出源必须走**真实结算链路** ----
+   * 交付评审 P0：首版把「账本里本次有没有新发 histForm」当成「本场是否史实重演 S 胜」接到周项，
+   * 于是自第二周起永不发放；而 2.2 / 2.4 这些**原语层**断言（直接调 grantMedalWeekly、
+   * 手工喂 histForm:true）无论如何都看不见它 —— 绿灯是真的，也是无效的。
+   * 本节纪律：**禁止手工构造 ctx**，一律 Sortie.start → 直达 BOSS → prepareBattle → settleBattle。
+   * 可复现性：整段在固定 LCG 种子下跑，且"找一个 S 胜"的搜索顺序固定 ⇒ 结果确定，不会随机变红。
+   * （配装效度：记忆里踩过「只装舰战 → CV 对舰输出≈0」的坑，航母按 2 舰战 + 2 舰爆配，
+   *   否则 30 个种子一个 S 都出不来 —— 探针 `_v305_probe_weekly.js` 实测。） */
+  {
+    const realRandom = Math.random;
+    const seeded = (seed, fn) => {
+      let s0 = seed;
+      Math.random = () => { s0 = (s0 * 1103515245 + 12345) & 0x7fffffff; return s0 / 0x7fffffff; };
+      try { return fn(); } finally { Math.random = realRandom; }
+    };
+    const mkHistShip = (id, lv, equips) => {
+      const s = Game.createShip(id, lv);
+      for (const e of s.equipped.slice()) Game.destroyEquip(e);
+      s.equipped = [];
+      for (const eid of equips) {
+        if (s.equipped.length >= ShipData[id].slots.length) break;
+        const ne = Game.createEquip(eid); ne.locked = false; s.equipped.push(ne.uid);
+      }
+      s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60;
+      return s.uid;
+    };
+    /* 舰队与资源（H1 史实规则：≥2 艘航母 —— 本编成 3 航母 + 战列 + 2 驱逐，无禁入项） */
+    const newHistFormFleet = () => {
+      Game.newGame();
+      Game.state.admiral.level = 60;
+      Game.gain({ fuel: 999999, ammo: 999999, steel: 999999, baux: 999999 });
+      Game.state.fleet[1] = [
+        mkHistShip('enterprise', 120, ['f6f5', 'f6f5', 'sb2c', 'sb2c']),
+        mkHistShip('essex', 120, ['f6f5', 'f6f5', 'sb2c', 'sb2c']),
+        mkHistShip('saratoga', 120, ['f6f5', 'f6f5', 'sb2c', 'sb2c']),
+        mkHistShip('iowa', 120, ['gun16in_50', 'gun16in_50', 'ap_mk8', 'os2u']),
+        mkHistShip('fletcher', 120, ['gun5in_38', 'torp_mk15', 'torp_mk15', 'sonar_qc']),
+        mkHistShip('baltimore', 120, ['gun8in_55', 'gun8in_55', 'radar_sg', 'ap_mk8'])
+      ];
+    };
+    /* 补满耐久/油弹/士气：跨周重打时消除"损伤管理"这条噪声路径（本段考的是章机制） */
+    const healHistFleet = () => {
+      for (const u of Game.state.fleet[1]) {
+        const s = Game.state.ships[u];
+        if (s) { s.hp = Game.shipStats(u).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 60; }
+      }
+    };
+    /* 一条**真实**的 H1 史实重演路径：start（常规阶战役）→ 直达 BOSS → prepareBattle → settleBattle */
+    const runHistFormBattle = () => {
+      const st = Sortie.start('H1', 1);
+      if (!st.ok) return { err: 'start: ' + st.msg };
+      Game.state.sortie.node = History.byId('H1').boss;
+      const p = Sortie.prepareBattle('单纵阵');
+      if (!p.ok) { Sortie.returnHome(); return { err: 'prep: ' + p.msg }; }
+      const s = Sortie.settleBattle(p);
+      Sortie.returnHome();
+      return {
+        rank: s.result.rank, histMatch: s.histMatch,
+        weekly: (s.medals && s.medals.weekly ? s.medals.weekly : []).slice(),
+        grantedIds: (s.medals ? s.medals.granted : []).map(x => x.id),
+        log: s.result.log.join('\n'),
+        bal: Progression.medalBalance()
+      };
+    };
+    /* 真实打出一次"史实重演 S 胜"：按固定顺序找种子（种子固定 ⇒ 结果确定，不 flaky） */
+    const histFormSRun = () => {
+      let last = null;
+      for (let seed = 1; seed <= 12; seed++) {
+        healHistFleet();
+        const r = seeded(seed, runHistFormBattle);
+        last = r;
+        if (!r.err && r.rank === 'S' && r.histMatch === true) return r;
+      }
+      return last || { err: '无可用种子' };
+    };
+
+    newHistFormFleet();
+    const r1 = histFormSRun();
+    assert('集成：真实 H1 史实重演走通（固定种子下必出 S 胜，全程未手工构造 ctx）',
+      !r1.err && r1.rank === 'S' && r1.histMatch === true,
+      JSON.stringify(r1.err ? r1 : { rank: r1.rank, match: r1.histMatch }));
+    assert('集成：当周首场史实重演 S 胜 → 周项 +1，且写进战报（不许静默发放）',
+      r1.weekly.length === 1 && r1.weekly[0].n === 1 && /战功章 \+1（每周首次史实重演/.test(r1.log),
+      JSON.stringify(r1.weekly) + ' | ' + (r1.log.match(/战功章[^\n]*/g) || []).join(' / '));
+    assert('集成：首周余额 = 常规阶首通 2 + 史实重演 2 + 周项 1',
+      r1.bal === 5 && r1.grantedIds.indexOf('hist:H1:firstClear') >= 0 && r1.grantedIds.indexOf('hist:H1:histForm') >= 0,
+      'bal=' + r1.bal + ' ids=' + JSON.stringify(r1.grantedIds));
+
+    const r1b = histFormSRun();
+    assert('集成：同一周内再打一场 → 余额不变（一次性被账本挡、周项被周期挡）',
+      r1b.bal === 5 && r1b.weekly.length === 0 && r1b.grantedIds.length === 0,
+      JSON.stringify({ bal: r1b.bal, weekly: r1b.weekly, ids: r1b.grantedIds }));
+
+    /* ★ P0 回归本体：模拟跨周（周账本置为旧周期）→ **同一条真实链路**必须再发 1 枚 */
+    Game.state.stats.medalLedger.weekly['weekly:hist:H1'] = 'old-period';
+    const r2 = histFormSRun();
+    assert('集成（P0 回归）：跨周后再打一场史实重演 S 胜 → 周项再发 1 枚（首版这里永远是死的）',
+      r2.weekly.length === 1 && r2.bal === 6,
+      JSON.stringify({ weekly: r2.weekly, bal: r2.bal, ids: r2.grantedIds, rank: r2.rank }));
+    assert('集成：周账本被写到**当前**周期键（军需处「本周期已领」靠它，坑 #32）',
+      Progression.medalLedger().weekly['weekly:hist:H1'] === Progression.periodKeys().weekly);
+
+    /* 再跨一周 → 继续发（证明它是周期性，而不是"只发两次"的巧合） */
+    Game.state.stats.medalLedger.weekly['weekly:hist:H1'] = 'old-period';
+    const r3 = histFormSRun();
+    assert('集成：连续跨周可持续产出（稳态 ≥1 枚/周，军需处不会退化成毕业清单）',
+      r3.weekly.length === 1 && r3.bal === 7, 'bal=' + r3.bal + ' rank=' + r3.rank);
+
+    /* 负向对照（同样走真实链路）：非 S 胜不得发周项 */
+    Game.newGame();
+    newHistFormFleet();
+    let rA = null;
+    for (let seed = 13; seed <= 40 && !rA; seed++) {
+      healHistFleet();
+      const r = seeded(seed, runHistFormBattle);
+      if (!r.err && r.rank === 'A') rA = r;
+    }
+    assert('集成（负向）：真实战斗打出 A 胜（非 S）→ 不发周项、不发史实重演奖励',
+      !!rA && rA.weekly.length === 0 && rA.grantedIds.indexOf('hist:H1:histForm') < 0,
+      rA ? JSON.stringify({ rank: rA.rank, weekly: rA.weekly, ids: rA.grantedIds }) : '未找到 A 胜种子');
+
+    Game.newGame();   // 恢复干净状态，后续段落不依赖本段残留
+  }
+
+  /* ---- 2.9 产出源表 vs 真实发放：**对拍**（评审 R-8） ----
+   * 首版把「MEDAL_SOURCES 是 UI 与断言的同一张表」当优点 —— 它只防"UI 另写一份清单"，
+   * 防不了**表与发放逻辑漂移**：把表里 histHard 的 n:3 改成 2，没有任何断言会变红。
+   * 这里逐个产出源做一次真实发放，用**表里的 n** 去对**实发的 n**。 */
+  {
+    Game.newGame();
+    const N = id => (Progression.MEDAL_SOURCES.find(s => s.id === id) || {}).n;
+    const w1 = Progression.grantMedalRewards({ mapId: 'ZZ', cleared: true, objectives: [], historic: null });
+    assert('对拍：海域首通实发枚数 = 表里的 n', w1.granted.length === 1 && w1.granted[0].n === N('mapClear'),
+      '实发=' + (w1.granted[0] || {}).n + ' 表=' + N('mapClear'));
+    const w2 = Progression.grantMedalRewards({ cleared: false, objectives: ['oa', 'ob'], historic: null });
+    assert('对拍：每个作战目标实发枚数 = 表里的 n',
+      w2.granted.length === 2 && w2.granted.every(x => x.n === N('objective')),
+      JSON.stringify(w2.granted.map(x => x.n)));
+    const w3 = Progression.grantMedalRewards({ historic: { id: 'ZZ', firstClear: true, histForm: true, hard: true } });
+    const byId = {};
+    for (const x of w3.granted) byId[x.id] = x.n;
+    assert('对拍：战役三层实发枚数 = 表里的 n（首通 / 史实重演 / 强敌阶）',
+      byId['hist:ZZ:firstClear'] === N('histFirst') && byId['hist:ZZ:histForm'] === N('histForm') &&
+      byId['hist:ZZ:hard'] === N('histHard'),
+      JSON.stringify(byId) + ' 表=' + [N('histFirst'), N('histForm'), N('histHard')].join('/'));
+    assert('对拍：每周项实发枚数 = 表里的 n', w3.weekly.length === 1 && w3.weekly[0].n === N('weeklyHist'));
+    assert('对拍：里程碑枚数常量与表同源（LIB_MILESTONE_MEDALS）',
+      Progression.LIB_MILESTONE_MEDALS === N('libShips') && Progression.LIB_MILESTONE_MEDALS === N('libEquips'));
+    assert('对拍：产出源表的 name 非空且不重复（UI 直接渲染该字段）',
+      Progression.MEDAL_SOURCES.every(s => s.name && s.name.trim()) &&
+      new Set(Progression.MEDAL_SOURCES.map(s => s.name)).size === Progression.MEDAL_SOURCES.length);
+    Game.newGame();
+  }
 }
 
 /* ============================================================
@@ -4065,6 +4237,28 @@ section('V0.305·批次3 编成预设（保存 / 载入 / 缺员）');
   const rt2 = Game.migrateSave(JSON.parse(JSON.stringify(Game.serialize())));
   assert('预设：随存档往返一致（JSON 深拷贝后逐字段相同）',
     JSON.stringify(rt2.presets) === presetSnap && Array.isArray(rt2.presets), presetSnap.slice(0, 80));
+
+  /* ---- 重名处理（任务书批次3 断言 14；交付评审 G-1：首版漏实现、无断言）---- */
+  Game.state.fleet[1] = [a, b, c];
+  Game.state.presets = [];
+  const n1 = Progression.saveFleetPreset(1, '同名');
+  const n2 = Progression.saveFleetPreset(1, '同名');
+  assert('预设：重名被**明确拒绝**（不静默改名、不覆盖已有预设）',
+    n1.ok && !n2.ok && /同名/.test(n2.msg) && Game.state.presets.length === 1, n2.msg);
+  assert('预设：拒绝重名时零副作用（原预设内容不变、不新增条目）',
+    Game.state.presets.length === 1 && Game.state.presets[0].name === '同名' &&
+    JSON.stringify(Game.state.presets[0].ships) === JSON.stringify(['iowa', 'enterprise', 'fletcher']));
+  /* 默认名必须取**最小未占用**编号 —— 首版用 `presets.length + 1`，删掉中间一项后会撞名 */
+  Game.state.presets = [];
+  Progression.saveFleetPreset(1);      // 预设 1
+  Progression.saveFleetPreset(1);      // 预设 2
+  Progression.saveFleetPreset(1);      // 预设 3
+  Progression.removeFleetPreset(0);    // 剩 [预设 2, 预设 3]
+  const nmNext = Progression.saveFleetPreset(1);
+  assert('预设：默认名取最小未占用编号（删除中间项后不得再生成重名）',
+    nmNext.ok && nmNext.name === '预设 1' &&
+    new Set(Game.state.presets.map(p => p.name)).size === Game.state.presets.length,
+    nmNext.name + ' | ' + JSON.stringify(Game.state.presets.map(p => p.name)));
   Game.state.presets = [];
 }
 

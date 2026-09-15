@@ -553,6 +553,19 @@ const Sortie = (() => {
     const histWave = so.wave || 1;
     const histMatch = !!prep.histMatch;
 
+    /* ---- 战役「本场结论」的唯一计算点（V0.305 补丁 · P0 教训）----
+     * 三个消费方**必须共用这里的定义**：
+     *   ① 一次性奖励 ctx（grantHistoricRewards）② 舰历/荣誉 ctx（recordBattleResult）
+     *   ③ 章产出 ctx（grantMedalRewards）
+     * 首版的 P0 就出在 ③ 自己另写了一份判据：`histReward.granted.includes('histForm')` ——
+     * 那是 V0.303 的**一次性**账本标记（除首次恒为 false），于是「每周 1 枚」这条
+     * 可重复产出源自第二周起永久失效；而 1871 条原语层断言全绿（集成层零覆盖，看不见）。
+     * 一次性层的幂等由各自的账本保证（奖励账本 / 章账本），这里只回答"这一场打成了什么"。 */
+    const histBossVictory = !!(isBoss && result.victory && result.rank !== 'D' && (!histHard || histWave >= 2));
+    const histFirstNow = !!(histBattle && !histContinue && !histHard && histBossVictory);
+    const histFormNow = !!(histBattle && !histContinue && !histHard && histBossVictory && histMatch && result.rank === 'S');
+    const histHardNow = !!(histBattle && !histContinue && histHard && histWave >= 2 && histBossVictory && result.rank === 'S');
+
     /* 消耗：油弹（wiki：普通战斗点 油20%/弹20%，进入夜战 弹30%；节点可覆写 cost，如 1-5 反潜点 油8%/弹0），疲劳-15 */
     let ammoZero = false;
     const cost = def.cost || null;
@@ -682,10 +695,9 @@ const Sortie = (() => {
      * bossVictory 排除「强敌阶第一波」：那时还没打完，不该发首通/重复奖励。 */
     let histReward = null;
     if (histBattle && !histContinue) {
-      const bossVictory = isBoss && result.victory && result.rank !== 'D' && (!histHard || histWave >= 2);
       histReward = Progression.grantHistoricRewards({
         battle: histBattle, hard: histHard, wave: histWave,
-        victory: !!result.victory, rank: result.rank, histMatch, bossVictory
+        victory: !!result.victory, rank: result.rank, histMatch, bossVictory: histBossVictory
       });
       const ZH = { firstClear: '常规阶首通', histForm: '史实重演（史实编成 S 胜）', hard: '强敌阶首通' };
       for (const k of histReward.granted) {
@@ -704,7 +716,6 @@ const Sortie = (() => {
     /* 舰历与荣誉（方向二）：出击路径的唯一写入点（含夜战追加后的二次结算，仍只写一次） */
     const enFlag = result.enemySide && result.enemySide[0];
     const flagSunk = !!(enFlag && !enFlag.alive);
-    const histBossVictory = isBoss && result.victory && result.rank !== 'D' && (!histHard || histWave >= 2);
     const honorOut = Progression.recordBattleResult({
       uids: fleet.slice(),
       kind: 'sortie',
@@ -726,9 +737,9 @@ const Sortie = (() => {
       hard: histHard,
       wave: histWave,
       histMatch,
-      histClear: !!(histBattle && !histContinue && !histHard && histBossVictory),
-      histForm: !!(histBattle && !histContinue && !histHard && histBossVictory && histMatch && result.rank === 'S'),
-      histHard: !!(histBattle && !histContinue && histHard && histWave >= 2 && histBossVictory && result.rank === 'S'),
+      histClear: histFirstNow,
+      histForm: histFormNow,
+      histHard: histHardNow,
       histNoSunk: !histBattle || (so.histSunk || 0) === 0,
       ddCount: fleetTypes(so.fleetIdx).filter(t => t === 'DD').length,
       cvlCount: fleetTypes(so.fleetIdx).filter(t => t === 'CVL').length,   // V0.304：「约克城归队」判定用
@@ -769,17 +780,15 @@ const Sortie = (() => {
       mapId: map.id,
       cleared: !!cleared,
       objectives: objResults.filter(o => o.ok).map(o => o.id),
+      /* 三层一律读**本场结论**（histFirstNow/histFormNow/histHardNow），
+       * 不读"本次有没有新发"：一次性层的幂等由章账本保证（坑 #31），
+       * 而周项层必须看得见「这一场又是史实重演 S 胜」——否则第二周起永不发放（P0）。 */
       historic: (histBattle && histReward)
-        ? {
-          id: histBattle.id,
-          firstClear: histReward.granted.includes('firstClear'),
-          histForm: histReward.granted.includes('histForm'),
-          hard: histReward.granted.includes('hard')
-        }
+        ? { id: histBattle.id, firstClear: histFirstNow, histForm: histFormNow, hard: histHardNow }
         : null
     });
     for (const g of medalOut.granted) result.log.push(`战功章 +${g.n}（${g.name}）`);
-    for (const g of medalOut.weekly) result.log.push(`战功章 +${g.n}（${g.name}，每周限 1 枚）`);
+    for (const g of medalOut.weekly) result.log.push(`战功章 +${g.n}（${g.name}，每场战役每周 1 枚）`);
 
     return {
       ok: true, type: isBoss ? 'boss' : 'battle', result, isBoss, drop, cleared, advance: true,

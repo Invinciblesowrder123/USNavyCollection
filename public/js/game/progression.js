@@ -622,7 +622,7 @@ const Progression = (() => {
     { id: 'histHard',   name: '战役·强敌阶首通（4 场）',                n: 3, kind: 'once' },
     { id: 'libShips',   name: `图鉴收集率里程碑（舰船 ${LIB_MILESTONES.join('/')}%）`, n: LIB_MILESTONE_MEDALS, kind: 'once' },
     { id: 'libEquips',  name: `图鉴收集率里程碑（装备 ${LIB_MILESTONES.join('/')}%）`, n: LIB_MILESTONE_MEDALS, kind: 'once' },
-    { id: 'weeklyHist', name: '每周首次「史实重演」S 胜（每周限 1 枚）', n: 1, kind: 'weekly' }
+    { id: 'weeklyHist', name: '每周首次「史实重演」S 胜（每场战役每周 1 枚）', n: 1, kind: 'weekly' }
   ];
 
   /* 兑换表（规划方案 §4.4 建议稿，全部为 [PLACEHOLDER]）：
@@ -735,8 +735,9 @@ const Progression = (() => {
     out.push(...checkLibraryHonors(s));
     return out;
   }
-  /* 100% 纪念荣誉：授予第一舰队旗舰（提督成就口径，与"她和你一起打过什么"的舰历荣誉不同，
-   * 已在交付报告与 HONORS 注释中披露） */
+  /* 100% 纪念荣誉：授予**第一舰队旗舰** —— 口径与既有舰历荣誉（"她和你一起打过什么"）不同：
+   * 这是**提督层面**的收集成就，所以挂在玩家当前的旗舰身上，与"哪几艘舰参加过哪些战斗"无关。
+   * 该口径已在交付报告「口径披露」小节与 HONORS 注释中写明（首版漏写，评审 R-1/P1 后补）。 */
   function checkLibraryHonors(stats) {
     const G = GameRef();
     const st = G.state;
@@ -829,6 +830,17 @@ const Progression = (() => {
    * 载入时按 id 顺序从未编入其他舰队的实例里挑（优先未上锁、等级高）；
    * 有缺员时**明确回报缺了哪几艘**，不静默少载（规范 P0-5：可执行的信息）。 */
   const PRESET_MAX = 8;
+  /* 重名处理（任务书批次3 断言 14）：
+   * ① 默认名取**最小未占用**的「预设 N」—— 不能再用 `presets.length + 1`：
+   *    删掉中间一个之后长度会撞上已有编号（[预设1,预设2,预设3] 删首个 → 长度 2 → 又生成「预设 3」）。
+   * ② 显式传入的名字与已有预设重名 → **明确拒绝并提示改名**，不静默改名
+   *    （玩家以为存成了「主力」，实际是「主力2」——属于最坏的一种"静默修正"）。 */
+  function presetDefaultName(list) {
+    const used = new Set((list || []).map(p => p && p.name));
+    let n = 1;
+    while (used.has(`预设 ${n}`)) n++;
+    return `预设 ${n}`;
+  }
   function fleetPresetList() { return (GameRef().state.presets || []).slice(); }
   function saveFleetPreset(fleetIdx, name) {
     const st = GameRef().state;
@@ -836,7 +848,11 @@ const Progression = (() => {
     const ids = (st.fleet[fleetIdx] || []).map(u => st.ships[u] && st.ships[u].id).filter(Boolean);
     if (!ids.length) return { ok: false, msg: '舰队为空，没什么可保存的' };
     if (st.presets.length >= PRESET_MAX) return { ok: false, msg: `预设最多 ${PRESET_MAX} 个，请先删除一个` };
-    const nm = String(name || '').trim() || `预设 ${st.presets.length + 1}`;
+    const want = String(name || '').trim();
+    if (want && st.presets.some(p => p && p.name === want)) {
+      return { ok: false, msg: `已存在同名预设「${want}」，请换个名字` };
+    }
+    const nm = want || presetDefaultName(st.presets);
     st.presets.push({ name: nm, ships: ids, at: Date.now() });
     return { ok: true, name: nm, index: st.presets.length - 1 };
   }
