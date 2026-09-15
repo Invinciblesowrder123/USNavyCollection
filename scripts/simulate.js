@@ -4037,7 +4037,18 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
    * 本节纪律：**禁止手工构造 ctx**，一律 Sortie.start → 直达 BOSS → prepareBattle → settleBattle。
    * 可复现性：整段在固定 LCG 种子下跑，且"找一个 S 胜"的搜索顺序固定 ⇒ 结果确定，不会随机变红。
    * （配装效度：记忆里踩过「只装舰战 → CV 对舰输出≈0」的坑，航母按 2 舰战 + 2 舰爆配，
-   *   否则 30 个种子一个 S 都出不来 —— 探针 `_v305_probe_weekly.js` 实测。） */
+   *   否则 30 个种子一个 S 都出不来 —— 探针 `_v305_probe_weekly.js` 实测。）
+   *
+   * ⚠️ **本段有效性绑在「`battle.js` 未改动」上**：战斗掷骰走 `Math.random()`，本段靠 `seeded()`
+   *   覆写它才控得住结果。一旦引擎改动，**种子 → 战斗结果**的映射就变了，本段会**静默失效**
+   *   （表现是"没拿到 S 胜"这类间接报错，而不是一条写明原因的失败）。
+   *   ⇒ **任何动 `battle.js` 的版本，必做事项：重标种子**（跑 `_v305_probe_weekly.js` 重挑）。
+   *
+   * 两处**测试捷径**（不是"手工构造"，但容易被误读）：
+   *   ① `runHistFormBattle` 直接把 `Game.state.sortie.node` 指到 BOSS —— 这是**导航到目标节点**，
+   *      不是伪造战斗输入；战斗本身照样真实发生（经 `prepareBattle` 掷骰）。
+   *   ② 跨周用"把 `medalLedger.weekly['weekly:hist:H1']` 置为旧周期"来模拟 —— 这是**移动时钟**，
+   *      不是把答案喂进去：判定逻辑仍然自己去读 `periodKeys().weekly` 再比较。 */
   {
     const realRandom = Math.random;
     const seeded = (seed, fn) => {
@@ -4090,6 +4101,8 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
         rank: s.result.rank, histMatch: s.histMatch,
         weekly: (s.medals && s.medals.weekly ? s.medals.weekly : []).slice(),
         grantedIds: (s.medals ? s.medals.granted : []).map(x => x.id),
+        /* 奖励层（grantHistoricRewards 自报的"本次新发了哪几层"）—— 供 2.8 的跨路径一致性断言对拍 */
+        rewardGranted: (s.histReward && s.histReward.granted ? s.histReward.granted : []).slice(),
         log: s.result.log.join('\n'),
         bal: Progression.medalBalance()
       };
@@ -4137,6 +4150,34 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
     const r3 = histFormSRun();
     assert('集成：连续跨周可持续产出（稳态 ≥1 枚/周，军需处不会退化成毕业清单）',
       r3.weekly.length === 1 && r3.bal === 7, 'bal=' + r3.bal + ' rank=' + r3.rank);
+
+    /* ★ 跨路径一致性（二轮复核残留）：同一场真实结算里，**奖励层**与**章层**对三层的判定必须一致。
+     * 为什么需要它：「本场战役打成了什么」这个判据目前仍写在**两处** ——
+     *   · `sortie.js::settleBattle`（histFirstNow / histFormNow / histHardNow；供**舰历荣誉 ctx** 与**章产出 ctx**）
+     *   · `progression.js::grantHistoricRewards`（内部**自行重推** firstClear / histForm / hard；供**一次性奖励层**）
+     * 两处语义当前等价（栅栏 !histHard、rank==='S'、histMatch、wave>=2、victory 无一丢失或反向），
+     * 所以**现在没有 bug**；但**没有任何断言钉住"等价"** —— 日后只改其中一处，就会出现
+     * "奖励发了、章没发"（或反之），而上面那条"首周余额 = 2+2+1"只钉住了**章层**，钉不住两条路径一致。
+     * （收敛成单一定义点已登记为 V0.306 清理项：grantHistoricRewards 有 11 处直接调用，
+     *   且它承载 V0.303 的一次性奖励语义、drift 基线不覆盖奖励层 —— 放行前不动生产代码。） */
+    const layerAgree = (r, rewardKey, medalKey) =>
+      (r.rewardGranted.indexOf(rewardKey) >= 0) === (r.grantedIds.indexOf(medalKey) >= 0);
+    assert('集成：奖励层与章层的三层判定一致（同一场结算两条路径不得漂移）',
+      /* 正例必须显式断言"两层都发"，否则"两边都不发"会让等价关系假性成立 */
+      r1.rewardGranted.indexOf('firstClear') >= 0 && r1.grantedIds.indexOf('hist:H1:firstClear') >= 0 &&
+      r1.rewardGranted.indexOf('histForm') >= 0 && r1.grantedIds.indexOf('hist:H1:histForm') >= 0 &&
+      /* 等价性：首场（都发）/ 同周重复（都挡）/ 跨周（奖励层仍挡、章层只发周项） */
+      layerAgree(r1, 'firstClear', 'hist:H1:firstClear') && layerAgree(r1, 'histForm', 'hist:H1:histForm') &&
+      layerAgree(r1b, 'firstClear', 'hist:H1:firstClear') && layerAgree(r1b, 'histForm', 'hist:H1:histForm') &&
+      layerAgree(r2, 'histForm', 'hist:H1:histForm') && layerAgree(r3, 'histForm', 'hist:H1:histForm') &&
+      /* hard 层在本段（常规阶）两层都应恒不发放 —— 只验"不漂移"，强敌阶覆盖在 V0.303 段 */
+      layerAgree(r1, 'hard', 'hist:H1:hard') && layerAgree(r2, 'hard', 'hist:H1:hard'),
+      JSON.stringify({
+        r1: { reward: r1.rewardGranted, medal: r1.grantedIds },
+        r1b: { reward: r1b.rewardGranted, medal: r1b.grantedIds },
+        r2: { reward: r2.rewardGranted, medal: r2.grantedIds },
+        r3: { reward: r3.rewardGranted, medal: r3.grantedIds }
+      }));
 
     /* 负向对照（同样走真实链路）：非 S 胜不得发周项 */
     Game.newGame();

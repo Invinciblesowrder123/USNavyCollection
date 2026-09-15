@@ -56,7 +56,7 @@ public/
   art/live2d/                分层立绘素材（近似 Live2D，每舰一目录）
 
 scripts/
-  simulate.js                引擎回归测试（1890 项断言，含分段战斗流程回归段与军需处集成层断言）
+  simulate.js                引擎回归测试（1891 项断言，含分段战斗流程回归段与军需处集成层断言）
   test_save_migration.js     存档迁移专项测试（54 项，含 v6→v7 战功章迁移）
   e2e.js                     无头浏览器 E2E（275 项，自动起停服务器）
   drift_check.js             战斗数值对拍工具 + 三基线（V0.301 / V0.302 / 当前；含行尾免疫）
@@ -255,7 +255,7 @@ archive/                     历史版本快照（4 份，见 VERSION_HISTORY.md
 ## 测试与质量保证
 
 ```bash
-npm test                # 引擎回归（1890 项断言，含账号 / 数据完整性 / 平衡护栏 / 历史战役 / 分段战斗流程）
+npm test                # 引擎回归（1891 项断言，含账号 / 数据完整性 / 平衡护栏 / 历史战役 / 分段战斗流程）
 npm run test:migration  # 存档迁移专项（54 项，含 v6→v7 战功章迁移）
 npm run test:e2e        # 无头浏览器 E2E（275 项，自动起停服务器）
 npm run sim:soak 40     # sim 连跑 40 轮（逐轮落盘；只能排除 p ≥ 7.2%，不是"无 flaky"的证明）
