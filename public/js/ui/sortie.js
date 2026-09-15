@@ -17,6 +17,23 @@ const SortieUI = (() => {
   const MAP_MINI = { w: 236, h: 168 };
   const NODE_TYPE_ZH = { start: '出击点', battle: '战斗点', boss: 'BOSS点', resource: '资源点', supply: '补给点', whirlpool: '漩涡', empty: '航路节点' };
   const NODE_MODE_ZH = { night: '夜战点', sub: '潜艇点', air: '航空战点' };
+
+  /* ---------- 海域难度档（V0.306 批次1） ----------
+   * 唯一数据源 = maps[].diff / maps[].diffNote（任务书 1.1，取自 design/海域难度评估_V0.306.md）。
+   * 本表只负责把档位数字渲染成人话，**不得在此重算难度**（禁止事项 6 / 规范 P2-2）。
+   * 档位阈值定义在 scripts/map_difficulty.js::tierOf（测量工具侧），改档要两边一起看。 */
+  const DIFF_ZH = { 1: '基础', 2: '常规', 3: '考验', 4: '高难', 5: '决战' };
+  /* 档位徽标：withLabel=true 时带中文档位名（详情页用），false 时只有 T3（列表卡片用，省地方） */
+  function diffBadge(m, withLabel) {
+    const d = m && m.diff;
+    if (!d || !DIFF_ZH[d]) return '';
+    return `<span class="diff-badge diff-${d}">T${d}${withLabel ? ' ' + DIFF_ZH[d] : ''}</span>`;
+  }
+  /* 难度提示行：走 briefHtml（转义 + 换行 + **强调**），与作战简报同一套渲染 */
+  function diffNoteHtml(m) {
+    const t = String((m && m.diffNote) || '').trim();
+    return t ? `<div class="diff-note">${briefHtml(t)}</div>` : '';
+  }
   const RES_ICON = { fuel: ['油', 'res-fuel'], ammo: ['弹', 'res-ammo'], steel: ['钢', 'res-steel'], baux: ['铝', 'res-baux'] };
   const RES_NAME = { fuel: '燃料', ammo: '弹药', steel: '钢材', baux: '铝土' };
   let _boardUid = 0;
@@ -202,10 +219,11 @@ const SortieUI = (() => {
       const locked = mapLocked(m);
       const no = m.id.split('-')[1];
       return `<button class="spot-btn${m.id === selId ? ' sel' : ''}${mp.cleared ? ' cleared' : ''}${locked ? ' locked' : ''}"
-          data-map="${m.id}" title="${m.name}" style="left:${x}%;top:${y}%">
+          data-map="${m.id}" title="${m.name}${m.diffNote ? '：' + m.diffNote : ''}" style="left:${x}%;top:${y}%">
         <span class="spot-no">${locked ? '🔒' : (mp.cleared ? '✓' : no)}</span>
         <span class="spot-name">${m.name}</span>
         <span class="spot-prog">${locked ? '需击破 ' + m.need : (mp.cleared ? '已攻略' : `击破 ${mp.kills}/${mp.gauge + mp.kills}`)}</span>
+        ${diffBadge(m, false)}
       </button>`;
     }).join();
     return `<div class="area-map">
@@ -314,7 +332,7 @@ const SortieUI = (() => {
     const got = Progression.historicRewardState(m.id);
     const canGo = gate.ok && !st.sortie && (st.fleet[fidx] || []).length > 0;
     return `<div class="map-detail hist-detail">
-      <div class="md-title">${m.id} ${Util.esc(m.name)} <span class="map-stars">${'★'.repeat(m.stars || 0)}</span>
+      <div class="md-title">${m.id} ${Util.esc(m.name)}
         <span class="md-eo">历史战役</span> <span class="dim">${m.date}</span></div>
       <div class="md-desc">史实背景：${Util.esc(m.histRule.tip)}</div>
       ${briefBox({ brief: m.brief })}
@@ -437,9 +455,10 @@ const SortieUI = (() => {
     const canGo = !locked && !st.sortie && (st.fleet[fidx] || []).length > 0;
     return `<div class="map-detail${locked ? ' locked' : ''}">
       <div class="md-board">${mapBoard(m, null, { mini: true })}</div>
-      <div class="md-title">${m.id} ${m.name} <span class="map-stars">${'★'.repeat(m.stars || 0)}</span>
+      <div class="md-title">${m.id} ${m.name} ${diffBadge(m, true)}
         ${mp.cleared ? '<span class="map-clear-badge">★ 已攻略</span>' : ''}
         ${m.need ? '<span class="md-eo">BOSS海域</span>' : ''}</div>
+      ${diffNoteHtml(m)}
       <div class="md-gauge">
         <div class="gauge-head"><span>海域血条</span><b>${mp.cleared ? '★ 已攻略' : `${mp.kills} / ${total} 次击破`}</b></div>
         <div class="gauge-bar"><div class="gauge-fill${mp.cleared ? ' full' : ''}" style="width:${pct}%"></div></div>
@@ -637,7 +656,7 @@ const SortieUI = (() => {
       root.innerHTML = `
         <div class="panel">
           <div class="map-head">
-            <h3>${map.id} ${map.name} <span class="map-stars">${'★'.repeat(map.stars || 0)}</span>
+            <h3>${map.id} ${map.name} ${hist ? '' : diffBadge(map, true)}
               ${hist ? `<span class="md-eo">${so.hard ? '强敌阶' : '常规阶'}${so.hard ? ` · 第 ${wave} 波` : ''}</span>` : ''}</h3>
             <button class="btn btn-red btn-sm" data-act="retreat">撤退返回</button>
           </div>

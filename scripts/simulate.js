@@ -4303,6 +4303,68 @@ section('V0.305·批次3 编成预设（保存 / 载入 / 缺员）');
   Game.state.presets = [];
 }
 
+/* ============================================================
+ * V0.306·批次1 海域难度评级（diff / diffNote 数据护栏）
+ * 数据来源：design/海域难度评估_V0.306.md（25 图分档表 + 文案草案）
+ * 纪律（坑 #52 / #53）：diff 是被断言锁住的**数据资产**，不是文案 —— 后续版本加图忘标就会红。
+ * ============================================================ */
+section('V0.306·批次1 海域难度评级（数据护栏）');
+{
+  /* 方向性护栏（坑 #52）：任何图的 diff 不得低于其 need 前置图的 diff。
+   * ⚠️ 抽成纯函数是为了让下面的**负向验证**复用同一条判据（否则负向验证只是在测另一段代码）。 */
+  const guardViolations = () => MAPS
+    .filter(m => m.need)
+    .map(m => ({ m, pre: MAPS.find(x => x.id === m.need) }))
+    .filter(({ m, pre }) => pre && !(m.diff >= pre.diff))
+    .map(({ m, pre }) => `${m.id}(T${m.diff}) < 前置 ${m.need}(T${pre.diff})`);
+
+  /* 已登记例外（**必须同时说明理由**）：例外表两侧都要断言 ——
+   * ① 未登记的违规数为 0（新图踩线即红）；② 表里每一项都必须**仍然真的违规**（防例外表腐烂成免死金牌）。 */
+  const DIFF_GUARD_EXCEPTIONS = {
+    '3-5': '实测 T1 < 前置 3-4 的 T4。3-5 是 EO 图（血条 7 / 无栖姬 / Lv15 失败率 0%），'
+         + 'need 是**解锁前置**而非难度顺序，两者本就可分离。数据来自海域难度评估报告 §3，非录入错误。'
+  };
+
+  assert('（原语层）难度档：25 张图全部有 diff，且为 1~5 的整数',
+    MAPS.filter(m => Number.isInteger(m.diff) && m.diff >= 1 && m.diff <= 5).length === MAPS.length,
+    MAPS.filter(m => !(Number.isInteger(m.diff) && m.diff >= 1 && m.diff <= 5)).map(m => `${m.id}:${m.diff}`).join(','));
+
+  assert('（原语层）难度提示：diffNote 非空且**含至少一个数字**（坑 #53：禁止"这图很难"这类无信息文本）',
+    MAPS.every(m => typeof m.diffNote === 'string' && !!m.diffNote.trim() && /\d/.test(m.diffNote)),
+    MAPS.filter(m => !(typeof m.diffNote === 'string' && !!m.diffNote.trim() && /\d/.test(m.diffNote))).map(m => m.id).join(','));
+
+  assert('（原语层）diff 与 diffNote 成对存在（不许只落其一）',
+    MAPS.every(m => (m.diff != null) === (m.diffNote != null)));
+
+  const unregistered = guardViolations().filter(v => !DIFF_GUARD_EXCEPTIONS[v.split('(')[0]]);
+  assert('（原语层）方向性护栏：未登记的「档位低于前置图」违规为 0（坑 #52）',
+    unregistered.length === 0, unregistered.join('；'));
+
+  /* 反向：例外表不许腐烂 —— 每个登记项都必须**仍然真的违规**，否则说明数据已修好、登记该删 */
+  const allViol = guardViolations();
+  assert('（原语层）方向性护栏：已登记例外均仍真实存在（防例外表变成免死金牌）',
+    Object.keys(DIFF_GUARD_EXCEPTIONS).every(id => allViol.some(v => v.startsWith(id + '('))),
+    '当前违规：' + (allViol.join('；') || '无') + ' ｜ 登记：' + Object.keys(DIFF_GUARD_EXCEPTIONS).join(','));
+
+  /* 档位分布：**按设计要求写死**（任务书 1.1 的档位分配表），不是按当前实现 ——
+   * 这是刻意的看门狗（坑 #6 的反向用法）：动任何一张图的档位都必须同时改任务书、评估报告与这里。 */
+  const dist = MAPS.reduce((a, m) => { a[m.diff] = (a[m.diff] || 0) + 1; return a; }, {});
+  assert('（原语层）档位分布 = T1:13 / T2:4 / T3:4 / T4:3 / T5:1（设计要求，非当前实现）',
+    dist[1] === 13 && dist[2] === 4 && dist[3] === 4 && dist[4] === 3 && dist[5] === 1 && Object.keys(dist).length === 5,
+    JSON.stringify(dist));
+
+  /* ---- 负向验证（坑 #51：没有这一步就分不清"断言有效"与"同义反复"）----
+   * 临时把 5-5（T5）改成 T1 → 它低于前置 5-4（T3）→ 未登记违规必须**恰好**是 5-5 这一条；还原后回零。 */
+  const boss55 = MAPS.find(m => m.id === '5-5');
+  const keep55 = boss55.diff;
+  boss55.diff = 1;
+  const neg = guardViolations().filter(v => !DIFF_GUARD_EXCEPTIONS[v.split('(')[0]]);
+  assert('（原语层·负向）把 5-5 的档位改成 1 → 护栏恰好报出 5-5 一条',
+    neg.length === 1 && neg[0].startsWith('5-5('), neg.join('；') || '(无违规)');
+  boss55.diff = keep55;
+  assert('（原语层·负向）还原后护栏回到零违规', guardViolations().filter(v => !DIFF_GUARD_EXCEPTIONS[v.split('(')[0]]).length === 0);
+}
+
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed ? 1 : 0);

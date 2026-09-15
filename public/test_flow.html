@@ -764,6 +764,60 @@
       UI.go('sortie');
 
       /* ============================================================
+       * V0.306 批次1：海域难度评级（列表徽标 / 详情徽标+提示 / 出击前徽标 / map-stars 停用）
+       * 断言的基准是 maps[].diff 这份**唯一数据源** —— UI 若另算一套档位，这里会红。
+       * ============================================================ */
+      {
+        const sc = document.querySelector('#screen');
+        const spots = sc.querySelectorAll('.area-map .spot-btn');
+        const badges = sc.querySelectorAll('.area-map .spot-btn .diff-badge');
+        R(spots.length > 0 && badges.length === spots.length, 'diff:listBadges',
+          'spots=' + spots.length + ' badges=' + badges.length);
+        /* 徽标数字必须与数据同源（不许 UI 另算档位） */
+        const seen = {};
+        Array.prototype.forEach.call(spots, b => {
+          const bd = b.querySelector('.diff-badge');
+          seen[b.dataset.map] = bd ? bd.textContent.trim() : '(无)';
+        });
+        R(Object.keys(seen).every(id => seen[id] === 'T' + MAPS.find(m => m.id === id).diff),
+          'diff:listBadgeSameSource', JSON.stringify(seen));
+
+        const d = sc.querySelector('.map-detail');
+        R(!!d.querySelector('.diff-badge') && !!d.querySelector('.diff-note'), 'diff:detailBadgeAndNote');
+        R(!!d.querySelector('.diff-badge') && /^T[1-5] .+/.test(d.querySelector('.diff-badge').textContent.trim()),
+          'diff:detailBadgeWithLabel', d.querySelector('.diff-badge') ? d.querySelector('.diff-badge').textContent.trim() : '(无)');
+        R(!!d.querySelector('.diff-note') && /\d/.test(d.querySelector('.diff-note').textContent),
+          'diff:detailNoteHasNumber', d.querySelector('.diff-note') ? d.querySelector('.diff-note').textContent.trim().slice(0, 40) : '(无)');
+        R(d.innerHTML.indexOf('undefined') < 0, 'diff:detailNoUndefined');
+        /* 坑 #54：双指标不得并存 —— 全文档不许再出现 .map-stars */
+        R(document.querySelectorAll('.map-stars').length === 0, 'diff:noMapStars');
+
+        /* 不破版：1080×1400（e2e.js 固定视口）下 diffNote 必须折行、不溢出容器 */
+        const note = d.querySelector('.diff-note');
+        R(!!note && note.scrollWidth <= note.clientWidth + 1 &&
+          note.getBoundingClientRect().right <= d.getBoundingClientRect().right + 1,
+          'diff:noteNoOverflow1080',
+          note ? ('sw=' + note.scrollWidth + ' cw=' + note.clientWidth) : '(无)');
+        R(document.documentElement.scrollWidth <= window.innerWidth + 1, 'diff:noHorizontalOverflow1080',
+          'doc=' + document.documentElement.scrollWidth + ' win=' + window.innerWidth);
+
+        /* 第三处：出击前页头（走真实出击流程，不伪造 DOM） */
+        Game.state.mapProgress['3-4'].cleared = true;
+        Game.state.fleet[2] = airNoCvFleet.slice();
+        const s306 = Sortie.start('3-5', 2);
+        R(s306.ok === true, 'diff:sortieStart35', JSON.stringify(s306));
+        if (s306.ok) {
+          UI.go('sortie');
+          const head = document.querySelector('#screen .map-head h3');
+          const hb = head ? head.querySelector('.diff-badge') : null;
+          R(!!hb && hb.textContent.trim() === 'T1 基础', 'diff:activeHeadBadge', head ? head.textContent.trim() : '(无)');
+          R(document.querySelectorAll('.map-stars').length === 0, 'diff:activeNoMapStars');
+          Sortie.returnHome();
+        }
+        UI.go('sortie');
+      }
+
+      /* ============================================================
        * V0.303：历史战役模式（页签 / 详情 / 匹配度自检 / 锁定态 / 出击 / 二波制）
        * 放在最后：本段会切到「战役」页签并真实驱动一场 BOSS 战，不应影响前面的海域布局断言。
        * ============================================================ */
@@ -793,6 +847,8 @@
         'hist:ruleConditionsListed');
       /* 简报里的 **强调** 必须被渲染成粗体，不能把 markdown 标记漏给玩家 */
       R(scrEl.innerHTML.indexOf('**') < 0, 'hist:noMarkdownLeak');
+      /* V0.306 坑 #54：战役详情原也渲染 .map-stars，已一并停用（战役无 diff 档，不做替代徽标） */
+      R(scrEl.querySelectorAll('.map-stars').length === 0, 'hist:noMapStars');
       /* V0.304：M1 禁入规则出击前可见；M2 混编三组条件 + 资源压力简报可见（坑 #22/#25） */
       openHist('M1');
       R(!!scrEl.querySelector('.hist-rule') && scrEl.querySelector('.hist-rule').textContent.indexOf('禁入') >= 0,

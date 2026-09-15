@@ -895,7 +895,31 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .map-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .map-head h3 { border-bottom: none; padding-bottom: 0; margin: 0; }
 .map-board-wrap { overflow-x: auto; }
+/* 注：`.map-stars`（3~15 颗金星）自 V0.306 起**不再渲染**（坑 #54：不得与难度档并存两个指标）。
+ * 规则保留以便回退，三处调用点已全部换成 `.diff-badge`。 */
 .map-stars { color: var(--gold); font-size: 12px; letter-spacing: 2px; vertical-align: 1px; }
+
+/* ---------- 海域难度档徽标（V0.306 批次1） ----------
+ * 配色纪律：只用**两个色阶**——低档冷色（蓝）→ 高档暖色（琥珀/橙/红），不做彩虹。
+ * 数据源 maps[].diff（1~5），渲染在 ui/sortie.js::diffBadge()。 */
+.diff-badge {
+  display: inline-block; margin-left: 6px; padding: 0 5px;
+  font-size: 10px; line-height: 15px; font-weight: bold; letter-spacing: .5px;
+  border: 1px solid currentColor; border-radius: 3px; vertical-align: 1px;
+  background: rgba(255, 255, 255, .05);
+}
+.diff-1 { color: #8fb3d9; }   /* T1 基础 —— 冷色最浅 */
+.diff-2 { color: #5aa8e8; }   /* T2 常规 —— 冷色正色 */
+.diff-3 { color: #e0b866; }   /* T3 考验 —— 冷暖交界 */
+.diff-4 { color: #f0a050; }   /* T4 高难 */
+.diff-5 { color: #e05555; }   /* T5 决战 —— 暖色最重 */
+/* 难度提示行：次要色、小字号、可折行（长句在 340px 右列与 1080px 视口下都不许溢出） */
+.diff-note {
+  font-size: 11px; line-height: 1.65; color: var(--dim);
+  border-left: 2px solid rgba(140, 175, 225, .45); padding-left: 7px;
+  margin: 2px 0 2px; word-break: break-word; overflow-wrap: anywhere;
+}
+.diff-note b { color: #ffd9a0; }
 .map-topbar { display: flex; gap: 16px; align-items: center; margin: 2px 0 10px; flex-wrap: wrap; }
 .map-gauge { flex: 1; min-width: 200px; }
 .gauge-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); }
@@ -1131,6 +1155,8 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 }
 .spot-btn.sel .spot-name { color: var(--gold); }
 .spot-prog { font-size: 10px; color: var(--dim); text-shadow: 0 1px 3px #000; }
+/* 难度档徽标在列表卡片上（flex 列内，去掉左外边距、再小一号） */
+.spot-btn .diff-badge { margin-left: 0; font-size: 9px; line-height: 13px; padding: 0 4px; }
 
 /* 编成自检 box（出击前情报）：放在**地图下方**（左列，紧接地图）。
  * 从右侧详情列（固定 340px 宽）搬来 —— 那堆长行在窄列里会被压成十几行；

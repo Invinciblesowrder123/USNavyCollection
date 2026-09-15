@@ -17,6 +17,7 @@
     "drift:v0302": "node scripts/drift_check.js --no-hist --no-waves --against scripts/battle_digest.baseline_v0302.txt",
     "drift:archive": "node scripts/drift_check.js --no-touch --no-hist --no-waves --against scripts/battle_digest.baseline_v0301.txt",
     "probe:recon": "node scripts/probe_recon_variance.js",
+    "diff:maps": "node scripts/map_difficulty.js 300",
     "shot": "node scripts/shot.js",
     "admin": "node scripts/create_admin.js"
   },

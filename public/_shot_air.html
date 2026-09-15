@@ -222,6 +222,31 @@
         SortieUI.sortieActive(scr);
         return;
       }
+      if (c.indexOf('diff') === 0) {
+        /* V0.306 批次1：海域难度档徽标人工核对页
+         *   diffA1     —— 区域 1 列表 + 1-4 详情（T1，短提示）
+         *   diffA3     —— 区域 3 列表 + 3-4 详情（T4，含引号与粗体的长句）
+         *   diffA5     —— 区域 5 列表 + 5-5 详情（T5，全项目最长提示 → 验折行）
+         *   diffActive —— 出击前页头徽标（3-5）
+         * 用法：npm start 后打开 http://127.0.0.1:3000/_shot_air.html?case=diffA5 */
+        Game.state.mapProgress['1-3'].cleared = true;
+        Game.state.mapProgress['3-3'].cleared = true;
+        Game.state.mapProgress['3-4'].cleared = true;
+        Game.state.mapProgress['5-4'].cleared = true;
+        if (c === 'diffActive') {
+          var stD = Sortie.start('3-5', 1);
+          if (!stD.ok) { scr.innerHTML = '<pre style="color:#f88">' + stD.msg + '</pre>'; return; }
+          SortieUI.sortieActive(scr);
+          return;
+        }
+        var areaD = c === 'diffA5' ? '5' : (c === 'diffA3' ? '3' : '1');
+        var pickD = c === 'diffA5' ? '5-5' : (c === 'diffA3' ? '3-4' : '1-4');
+        SortieUI.mapList(scr);
+        var tabD = scr.querySelector('[data-area="' + areaD + '"]'); if (tabD) tabD.click();
+        var mapD = scr.querySelector('[data-map="' + pickD + '"]'); if (mapD) mapD.click();
+        return;
+      }
+
       var st = Sortie.start('2-3', 1);
       if (!st.ok) { scr.innerHTML = '<pre style="color:#f88">' + st.msg + '</pre>'; return; }
       Game.state.sortie.node = 'A';                      // 2-3 A = 航空战点
