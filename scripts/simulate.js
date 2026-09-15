@@ -4022,13 +4022,13 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
     !!Progression.medalLedger().once['map:1-1']);
   assert('端到端：章产出必须写进战报（不许静默发放）', /战功章 \+/.test(eLog));
 
-  /* ---- 2.7 存档 v7 往返：章字段不丢、不被改写 ---- */
+  /* ---- 2.7 存档 v8 往返：章字段不丢、不被改写 ---- */
   const rt = Game.migrateSave(JSON.parse(JSON.stringify(Game.serialize())));
   assert('存档 v7：当前档迁移不改写章余额与账本（重复迁移稳定）',
     rt.stats.medals === Game.state.stats.medals &&
     JSON.stringify(rt.stats.medalLedger) === JSON.stringify(Game.state.stats.medalLedger) &&
     JSON.stringify(rt) === JSON.stringify(Game.migrateSave(JSON.parse(JSON.stringify(rt)))));
-  assert('存档 v7：saveVersion 已推到 7（迁移链末端）', Game.CURRENT_SAVE_VERSION === 7 && rt.saveVersion === 7);
+  assert('存档 v8：saveVersion 已推到 8（迁移链末端）', Game.CURRENT_SAVE_VERSION === 8 && rt.saveVersion === 8);
 
   /* ---- 2.8 【集成层 · P0 回归】每周可重复产出源必须走**真实结算链路** ----
    * 交付评审 P0：首版把「账本里本次有没有新发 histForm」当成「本场是否史实重演 S 胜」接到周项，

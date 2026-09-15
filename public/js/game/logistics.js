@@ -66,6 +66,75 @@ const Logistics = (() => {
     return true;
   }
 
+  /* ============ 舰队派遣可用性（V0.306 批次2 / 坑 #44）============
+   * **唯一**的"这支舰队能不能派出去"判据 —— 远征与支援**两处都读它**。
+   * V0.305 的 P0 就是"同一判据三份副本、只有第三份写错"；见到第二份副本就停。
+   *
+   * 分两层，语义不同，不许混：
+   *  ① `fleetDispatchBlocker` —— **硬**拦截（未解锁 / 空 / 远征中 / 入渠中 / 大破）。
+   *     远征与支援都不许派；支援命中它时 `Sortie.start` 直接拒绝出击。
+   *  ② `fleetFiringShips` —— **软**条件（还有几艘能开火：活着、未在渠、非红脸）。
+   *     支援"全员红脸"**不阻止出击**，只是不发动并在战报写明归因（任务书 2.6 反向断言）。
+   *
+   * 返回 `{ ok, msg }`，`msg` 可直接展示给玩家（拒绝理由必须可分辨）。 */
+  function fleetDispatchBlocker(fleetIdx) {
+    const G = GameRef();
+    const st = G.state;
+    if (!G.isFleetUnlocked(fleetIdx)) return { ok: false, msg: '该舰队尚未解锁！' };
+    const fleet = st.fleet[fleetIdx];
+    if (!fleet || !fleet.length) return { ok: false, msg: '舰队为空！' };
+    if (st.expeditions[fleetIdx]) return { ok: false, msg: '该舰队正在远征中！' };
+    for (const uid of fleet) {
+      const s = st.ships[uid];
+      if (!s) continue;
+      if (st.repairs.some(r => r && r.ship === uid)) return { ok: false, msg: '舰队中有舰娘正在入渠，无法出击！' };
+      if (s.hp <= Math.floor(G.shipDef(s).stats[0] * 0.25)) return { ok: false, msg: '舰队中有大破舰娘，无法出击！' };
+    }
+    return { ok: true, msg: null };
+  }
+
+  /* 红脸阈值：与 `Battle.MORALE_TIERS` 的 'red' 档（min 0，即 <30）同源 —— 不许另写一份 */
+  const RED_FACE_BELOW = 30;
+  /* 该舰队此刻**能开火**的舰（活着 + 未入渠 + 非红脸）。支援不发动的判据读它。 */
+  function fleetFiringShips(fleetIdx) {
+    const G = GameRef();
+    const st = G.state;
+    const fleet = st.fleet[fleetIdx] || [];
+    return fleet.filter(u => {
+      const s = st.ships[u];
+      if (!s || s.hp <= 0) return false;
+      if (st.repairs.some(r => r && r.ship === u)) return false;
+      return Number(s.morale) >= RED_FACE_BELOW;
+    });
+  }
+
+  /* ============ 支援舰队的当日占用（V0.306 批次2 / 坑 #45）============
+   * 键必须走 `Progression.periodKeys().daily` —— 与日常任务 / 改修次数上限**同一时刻**翻页。
+   * **不许**另写"距上次支援 24 小时"的冷却（会与既有日重置错位，出现"日常刷新了、支援还锁着")。 */
+  function todayKey() {
+    const P = (typeof Progression !== 'undefined') ? Progression : ((typeof window !== 'undefined') ? window.Progression : null);
+    if (P && typeof P.periodKeys === 'function') return P.periodKeys(Date.now()).daily;
+    return new Date().toISOString().slice(0, 10);
+  }
+  function supportUsedToday(fleetIdx) {
+    const st = GameRef().state;
+    const sup = st.support;
+    if (!sup || typeof sup !== 'object') return false;
+    if (sup.day !== todayKey()) return false;
+    return Array.isArray(sup.fleets) && sup.fleets.some(n => Number(n) === Number(fleetIdx));
+  }
+  /* 记一次支援占用（跨日自动翻页：day 不是今天就重置 fleets） */
+  function markSupportUsed(fleetIdx) {
+    const st = GameRef().state;
+    const key = todayKey();
+    if (!st.support || typeof st.support !== 'object' || st.support.day !== key) {
+      st.support = { day: key, fleets: [] };
+    }
+    if (!Array.isArray(st.support.fleets)) st.support.fleets = [];
+    if (!st.support.fleets.some(n => Number(n) === Number(fleetIdx))) st.support.fleets.push(Number(fleetIdx));
+    return st.support;
+  }
+
   function startExpedition(fleetIdx, exId) {
     const G = GameRef();
     const st = G.state;
@@ -73,6 +142,8 @@ const Logistics = (() => {
     const ex = EXPEDITIONS.find(e => e.id === exId);
     if (!ex) return { ok: false, msg: '远征不存在' };
     if (st.expeditions[fleetIdx]) return { ok: false, msg: '该舰队已在远征中！' };
+    /* 双向互斥之一：当日已作为支援出击的舰队不能远征（坑 #43/#50 —— 与支援分支共用同一占用记录） */
+    if (supportUsedToday(fleetIdx)) return { ok: false, msg: '该舰队今日已作为支援出击，无法远征！' };
     const fleet = st.fleet[fleetIdx];
     if (!fleet.length) return { ok: false, msg: '舰队为空！' };
     if (!checkExReq(fleet, ex)) return { ok: false, msg: '不满足远征条件（舰船数量/舰种要求）！' };
@@ -264,7 +335,7 @@ const Logistics = (() => {
     return fleets;
   }
 
-  return { startExpedition, claimExpedition, checkExReq, checkExCond, supplyCost, supplyFleet, supplyShipCost, supplyShip, repairCost, startRepair, cancelRepair, practiceReady, PracticeGen };
+  return { startExpedition, claimExpedition, checkExReq, checkExCond, supplyCost, supplyFleet, supplyShipCost, supplyShip, repairCost, startRepair, cancelRepair, practiceReady, PracticeGen, fleetDispatchBlocker, fleetFiringShips, supportUsedToday, markSupportUsed };
 })();
 
 if (typeof window !== 'undefined') window.Logistics = Logistics;

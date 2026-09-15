@@ -1962,3 +1962,38 @@ E2E **+13** —— 列表徽标与数据同源 ｜ 详情徽标带中文档位 +
 
 **门禁**：`battle.js` 改动后 sim **1899/0** ｜ drift **12/9/9 逐位一致**（支援默认关闭，四基线在批次2 收尾时再补 `drift:v0305`）。
 **下一步**：任务 2.2 存档 v7→v8（`st.support`）→ 2.3 消耗与互斥（复用 `logistics.js` 的可用性判据）→ 2.4 UI → 2.5 集成层断言 + 红绿验证。
+
+## 2026-09-16 —— V0.306 批次2 任务 2.2~2.4：存档 v8 + 消耗与双向互斥 + drift 第四/第五基线
+
+**2.2 存档 v7 → v8**（`state.js`）：`CURRENT_SAVE_VERSION = 8`；新增 `st.support = { day, fleets }`；
+新增 `migrateV7ToV8`（**唯一补写点**，`SAVE_MIGRATIONS` 追加 `7:`）；`newGame()` 与 state 字面量同步补。
+`normalizeSave` **不补** `support`（坑 #30），并加了负向断言守着。
+迁移测试 **54 → 65 项**（+11：v7→v8 补键 / 不覆盖既有章与预设 / 重复迁移稳定 / v1 全链路带齐 /
+残缺与脏数据补形（舰队编号只留 1~4 整数）/ v8 当前档 support 不被改写 / normalizeSave 不补）。
+
+**2.4 消耗与互斥**：
+- 坑 #44：从 `logistics.js:79-84` 抽出 **`fleetDispatchBlocker`（硬拦截：未解锁/空/远征中/入渠/大破）**
+  与 **`fleetFiringShips`（软条件：能开火 = 活着 + 未入渠 + 非红脸 <30）**，远征与支援**两处共用**。
+  **全员红脸不阻止出击**，只是不发动并在战报写明归因（任务书 2.6 反向断言）。
+- 坑 #45：`supportUsedToday` / `markSupportUsed` 走 **`Progression.periodKeys().daily`**，与日常任务同一时刻翻页；
+  **没有**另写 24 小时冷却。派遣即占用（撤退也占用 —— 代价侧，符合 P2 取舍）。
+- 坑 #43：候选集 `Sortie.supportCandidates()` = 已解锁 − 出击中，**结构排除**。Q4：历史战役拒绝支援。
+- 坑 #42：支援消耗（油/弹 −5%/场、士气 −10/场，附录 C P-2）**扩展 `settleBattle` 既有写入点**，未另起一份。
+- 双向互斥：`startExpedition` 拒绝"今日已支援"的舰队；`Sortie.start` 拒绝远征中/入渠/大破/当日已支援的支援队。
+
+**⚠️ 口径决定（需追认）**：支援**每个战斗节点都发动**（道中 + BOSS），消耗按场结算。
+定价表（`支援舰队定价实测_V0.306.md`）测的是**单场**收益，因此它是**下界**；
+多节点图上收益与油弹/士气成本同步线性放大 —— 士气 −10/场，4~5 场后自然触底。
+
+**drift 基线（坑 #40）**：新增 `--no-support` / `--with-support` 两个开关。
+- `drift:v0305` = `--no-support --against baseline_v0305.txt`（12 组）→ **逐位一致**，且该文件与 V0.305 的
+  `baseline.txt` **sha256 逐字节相同**（`af0c8a80…`，1907 B）⇒ 硬证明"关掉支援 = 一位没动"。
+- `drift:sup` = `--with-support --against baseline_v0306_support.txt`（14 组，含 2 组支援场景）→ 逐位一致，
+  让支援自身的随机数流也有基线看守（否则改支援逻辑将无人发现）。
+
+**环境坑（本机）**：PowerShell 的 `Out-File` 会按控制台宽度**折行**并加 BOM ——
+用它生成 drift 基线会导致**假漂移**（12/14 组全红，而 plain drift 全绿）。
+生成基线这类"必须逐字节精确"的文件要用原生重定向或 Node `fs.writeFileSync(execFileSync(..., {encoding:'buffer'}))`。
+
+**门禁**：sim **1899/0** ｜ migration **65/0** ｜ drift **12/9/9 + v0305 12 + sup 14 全部逐位一致**。
+**下一步**：任务 2.5 UI（出击准备页选择器 / 情报室自检行 / 战报行 / 结算归因）→ 2.6 集成层断言 + 红绿验证。

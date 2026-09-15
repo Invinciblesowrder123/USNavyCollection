@@ -96,11 +96,18 @@ const NO_TOUCH = process.env.USNC_NO_TOUCH === '1' || args.includes('--no-touch'
  * 这是「除本版新机制外一位未动」的硬证明（与 V0.302 的 --no-touch 同一套方法论）。 */
 const NO_HIST = process.env.USNC_NO_HIST === '1' || args.includes('--no-hist');
 const NO_WAVES = process.env.USNC_NO_WAVES === '1' || args.includes('--no-waves');
+/* V0.306 的两个开关（坑 #40：支援炮击是本版唯一新增的随机数消费者）：
+ *   --no-support 显式关掉支援阶段 → 摘要必须**逐位**回到 V0.305 基线（= npm run drift:v0305）；
+ *   --with-support 追加 2 组**带支援**的场景 → 与 baseline_v0306_support.txt 对拍（= npm run drift:sup），
+ *     让支援自身的随机数流也有基线看守，否则改支援逻辑将无人发现。 */
+const NO_SUPPORT = process.env.USNC_NO_SUPPORT === '1' || args.includes('--no-support');
+const WITH_SUPPORT = args.includes('--with-support');
 function run(name, fleet, enemyKey, opts, n) {
   const ef = (typeof History !== 'undefined' && History.enemy(enemyKey)) || ENEMY_FLEETS[enemyKey];
   const base = Object.assign({}, opts);
   if (NO_TOUCH) base.touch = false;
   if (NO_HIST) base.historic = false;      // 显式关掉史实乘区（防"默认开启"这类回退）
+  if (NO_SUPPORT) { base.support = false; base.supportFleet = []; }
   let ranks = '', h = 5381, killed = 0, myDmg = 0, logLen = 0;
   for (let i = 0; i < n; i++) {
     const r = Battle.battle(fleet, ef.ships, '单纵阵', ef.formation, Object.assign({ fleetIdx: 1 }, base));
@@ -145,6 +152,16 @@ if (!NO_WAVES) {
   }
   lines.push(run('waves-H1X2-second', waveFleet, 'H1X2',
     { allowNight: true, airMode: true, historic: true, histHit: 1.05, histEvd: 1.05 }, 80));
+}
+/* ---- V0.306 支援场景（只在 --with-support 时追加；--no-support 时不追加，摘要长度回到 12 行 = V0.305 基线）---- */
+if (WITH_SUPPORT && !NO_SUPPORT) {
+  /* 支援队 = 炮击型后备（与 `scripts/sim_support.js` 的定价口径同一支编成） */
+  const supFleet = mkFleet(['washington', 'indiana', 'baltimore', 'sanfrancisco', 'atlanta', 'kidd'], 90, 1);
+  Game.state.fleet[2] = supFleet.slice();
+  lines.push(run('support-strong-vs-F09', strong, 'F09',
+    { allowNight: false, support: true, supportFleet: supFleet }, 80));
+  lines.push(run('support-strong-vs-F35', strong, 'F35',
+    { allowNight: true, support: true, supportFleet: supFleet }, 80));
 }
 const out = lines.join('\n') + '\n';
 

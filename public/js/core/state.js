@@ -10,7 +10,7 @@
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
-  const CURRENT_SAVE_VERSION = 7;
+  const CURRENT_SAVE_VERSION = 8;
   const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
@@ -66,6 +66,7 @@ const Game = (() => {
     development: [],                    // {start,end,recipe} 开发队列
     repairs: [null, null],              // 入渠槽位 {ship,start,end}
     expeditions: { 1: null, 2: null },  // 舰队编号 -> {exId,start,end}
+    support: { day: '', fleets: [] },   // 支援舰队当日占用（V0.306 坑 #45）：day=periodKeys().daily，fleets=当日已作为支援出击的舰队编号
     quests: {},                         // qid -> {progress, claimed}
     mapProgress: {},                    // mapId -> {gauge, cleared, kills}
     sortie: null,                       // {mapId, fleetIdx, node, path[]}
@@ -450,6 +451,7 @@ const Game = (() => {
     state.development = [];
     state.repairs = [null, null];
     state.expeditions = { 1: null, 2: null };
+    state.support = { day: '', fleets: [] };
     state.quests = {};
     state.mapProgress = {};
     state.sortie = null;
@@ -632,7 +634,30 @@ const Game = (() => {
     return save;
   }
 
-  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5, 5: migrateV5ToV6, 6: migrateV6ToV7 };
+  /* v7 -> v8：支援舰队当日占用（V0.306 批次2 / 坑 #45）。
+   * 新增 `st.support = { day, fleets }`：`day` 用 `Progression.periodKeys().daily`
+   * （与日常任务/改修次数上限同一时刻翻页，**不许另写 24 小时冷却**），
+   * `fleets` 是当日已作为支援出击过的舰队编号。
+   * **只补键，不动任何已有数值**。
+   * 注意：本函数是 support 键的**唯一补写点** —— `normalizeSave` 依然不补新字段
+   * （坑 #3 / #19 / #30：补了就绕过迁移器，迁移测试变空转）。 */
+  function migrateV7ToV8(data) {
+    const save = cloneSave(data);
+    const sup = save.support;
+    if (!sup || typeof sup !== 'object' || Array.isArray(sup)) {
+      save.support = { day: '', fleets: [] };
+    } else {
+      save.support.day = typeof sup.day === 'string' ? sup.day : '';
+      save.support.fleets = Array.isArray(sup.fleets)
+        ? sup.fleets.map(n => parseInt(n, 10)).filter(n => n >= 1 && n <= 4)
+        : [];
+    }
+    save.saveVersion = 8;
+    save.version = 8;
+    return save;
+  }
+
+  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5, 5: migrateV5ToV6, 6: migrateV6ToV7, 7: migrateV7ToV8 };
   function normalizeSave(save) {
     if (!save.resources || typeof save.resources !== 'object') {
       save.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 };

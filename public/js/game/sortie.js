@@ -12,6 +12,31 @@ const Sortie = (() => {
     if (typeof require === 'function') { try { return require('./battle.js').Battle; } catch (e) { /* ignore */ } }
     return null;
   };
+  /* logistics.js 参照（远征/支援**共用**的派遣可用性判据，坑 #44） */
+  const LogisticsRef = () => {
+    if (typeof Logistics !== 'undefined' && Logistics) return Logistics;
+    if (typeof window !== 'undefined' && window.Logistics) return window.Logistics;
+    if (typeof require === 'function') { try { return require('./logistics.js').Logistics; } catch (e) { /* ignore */ } }
+    return null;
+  };
+
+  /* ============ 支援舰队（V0.306 批次2）============
+   * 候选集 = 已解锁舰队 − 正在出击的舰队 —— 用**结构**排除，不靠 UI 校验或运行时 if 兜底（坑 #43）。
+   * UI 的选择器与引擎的校验都读这一个函数。 */
+  function supportCandidates(sortieFleetIdx) {
+    const G = GameRef();
+    const out = [];
+    for (const i of [1, 2, 3, 4]) {
+      if (!G.isFleetUnlocked(i)) continue;
+      if (Number(i) === Number(sortieFleetIdx)) continue;
+      out.push(i);
+    }
+    return out;
+  }
+
+  /* 支援消耗（附录 C P-2）：每舰每场 油/弹 −5%、士气 −10 —— 低于出击的 −15，休整一天可回。
+   * ⚠️ 与出击消耗**共用同一个写入点**（`settleBattle`），不许另写一份（坑 #42）。 */
+  const SUPPORT_COST = { fuel: 0.05, ammo: 0.05, morale: 10 };
 
   /* 消耗指定id的装备（舰上装备中，取出并销毁） */
   function consumeEquip(st, uid, eqId) {
@@ -62,11 +87,11 @@ const Sortie = (() => {
     return resolveMap(st.sortie.mapId);
   }
 
-  function start(mapId, fleetIdx) { return startInternal(mapId, fleetIdx, false); }
+  function start(mapId, fleetIdx, opts) { return startInternal(mapId, fleetIdx, false, opts); }
   /* 强敌阶出击入口（独立函数，保持 start(mapId, fleetIdx) 签名不变 —— 任务书任务 1.2） */
-  function startHard(mapId, fleetIdx) { return startInternal(mapId, fleetIdx, true); }
+  function startHard(mapId, fleetIdx, opts) { return startInternal(mapId, fleetIdx, true, opts); }
 
-  function startInternal(mapId, fleetIdx, hard) {
+  function startInternal(mapId, fleetIdx, hard, opts) {
     const G = GameRef();
     const st = G.state;
     const map = resolveMap(mapId);
@@ -110,8 +135,27 @@ const Sortie = (() => {
     const warn = (minFuel < 0.5 || minAmmo < 0.5)
       ? `舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！弹药<50%伤害减半，0%无法炮击，建议先在后勤补给！`
       : null;
+    /* ---- 支援舰队（V0.306 批次2 / 坑 #43）----
+     * Q4：历史战役禁用支援 —— 史实重演要求参战舰艇独立作战。
+     * 候选集由**结构**给出（已解锁 − 出击中），硬可用性复用远征那一套（坑 #44）。 */
+    const supIdx = (opts && opts.supportFleet) ? Number(opts.supportFleet) : 0;
+    if (supIdx) {
+      if (hist) return { ok: false, msg: '史实重演要求参战舰艇独立作战：历史战役无法派遣支援舰队！' };
+      if (!supportCandidates(fleetIdx).includes(supIdx)) {
+        return { ok: false, msg: '该舰队不能作为支援舰队（未解锁，或正是本次出击的舰队）！' };
+      }
+      const blk = LogisticsRef().fleetDispatchBlocker(supIdx);
+      if (!blk.ok) return { ok: false, msg: '支援舰队不可用：' + blk.msg };
+      if (LogisticsRef().supportUsedToday(supIdx)) {
+        return { ok: false, msg: '该舰队今日已作为支援出击（每支舰队每天只能支援一次）！' };
+      }
+    }
     /* 士气轮换提醒（方向三）：只提示不拦截（P0-2），随出击结果一并返回给 UI */
     const advice = moraleAdvice(fleetIdx);
+    /* 当日占用：派遣即记录（坑 #45）—— 用 `periodKeys().daily`，与日常任务同一时刻翻页。
+     * 撤退也占用：这是「用后勤机会换前线容错」的代价侧（P2 取舍），不是 bug。 */
+    let supportMark = null;
+    if (supIdx) supportMark = LogisticsRef().markSupportUsed(supIdx);
     st.sortie = {
       mapId, fleetIdx, node: map.start, path: [map.start], finished: false, nightDisabled: false, daPoSeen: false,
       /* 历史战役（V0.303）：historic = 战役 id（常规图为 null）；hard = 强敌阶；wave = 第几波；
@@ -119,9 +163,11 @@ const Sortie = (() => {
       historic: hist ? map.id : null,
       hard: !!hard,
       wave: 1,
-      histSunk: 0
+      histSunk: 0,
+      /* 支援舰队（V0.306）：0 = 未派遣；否则为舰队编号 */
+      supportFleet: supIdx || 0
     };
-    return { ok: true, warn, advice, historic: hist ? map.id : null, hard: !!hard };
+    return { ok: true, warn, advice, historic: hist ? map.id : null, hard: !!hard, supportFleet: supIdx || 0, supportMark };
   }
 
   /* 当前舰队中处于大破状态的僚舰（非旗舰） */
@@ -278,14 +324,29 @@ const Sortie = (() => {
       histMatch = History.matchRule(map.histRule, fleetTypes(so.fleetIdx)).ok;
       if (histMatch) { histHit = map.bonus.hit; histEvd = map.bonus.evd; }
     }
+    /* ---- 支援舰队（V0.306 批次2）----
+     * `opts.support` 为假值 → 引擎整个支援阶段跳过且**不消耗任何随机数**（坑 #40 / `drift:v0305` 的前提）。
+     * 可开火判定（`fleetFiringShips`）与远征共用同一套可用性判据（坑 #44）：
+     * **全员红脸不阻止出击**，只是不发动 —— 原因写进战报，玩家要能归因。 */
+    const supIdx = so.supportFleet || 0;
+    const supShips = supIdx ? LogisticsRef().fleetFiringShips(supIdx) : [];
+    const supSkip = supIdx && !supShips.length ? 'NO_ALIVE' : null;
     const result = Battle.battle(fleet, enemyFleet.ships, formation, enemyFleet.formation, {
       allowNight: false, fleetIdx: so.fleetIdx,
       sub: def.mode === 'sub',            // 潜艇点：敌潜艇速力打击修正 + 60% 耐久封顶
       nightOnly: def.mode === 'night',    // 夜战点：跳过昼战直接夜战
       airMode: def.mode === 'air',        // 航空战点：无航空战力时进入被动防空分支（单次轰炸伤害封顶 60%）
       historic: hist,                     // 历史战役：史实编成加成乘区（默认 false → 不读不写任何字段）
-      histHit, histEvd
+      histHit, histEvd,
+      support: supShips.length ? true : false,   // 支援炮击开关（假值 = 阶段整体跳过，零随机数）
+      supportFleet: supShips                     // 支援队可开火舰（uid）
     });
+    /* 未发动必须写明原因（不许静默）—— 三种理由可分辨：未派遣 / 全员红脸 / 无可攻击目标 */
+    if (supIdx && !result.support) {
+      result.log.push(supSkip === 'NO_ALIVE'
+        ? `支援舰队（第 ${supIdx} 舰队）全员士气过低，本场未实施支援炮击。`
+        : '支援舰队本场未实施支援炮击（无可攻击目标）。');
+    }
     if (oilerUsed) result.log.unshift('「洋上补给」发动！舰队油弹恢复到100%。');
     /* 战报显式说明加成是否生效（Gate 3：操作前知道自己在选什么；这里做结算侧复核） */
     if (hist) {
@@ -579,6 +640,24 @@ const Sortie = (() => {
     }
     if (ammoZero) {
       result.log.push('舰队弹药已耗尽！返回母港后请及时补给，否则舰娘将无法炮击。');
+    }
+    /* 支援舰队消耗（V0.306 批次2 / 坑 #42）—— **扩展上面同一个写入点**，不许另起一份。
+     * 每舰每场 油/弹 −5%、士气 −10（附录 C P-2）：低于出击的 −15，休整一天可回。
+     * 注意：支援队**不参与**上面的主队循环（它不在 `fleet` 里），但消耗语义同构。 */
+    const supIdx = so.supportFleet || 0;
+    if (supIdx) {
+      for (const uid of st.fleet[supIdx] || []) {
+        const s = st.ships[uid];
+        if (!s) continue;
+        s.supply.fuel = Math.max(0, s.supply.fuel - SUPPORT_COST.fuel);
+        s.supply.ammo = Math.max(0, s.supply.ammo - SUPPORT_COST.ammo);
+        s.morale = Math.max(0, s.morale - SUPPORT_COST.morale);
+      }
+      /* 结算归因（任务 2.5）—— 支援的贡献必须显式写在战报里，不许静默 */
+      if (result.support && result.support.fired) {
+        result.log.push(`【结算归因】支援舰队（第 ${supIdx} 舰队）本场贡献 ${result.support.dmg} 点伤害`
+          + `${result.support.sunk ? `、击沉 ${result.support.sunk} 艘` : ''}（命中 ${result.support.hit} 发）。`);
+      }
     }
 
     /* 命中同步：战斗对象的hp写回存档 */
@@ -1081,7 +1160,9 @@ const Sortie = (() => {
     /* 海域作战目标（方向四） */
     checkObjectives, objectiveCondText, objectivePreview, objectiveMet, rewardText,
     /* 士气（方向三） */
-    fleetMorale, moraleAdvice
+    fleetMorale, moraleAdvice,
+    /* 支援舰队（V0.306 批次2）：候选集（结构排除，坑 #43）+ 消耗常量（附录 C P-2） */
+    supportCandidates, SUPPORT_COST
   };
 })();
 

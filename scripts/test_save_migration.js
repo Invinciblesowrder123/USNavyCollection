@@ -141,6 +141,35 @@ function v6Save() {
   };
 }
 
+/* v7 → v8：支援舰队当日占用 st.support（V0.306 批次2 / 坑 #45）；只补键、不动既有数值。
+ * 注意：本档**故意不含** support —— 迁移器是它的唯一补写点。 */
+function v7Save() {
+  return {
+    saveVersion: 7, version: 7,
+    admiral: { name: '提督', level: 55, exp: 0 },
+    resources: { fuel: 960, ammo: 950, steel: 940, baux: 930, screws: 18, devMats: 24 },
+    ships: {
+      s1: {
+        uid: 's1', id: 'iowa', kai: 2, lv: 99, hp: 90, morale: 49, equipped: [], modern: {}, supply: { fuel: 1, ammo: 1 },
+        record: Object.assign(Game.defaultRecord(), {
+          sorties: 60, expeditions: 11, sWin: 42, bossKills: 24, lastBoss: '深海大和栖姬',
+          historic: { H1: { clearAt: 1700000000001, hardWin: 1700000000002 } }
+        })
+      }
+    },
+    equipment: { e1: { uid: 'e1', id: 'gun16in_50', star: 6, locked: true } },
+    fleet: { 1: ['s1'], 2: [], 3: [], 4: [] },
+    library: { ships: { iowa: true }, equips: { gun16in_50: true } },
+    stats: {
+      sink: 33, sortie: 95, win: 77, sWin: 44, bossSWin: { '1-1': 6 },
+      medals: 12, medalLedger: { once: { 'map:1-1': 1 }, weekly: { 'ex:1': 2 } },
+      historic: { 'H1:firstClear': 1700000000000 }, objectives: { '1-2-s': 1700000000001 }
+    },
+    presets: [{ name: '常用', ships: ['iowa'], at: 1700000000009 }],
+    mapProgress: {}
+  };
+}
+
 console.log('\n== 存档迁移专项测试 ==');
 
 /* v1 旧档 → 当前版本 */
@@ -271,7 +300,7 @@ check('v6 档的战役账本已存在（新档同形状）',
 /* ============ v6 → v7：战功章（V0.305）+ 编成预设槽 ============
  * 只补键、不动任何既有数值；本函数是这三个键的**唯一补写点**（坑 #30）。 */
 const fromV6 = Game.migrateSave(v6Save());
-check('v6 档升级到当前版本（v7）', fromV6.saveVersion === CUR && fromV6.version === CUR && CUR === 7, 'CUR=' + CUR);
+check('v6 档升级到当前版本（v8）', fromV6.saveVersion === CUR && fromV6.version === CUR && CUR === 8, 'CUR=' + CUR);
 check('v6 档补齐战功章余额为 0', fromV6.stats.medals === 0, String(fromV6.stats.medals));
 check('v6 档补齐章账本为空结构',
   fromV6.stats.medalLedger && typeof fromV6.stats.medalLedger === 'object' &&
@@ -311,6 +340,55 @@ check('v6 档章账本残缺 → 补形但保留已有条目',
       typeof s.stats.medalLedger.weekly === 'object';
   })());
 
+/* ============ v7 → v8：支援舰队当日占用 st.support（V0.306 批次2 / 坑 #45）============
+ * 只补键、不动任何既有数值；`migrateV7ToV8` 是 support 键的**唯一补写点**（坑 #30）。
+ * 形状约定：`{ day: <periodKeys().daily 日期串>, fleets: [舰队编号...] }`。
+ * ⚠️ 不许另写 24 小时冷却（坑 #45）—— day 必须与日常任务/改修次数上限同一时刻翻页。 */
+const fromV7 = Game.migrateSave(v7Save());
+check('v7 档升级到当前版本（v8）', fromV7.saveVersion === CUR && fromV7.version === CUR && CUR === 8, 'CUR=' + CUR);
+check('v7 档补齐 support 为 {day:"",fleets:[]}',
+  fromV7.support && typeof fromV7.support === 'object' && !Array.isArray(fromV7.support) &&
+  fromV7.support.day === '' && Array.isArray(fromV7.support.fleets) && fromV7.support.fleets.length === 0,
+  JSON.stringify(fromV7.support));
+check('v7 档迁移不覆盖既有战功章字段与预设槽',
+  fromV7.stats.medals === 12 && fromV7.stats.medalLedger.once['map:1-1'] === 1 &&
+  fromV7.stats.medalLedger.weekly['ex:1'] === 2 && fromV7.presets.length === 1 &&
+  fromV7.presets[0].name === '常用');
+check('v7 档迁移不覆盖既有战役账本与全局统计',
+  fromV7.stats.historic['H1:firstClear'] === 1700000000000 &&
+  fromV7.stats.objectives['1-2-s'] === 1700000000001 &&
+  fromV7.stats.sortie === 95 && fromV7.stats.sWin === 44);
+check('v7 档迁移不覆盖履历与资源',
+  fromV7.ships.s1.record.sorties === 60 &&
+  fromV7.ships.s1.record.historic['H1'].hardWin === 1700000000002 &&
+  fromV7.resources.screws === 18 && fromV7.resources.devMats === 24);
+check('v7 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV7)) === JSON.stringify(fromV7));
+
+/* 全链路：v1 旧档一路迁到 v8，也必须带齐 support（链路无缺口） */
+check('v1 旧档一路迁移到当前版本同样带齐 support',
+  fromV1.support && fromV1.support.day === '' && Array.isArray(fromV1.support.fleets) &&
+  fromV1.support.fleets.length === 0,
+  JSON.stringify(fromV1.support));
+
+/* 迁移器健壮性：v7 档残留的 support 残缺/脏数据要被清成形，且合法部分保留 */
+check('v7 档 support 残缺 → 补形且不崩',
+  (() => {
+    const s = Game.migrateSave(Object.assign(v7Save(), { support: { fleets: 'oops' } }));
+    return s.support.day === '' && Array.isArray(s.support.fleets) && s.support.fleets.length === 0;
+  })());
+check('v7 档 support 脏舰队编号 → 只保留 1~4 的整数',
+  (() => {
+    const s = Game.migrateSave(Object.assign(v7Save(), { support: { day: '2026-09-16', fleets: [2, 9, '3', null, 0] } }));
+    return s.support.day === '2026-09-16' && JSON.stringify(s.support.fleets) === JSON.stringify([2, 3]);
+  })());
+check('v8 当前档的 support 不被迁移器改写（当日占用跨会话保留）',
+  (() => {
+    const s = Game.migrateSave(Object.assign(v7Save(), {
+      saveVersion: 8, version: 8, support: { day: '2026-09-16', fleets: [3] }
+    }));
+    return s.support.day === '2026-09-16' && JSON.stringify(s.support.fleets) === JSON.stringify([3]);
+  })());
+
 /* 坑 #30 负向断言：normalizeSave **不许**补这些新键（补了就绕过迁移器，迁移测试变空转） */
 {
   const raw = { resources: { fuel: 1 }, ships: {}, equipment: {} };
@@ -318,6 +396,7 @@ check('v6 档章账本残缺 → 补形但保留已有条目',
   check('normalizeSave 不补战功章字段（坑 #30：新键只能由迁移器补）',
     n.stats === undefined || n.stats.medals === undefined);
   check('normalizeSave 不补编成预设槽（同上）', n.presets === undefined);
+  check('normalizeSave 不补支援舰队占用 support（同上，V0.306 v8）', n.support === undefined);
 }
 
 /* 损坏存档 */
