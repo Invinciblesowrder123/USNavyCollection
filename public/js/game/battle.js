@@ -253,6 +253,88 @@ const Battle = (() => {
    * 实测叠加：索敌成功 + 触接成功 + 史实匹配 = 1.03 × 1.15 × 1.05 = **1.243725**（+24.37%）。
    * `opts.historic === false`（默认）时整个乘区不生效、不读不写任何字段 → 战役外逐位不变。 */
   const HIST_HIT = 1.05;
+
+  /* ============ 支援舰队的支援炮击（V0.306 批次2） ============
+   * 时机：昼战开幕阶段 —— 航空战 / 开幕雷击之后、**第一轮炮击之前**。
+   * 行为：支援队随机 2~3 艘各打一轮**自由炮击**（cap 由备份舰队提供，主力舰队失去的是"那支舰队的当日机会"）。
+   *
+   * ⚠️ 全部数值是 **[PLACEHOLDER]**：由 `scripts/sim_support.js` 实测回调确定后回填（任务书附录 C P-1/P-2）。
+   *    实测期用 `opts.support = { coef, min, max }` 逐组扫参，冻结值即下面三个常量。
+   *
+   * ⚠️ **不吃**下列乘区（逐项反向断言守着）：
+   *    阵型（命中补正 ×1.2 只给复纵/单横/梯形的进攻方 —— 支援一律走 `单纵阵` 名义阵型 = 补正 1）、
+   *    交战形态（`engMult` 传 1）、特殊攻击（不调用 `resolveDayAttack`）、
+   *    史实加成 `_histHit`、触接 `_touchHit`、索敌 `_reconHit`。
+   *    实现方式是**构造独立的战斗对象**：它们天生没有这三个字段（`hitMods()` 返回 total = 1）。
+   *
+   * ⚠️ 支援队**不进入** `sideA`：不被反击、伤损不计入主队、不影响 S/A/B 评价与 MVP。
+   * ⚠️ `opts.support` 为假值 → **整个阶段跳过且不消耗任何随机数** —— 这是 `drift:v0305` 能逐位回到
+   *    V0.305 的唯一前提（坑 #40）。 */
+  /* ⚠️ 以下四个值已由 `scripts/sim_support.js` 实测**冻结**（V0.306 批次2 任务 2.1 的产出，
+   *    测量报告：`../design/支援舰队定价实测_V0.306.md`）。**改这里必须重跑该工具并更新报告。** */
+  const SUPPORT_COEF = 0.5;          // [实测冻结] 支援炮击系数（作用于最终伤害，见 SUPPORT_MODE）
+  const SUPPORT_MIN_SHIPS = 2;       // [实测冻结] 随机参与艘数下限
+  const SUPPORT_MAX_SHIPS = 3;       // [实测冻结] 随机参与艘数上限
+  /* 系数作用于**最终伤害**（'dmg'），而不是攻击力（'ap'）——
+   * 实测（N=2000/格）决定性差异：ap 模式下 0.5x 的支援攻击力常低于高装甲目标 → **整发弹开**，
+   * 4-4 Lv15 ΔS 只有 +1.8pp；dmg 模式同一格 +7.0pp（2-4 Lv30：+3.9 vs +6.9）。
+   * `cfg.mode === 'ap'` 保留为测量用对照臂，不允许作为生产默认。 */
+  const SUPPORT_MODE = 'dmg';
+  const SUPPORT_FORM = '单纵阵';      // 支援队的"名义阵型"——只为让阵型命中补正恒为 1，不代表玩家选择
+  /* 支援阶段的跳过原因（UI 与断言都要能分辨，坑：拒绝理由必须可分辨） */
+  const SUPPORT_REASON = {
+    DISABLED: '未派遣支援舰队',
+    EMPTY: '支援舰队为空',
+    NO_ALIVE: '支援舰队全员无法出击（红脸 / 大破 / 入渠）',
+    NO_TARGET: '敌方已无可攻击目标'
+  };
+
+  /* 支援炮击阶段：返回 { fired, reason, ships, hit, dmg, sunk } —— **不改动 sideA / 主结算** */
+  function supportPhase(log, enemySide, formBName, opts) {
+    const G = GameRef();
+    const cfg = (typeof opts.support === 'object' && opts.support) ? opts.support : {};
+    const coef = Number(cfg.coef) || SUPPORT_COEF;
+    const minN = Number(cfg.min) || SUPPORT_MIN_SHIPS;
+    const maxN = Number(cfg.max) || SUPPORT_MAX_SHIPS;
+    const mode = cfg.mode || SUPPORT_MODE;
+    const ids = (opts.supportFleet || []).map(x => (x && typeof x === 'object') ? x.uid : x).filter(Boolean);
+    if (!ids.length) return { fired: false, reason: 'EMPTY', ships: [], hit: 0, dmg: 0, sunk: 0 };
+    const pool = ids.map(u => makePlayerShip(u)).filter(s => s && s.alive);
+    if (!pool.length) return { fired: false, reason: 'NO_ALIVE', ships: [], hit: 0, dmg: 0, sunk: 0 };
+    const n = Math.min(pool.length, Util.ri(minN, maxN));
+    /* 随机取 n 艘（不重复）：逐次 pick 后移除 */
+    const picked = [];
+    const rest = pool.slice();
+    for (let i = 0; i < n && rest.length; i++) picked.push(rest.splice(Util.ri(0, rest.length - 1), 1)[0]);
+    let hit = 0, total = 0, sunk = 0;
+    const names = [];
+    for (const s of picked) {
+      const t = pickTarget(enemySide, s);
+      if (!t) break;
+      names.push(s.zh || s.name);
+      /* 命中率：与常规炮击同式，但名义阵型恒为单纵阵（阵型补正 = 1）、engMult = 1、hitMods = 1 */
+      const ch = hitChance(s, t, SUPPORT_FORM, formBName, 1, false);
+      if (Math.random() > ch) { log.push(`支援炮击！${s.name} 对 ${t.name} 的炮击未命中。`); continue; }
+      hit++;
+      /* 系数作用点 —— **测量分叉**（`cfg.mode`，默认 'ap'），由 sim_support.js 比较后二选一：
+       *   'ap'  = 系数乘在**攻击力**上：ap 变小 → 对高装甲目标常常 ≤ 装甲 → **整发弹开（0 伤害）**
+       *           （实测：5-5 的大和栖姬 甲 92，0.5x 下支援炮击几乎全被弹开 → 支援在决战图上近乎无效）
+       *   'dmg' = 系数乘在**最终伤害**上：只要常规炮击能穿甲，支援就稳定打出「半手炮击」的量
+       * 阈值仍取支援档 170（wiki：航空·对潜·支援同档）。 */
+      const ap = (mode === 'dmg') ? (s.stats.fp + 5) : (s.stats.fp + 5) * coef;
+      let dmg = Math.max(0, Math.round(calcDamage(threshold(ap, THRESHOLD.AIR), t.stats.arm, critChance(ch)) * ammoBonus(s)));
+      /* dmg 模式：先按常规炮击结算穿甲与浮动，再乘系数 —— 保底 1 点（避免再次出现"整发 0 伤害"的悬崖） */
+      if (mode === 'dmg') dmg = dmg > 0 ? Math.max(1, Math.round(dmg * coef)) : 0;
+      const wasAlive = t.alive;
+      applyDamage(log, s, t, dmg, '支援炮击！', '', enemySide, formBName);
+      total += dmg;
+      if (wasAlive && !t.alive) sunk++;
+    }
+    if (!names.length) return { fired: false, reason: 'NO_TARGET', ships: [], hit: 0, dmg: 0, sunk: 0 };
+    log.push({ event: { kind: 'support', ships: names, hit, dmg: total, sunk } });
+    return { fired: true, reason: null, ships: names, hit, dmg: total, sunk };
+  }
+
   /* 参与触接的机种：舰攻 / 水侦（水爆同槽）/ 舰侦。舰爆、舰战不参与（与设计稿一致） */
   const isTouchPlane = e => !!e && (e.slot === SLOT.ATTACKER || e.slot === SLOT.SEAPLANE || e.cat === '舰侦');
   const touchPlaneValue = e => {
@@ -1267,6 +1349,13 @@ const Battle = (() => {
       L('（舰侦侦察引导：已提前确认敌舰队航向，T字不利概率由 10% 降至 5%）');
     }
 
+    /* ---- 支援舰队 · 支援炮击（V0.306 批次2）：昼战开幕阶段、第一轮炮击**之前** ----
+     * 结果挂到结算结果上（`r.support`）供战报与结算归因使用；假值时 supportReport === null。 */
+    const supportReport = opts.support ? supportPhase(log, sideB, formBName, opts) : null;
+    if (supportReport && supportReport.fired) {
+      L(`支援炮击！第 ${supportReport.ships.join('、')} 实施自由炮击 —— 命中 ${supportReport.hit} 发，累计伤害 ${supportReport.dmg}${supportReport.sunk ? `，击沉 ${supportReport.sunk} 艘` : ''}。`);
+    }
+
     /* ---- 炮击战 ---- */
     const shellingTargets = s => (s.isPlayer ? sideB : sideA).filter(t => t.alive);
 
@@ -1419,7 +1508,7 @@ const Battle = (() => {
 
     /* ---- 结算 ---- */
     const r = settle(log, sideA, sideB, nightUsed, formAName, formBName);
-    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng, airKey, airWing, airPassive: passiveAA, touch: touchSide });
+    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng, airKey, airWing, airPassive: passiveAA, touch: touchSide, support: supportReport });
     return r;
   }
 
@@ -1437,6 +1526,9 @@ const Battle = (() => {
     r.airPassive = !!ctx.airPassive;
     r.touch = ctx.touch || null;
     r.engagement = ctx.eng || null;
+    /* 支援炮击（V0.306 批次2）：{fired, reason, ships, hit, dmg, sunk} 或 null（未派遣）——
+     * game 层用它写结算归因行（**不许静默发放**，任务书 2.5） */
+    r.support = ctx.support || null;
     return r;
   }
 
@@ -1453,7 +1545,8 @@ const Battle = (() => {
     return attachBattleContext(r, {
       reconOk: dayResult.recon, myAir: dayResult.myAir, enAir: dayResult.enAir,
       airSup: dayResult.airSup, eng: dayResult.engagement, airKey: dayResult.airKey,
-      airWing: dayResult.airWing, airPassive: dayResult.airPassive, touch: dayResult.touch
+      airWing: dayResult.airWing, airPassive: dayResult.airPassive, touch: dayResult.touch,
+      support: dayResult.support
     });
   }
 
@@ -1472,7 +1565,9 @@ const Battle = (() => {
     /* 士气档位（UI 徽记与文案读同一张表） */
     MORALE_TIERS, moraleTier, moraleMods, moraleBadge,
     /* 交战形态权重（方向五：侦察引导航向） */
-    ENG_WEIGHTS, engagementWeights
+    ENG_WEIGHTS, engagementWeights,
+    /* 支援舰队（V0.306 批次2）：常量 + 跳过原因，UI 与测量工具读这里，不硬编码 */
+    SUPPORT_COEF, SUPPORT_MIN_SHIPS, SUPPORT_MAX_SHIPS, SUPPORT_REASON
   };
 })();
 
