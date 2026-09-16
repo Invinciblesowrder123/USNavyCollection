@@ -423,6 +423,7 @@ const MAPS = [
   },
   {
     id: '2-4', name: '瓜达尔卡纳尔攻略', desc: '深海飞行场栖姬固守的机场！舰队全力夺取制空权！', stars: 8,
+    transportGoal: 18,
     diff: 2,          // 难度档 1~5（T1 基础 / T2 常规 / T3 考验 / T4 高难 / T5 决战）
     diffNote: '四线同考：夜战 + 潜艇 + 航空 + 索敌≥60。制空要求高（单航母 37%，双航母 95%）。',
     brief: '瓜达尔卡纳尔。机场在敌人手里，舰队的每一寸制空都要自己抢回来。\nA 点与 BOSS 编成均带舰载机，未携带舰战将丧失制空，昼战特殊攻击全部无法发动。同时设夜战节点与潜艇伏击点——\n编成要同时照顾制空、夜战火力与对潜（驱逐舰、轻巡洋舰天生具备对潜能力）。',
@@ -432,11 +433,12 @@ const MAPS = [
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 90, boss: 1380 },    // 提督经验（wiki 2-4: 道中+90 / BOSS+1380）
     nodes: {
-      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
+      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, T: { x: 560, y: 260 }, D: { x: 820, y: 260 }
     },
-    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D'], ['A', 'T'], ['T', 'C']],
     defs: {
       S: { type: 'start' },
+      T: { type: 'transport', goal: 18 },
       A: { type: 'battle', enemy: 'F27' },   // 制空决战（轮形阵空母机动部队）
       B: { type: 'battle', enemy: 'F28', mode: 'night' },   // 夜战点：夜战水雷线
       C: { type: 'battle', enemy: 'F93', mode: 'sub' },     // 潜艇点：哨戒线下的潜水伏击
@@ -699,6 +701,7 @@ const MAPS = [
   },
   {
     id: '4-2', name: '夸贾林环礁海域', desc: '世界最大环礁的要塞！夺取铝土补给线并击破守军。', stars: 11,
+    transportGoal: 18,
     diff: 1,          // 难度档 1~5（T1 基础 / T2 常规 / T3 考验 / T4 高难 / T5 决战）
     diffNote: '航空战点。索敌≥45。耐 284。',
     brief: '夸贾林。世界最大的环礁，铝土补给线正从它的泻湖里过。\nA 点为航空战节点：敌军以轻空母为核心，制空是这场仗的先手；索敌≥45 可绕开外围哨戒直取 BOSS。',
@@ -708,11 +711,12 @@ const MAPS = [
     start: 'S', boss: 'D', gauge: 5,
     admExp: { node: 140, boss: 2100 },   // 提督经验（wiki 6-3: 道中+140 / BOSS+2100）
     nodes: {
-      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, D: { x: 820, y: 260 }
+      S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, T: { x: 560, y: 260 }, D: { x: 820, y: 260 }
     },
-    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D'], ['A', 'T'], ['T', 'C']],
     defs: {
       S: { type: 'start' },
+      T: { type: 'transport', goal: 18 },
       A: { type: 'battle', enemy: 'F64', mode: 'air' },   // 航空战点：环礁上空的空袭
       B: { type: 'resource', reward: ['baux'] },
       C: { type: 'battle', enemy: 'F65' },

@@ -469,7 +469,7 @@ const Game = (() => {
     const starterEq = ['gun5in_30', 'gun5in_30', 'sec5in_1', 'aa_20mm', 'aa_20mm', 'torp_mk15'];
     for (const id of starterEq) createEquip(id);
     for (const m of MAPS) {
-      state.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0 };
+      state.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0, transport: 0 };
     }
     save();
   }
@@ -672,7 +672,10 @@ const Game = (() => {
     save.fleetUnlock[3] = save.fleetUnlock[3] === true;
     save.fleetUnlock[4] = save.fleetUnlock[4] === true;
     if (!save.mapProgress || typeof save.mapProgress !== 'object') save.mapProgress = {};
-    for (const m of MAPS) if (!save.mapProgress[m.id]) save.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0 };
+    for (const m of MAPS) {
+      if (!save.mapProgress[m.id]) save.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0, transport: 0 };
+      else if (save.mapProgress[m.id].transport === undefined) save.mapProgress[m.id].transport = 0;
+    }
     if (!save.ships || typeof save.ships !== 'object') save.ships = {};
     if (!save.equipment || typeof save.equipment !== 'object') save.equipment = {};
     if (!save.library || typeof save.library !== 'object') save.library = { ships: {}, equips: {} };

@@ -15,7 +15,7 @@ const SortieUI = (() => {
   /* ---------- 海域地图（参考Kancolle海图UI） ---------- */
   const MAP_BOARD = { w: 760, h: 460 };
   const MAP_MINI = { w: 236, h: 168 };
-  const NODE_TYPE_ZH = { start: '出击点', battle: '战斗点', boss: 'BOSS点', resource: '资源点', supply: '补给点', whirlpool: '漩涡', empty: '航路节点' };
+  const NODE_TYPE_ZH = { start: '出击点', battle: '战斗点', boss: 'BOSS点', resource: '资源点', supply: '补给点', transport: '运输点', whirlpool: '漩涡', empty: '航路节点' };
   const NODE_MODE_ZH = { night: '夜战点', sub: '潜艇点', air: '航空战点' };
 
   /* ---------- 海域难度档（V0.306 批次1） ----------
@@ -63,6 +63,7 @@ const SortieUI = (() => {
         return { cls: 'resource ' + m[1], icon: m[0] };
       }
       case 'supply': return { cls: 'supply', icon: '⚓' };
+      case 'transport': return { cls: 'transport', icon: '▤' };
       case 'whirlpool': return { cls: 'whirlpool', icon: '🌀' };
       default: return { cls: 'empty', icon: '?' };
     }
@@ -823,6 +824,7 @@ const SortieUI = (() => {
           <span class="hint" style="align-self:center">出击开始！索敌值 ${Game.fleetLos(so.fleetIdx)}</span></div>`;
       }
       if (def.type === 'resource') return `<div class="hint">资源点。点击前进收集资源。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">收集资源并前进</button></div>`;
+      if (def.type === 'transport') return `<div class="hint">运输点。需要 AV 或携带上陆用舟艇的舰船。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">卸载作业并前进</button></div>`;
       if (def.type === 'supply') return `<div class="hint">补给点。恢复一半油弹。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">补给并前进</button></div>`;
       const fixedForm = localStorage.getItem('usnc_form_fixed');
       if (def.type === 'battle') return `<div class="btn-row"><button class="btn btn-gold" data-act="advance">迎击敌军！${fixedForm ? `（固定阵型：${fixedForm}）` : '（选择阵型）'}</button>
@@ -837,6 +839,9 @@ const SortieUI = (() => {
       if (!r.ok) { UI.toast(r.msg); return; }
       if (r.type === 'resource') {
         UI.toast(`获得资源：${r.res === 'fuel' ? '燃料' : r.res === 'ammo' ? '弹药' : r.res === 'steel' ? '钢材' : '铝土'} +${r.amount}`);
+        Sortie.moveToNext();
+      } else if (r.type === 'transport') {
+        UI.toast(`运输完成：本次 ${r.amount}，累计 ${r.total}/${r.goal}${r.rewarded ? '；目标达成，奖励已发放' : ''}`, 4200);
         Sortie.moveToNext();
       } else if (r.type === 'supply') {
         UI.toast('舰队获得补给！');

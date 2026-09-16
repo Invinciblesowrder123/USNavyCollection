@@ -4726,6 +4726,22 @@ section('V0.306·批次2 支援舰队（含集成层 + 红绿验证）');
   }
 }
 
+section('V0.306·批次3 运输作战（零随机数 + 门槛）');
+{
+  const m24 = MAPS.find(m => m.id === '2-4');
+  const m42 = MAPS.find(m => m.id === '4-2');
+  assert('运输试点仅落在 2-4 / 4-2', !!m24 && !!m42 && m24.transportGoal >= 1 && m42.transportGoal >= 1);
+  assert('运输节点定义完整且可达', ['2-4','4-2'].every(id => { const m=MAPS.find(x=>x.id===id); return Object.values(m.defs).some(d=>d.type==='transport') && m.edges.some(e=>e.includes('T')); }));
+  assert('运输容量函数单点导出', typeof Sortie.transportCapacity === 'function');
+  assert('运输节点不属于战斗类型', ['2-4','4-2'].every(id => { const m=MAPS.find(x=>x.id===id); const d=Object.values(m.defs).find(x=>x.type==='transport'); return d && !d.enemy; }));
+  assert('运输门槛高于裸舰容量', m24.transportGoal > 0 && m42.transportGoal > 0);
+  const ng = Game.newGame();
+  const keys = Object.keys(Game.state.mapProgress['2-4'] || {}).sort().join(',');
+  const raw = JSON.parse(JSON.stringify(Game.serialize())); Game.normalizeSave(raw);
+  assert('newGame mapProgress 含 transport', keys.includes('transport'));
+  assert('normalizeSave 保留 transport 键', Object.prototype.hasOwnProperty.call(raw.mapProgress['2-4'], 'transport'));
+}
+
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed ? 1 : 0);

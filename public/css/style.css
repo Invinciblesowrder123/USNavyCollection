@@ -977,6 +977,7 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .map-node.res-baux { border-color: #98d8c8; background: linear-gradient(180deg, #24493c, #122820); color: #9fe0cf; }
 .map-node.resource .node-icon { font-size: 15px; font-weight: bold; }
 .map-node.supply { border-color: #5aa8e8; background: linear-gradient(180deg, #1e3a5e, #12243c); color: #8fd0ff; }
+.map-node.transport { border-color: #d6a85f; background: linear-gradient(180deg, #4a3720, #2b2115); color: #f0cf8c; }
 .map-node.whirlpool { border-color: #9a7fe0; background: linear-gradient(180deg, #342a52, #1d1730); color: #c4aeff; }
 .map-node.whirlpool .node-icon { animation: whirlSpin 2.2s linear infinite; display: inline-block; }
 @keyframes whirlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

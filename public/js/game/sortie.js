@@ -191,6 +191,32 @@ const Sortie = (() => {
 
   function nodeDef(map, nodeId) { return map.defs[nodeId] || { type: 'empty' }; }
 
+  /* 运输能力唯一计算点（V0.306 坑 #47）：AV=10，携带上陆用舟艇=8，其余=0。 */
+  function transportCapacity(fleetIdx) {
+    const G = GameRef(); const st = G.state;
+    return (st.fleet[fleetIdx] || []).reduce((sum, uid) => {
+      const s = st.ships[uid]; if (!s) return sum;
+      const d = G.shipDef(s); if (d && d.type === 'AV') return sum + 10;
+      const hasBoat = (s.equipped || []).some(eu => {
+        const e = st.equipment[eu]; const ed = e && EquipmentData[e.id];
+        return ed && ed.cat === '上陆用舟艇';
+      });
+      return sum + (hasBoat ? 8 : 0);
+    }, 0);
+  }
+
+  function transportReward(map, total) {
+    const G = GameRef(); const st = G.state;
+    const mp = st.mapProgress[map.id] || (st.mapProgress[map.id] = { gauge: map.gauge, cleared: false, kills: 0, transport: 0 });
+    const goal = Number(map.transportGoal || 0);
+    if (goal > 0 && total >= goal && !mp.transportRewarded) {
+      mp.transportRewarded = true;
+      if (typeof Progression !== 'undefined' && Progression.grantRewardBundle) Progression.grantRewardBundle({ fuel: 300, ammo: 300 });
+      return true;
+    }
+    return false;
+  }
+
   /* 路线分歧：满足分支条件走分支路线，否则走其余可选节点；无分支走默认边
    * branch 支持单对象 {at, if, to} 或数组 [{at, if, to}, ...]（每个分歧点一条） */
   function nextNodes(map, fromNode) {
@@ -228,6 +254,15 @@ const Sortie = (() => {
     /* ---- 出发点/空节点：不战斗，直接前进 ---- */
     if (def.type === 'start' || def.type === 'empty') {
       return { ok: true, type: 'move', advance: true };
+    }
+
+    /* ---- 运输点：只结算载荷，不战斗、不耗弹药、不消费随机数 ---- */
+    if (def.type === 'transport') {
+      const mp = st.mapProgress[map.id] || (st.mapProgress[map.id] = { gauge: map.gauge, cleared: false, kills: 0, transport: 0 });
+      const amount = transportCapacity(so.fleetIdx);
+      mp.transport = Number(mp.transport || 0) + amount;
+      const rewarded = transportReward(map, mp.transport);
+      return { ok: true, type: 'transport', amount, total: mp.transport, goal: Number(def.goal || map.transportGoal || 0), rewarded, advance: true };
     }
 
     /* ---- 资源点 ---- */
@@ -1155,6 +1190,7 @@ const Sortie = (() => {
 
   return {
     start, startHard, advance, prepareBattle, continueNight, settleBattle, moveToNext, currentMap, nextNodes,
+    nodeDef, transportCapacity,
     atBoss, retreat, returnHome, nodeDef, sortieConsumption, daPoShips, flagshipDaPo,
     /* 历史战役（V0.303）：唯一接入点 + 门槛 + 二波制 */
     resolveMap, isHistoricMap, historicGate, startHardWave, fleetTypes,
