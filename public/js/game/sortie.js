@@ -646,17 +646,24 @@ const Sortie = (() => {
      * 注意：支援队**不参与**上面的主队循环（它不在 `fleet` 里），但消耗语义同构。 */
     const supIdx = so.supportFleet || 0;
     if (supIdx) {
-      for (const uid of st.fleet[supIdx] || []) {
-        const s = st.ships[uid];
-        if (!s) continue;
-        s.supply.fuel = Math.max(0, s.supply.fuel - SUPPORT_COST.fuel);
-        s.supply.ammo = Math.max(0, s.supply.ammo - SUPPORT_COST.ammo);
-        s.morale = Math.max(0, s.morale - SUPPORT_COST.morale);
-      }
-      /* 结算归因（任务 2.5）—— 支援的贡献必须显式写在战报里，不许静默 */
-      if (result.support && result.support.fired) {
+      /* ⚠️ **未实际开火不扣消耗**（V0.306 批次2 补）：全员红脸 / 无可攻击目标时支援并未出动，
+       * 此时照扣就是「静默收费」—— 与本项目「不许静默」纪律冲突。**派遣本身已经占用当日名额**，
+       * 那是代价侧；油弹士气只在真的打了才扣，并在战报写明。 */
+      const fired = !!(result.support && result.support.fired);
+      if (fired) {
+        for (const uid of st.fleet[supIdx] || []) {
+          const s = st.ships[uid];
+          if (!s) continue;
+          s.supply.fuel = Math.max(0, s.supply.fuel - SUPPORT_COST.fuel);
+          s.supply.ammo = Math.max(0, s.supply.ammo - SUPPORT_COST.ammo);
+          s.morale = Math.max(0, s.morale - SUPPORT_COST.morale);
+        }
+        /* 结算归因（任务 2.5）—— 支援的贡献必须显式写在战报里，不许静默 */
         result.log.push(`【结算归因】支援舰队（第 ${supIdx} 舰队）本场贡献 ${result.support.dmg} 点伤害`
-          + `${result.support.sunk ? `、击沉 ${result.support.sunk} 艘` : ''}（命中 ${result.support.hit} 发）。`);
+          + `${result.support.sunk ? `、击沉 ${result.support.sunk} 艘` : ''}（命中 ${result.support.hit} 发）`
+          + `；本场消耗该队油弹各 ${Math.round(SUPPORT_COST.fuel * 100)}%、士气 ${SUPPORT_COST.morale}。`);
+      } else {
+        result.log.push(`【结算归因】支援舰队（第 ${supIdx} 舰队）本场未实施支援炮击，因此不扣除油弹与士气（当日派遣名额仍已占用）。`);
       }
     }
 

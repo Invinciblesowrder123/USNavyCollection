@@ -247,6 +247,51 @@
         return;
       }
 
+      if (c.indexOf('sup') === 0) {
+        /* V0.306 批次2：支援舰队人工核对页
+         *   supSel（默认）—— 1-1 海域详情里的支援选择器：第 2 舰队可选、第 3 舰队「远征中」置灰 + 已选状态
+         *   supT5         —— 5-5 决战图（T5 高装甲警告）
+         *   supLog        —— 支援战报行（kind:'support' 事件 + 【结算归因】）
+         * 用法：npm start 后打开 http://127.0.0.1:3000/_shot_air.html?case=supT5 */
+        Game.unlockFleet(3);
+        var mkSup = function (ids) {
+          return ids.map(function (id) {
+            var s = Game.createShip(id, 90);
+            s.hp = Game.shipStats(s.uid).hpMax;
+            s.supply = { fuel: 1, ammo: 1 }; s.morale = 96;
+            Game.equipDefaults(s.uid);
+            return s.uid;
+          });
+        };
+        Game.state.fleet[2] = mkSup(['southdakota', 'indiana', 'baltimore']);
+        Game.state.fleet[3] = mkSup(['atlanta', 'helena', 'fletcher']);
+        Game.state.expeditions[3] = { exId: 'ex1', end: Date.now() + 12 * 60 * 1000 };
+        if (c === 'supT5') {
+          Game.state.mapProgress['5-4'].cleared = true;
+          SortieUI.mapList(scr);
+          var a5s = scr.querySelector('[data-area="5"]'); if (a5s) a5s.click();
+          var m55 = scr.querySelector('[data-map="5-5"]'); if (m55) m55.click();
+          var selT5 = scr.querySelector('[data-sup="2"]'); if (selT5) selT5.click();
+          return;
+        }
+        if (c === 'supLog') {
+          Game.state.mapProgress['1-1'].cleared = true;
+          var stL = Sortie.start('1-1', 1, { supportFleet: 2 });
+          if (!stL.ok) { scr.innerHTML = '<pre style="color:#f88">' + stL.msg + '</pre>'; return; }
+          Game.state.sortie.node = 'A';                     // 1-1 A = 战斗点
+          SortieUI.sortieActive(scr);
+          var advL = scr.querySelector('[data-act="advance"]'); if (advL) advL.click();
+          var fL = document.querySelector('#modal-root [data-f="单纵阵"]'); if (fL) fL.click();
+          var skL = scr.querySelector('#fxSkip') || document.querySelector('#fxSkip'); if (skL) skL.click();
+          return;
+        }
+        SortieUI.mapList(scr);
+        var a1s = scr.querySelector('[data-area="1"]'); if (a1s) a1s.click();
+        var m11 = scr.querySelector('[data-map="1-1"]'); if (m11) m11.click();
+        var sel2 = scr.querySelector('[data-sup="2"]'); if (sel2) sel2.click();
+        return;
+      }
+
       var st = Sortie.start('2-3', 1);
       if (!st.ok) { scr.innerHTML = '<pre style="color:#f88">' + st.msg + '</pre>'; return; }
       Game.state.sortie.node = 'A';                      // 2-3 A = 航空战点

@@ -4044,6 +4044,12 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
    *   （表现是"没拿到 S 胜"这类间接报错，而不是一条写明原因的失败）。
    *   ⇒ **任何动 `battle.js` 的版本，必做事项：重标种子**（跑 `_v305_probe_weekly.js` 重挑）。
    *
+   * 【V0.306 批次2 已重标（坑 #41）】本版在 `battle.js` 新增了**支援炮击阶段**（`opts.support`）与
+   *   `SUPPORT_*` 常量导出 —— 支援关闭时不消耗随机数，本段也未派支援，但引擎代码变动仍需按纪律重标。
+   *   重标结果：`1..12` 内首个「S 胜 + 史实编成匹配」落在 **种子 1**（见下方「§2.8 种子锚点」断言）。
+   *   该断言把「种子 → S 胜」从**隐式**变成**显式**：以后再动 `battle.js` 而忘了重标，它会**直接变红**，
+   *   而不是继续全绿却已失去意义。重标后请同步更新本注释与那条断言里的种子号。
+   *
    * 两处**测试捷径**（不是"手工构造"，但容易被误读）：
    *   ① `runHistFormBattle` 直接把 `Game.state.sortie.node` 指到 BOSS —— 这是**导航到目标节点**，
    *      不是伪造战斗输入；战斗本身照样真实发生（经 `prepareBattle` 掷骰）。
@@ -4114,7 +4120,7 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
         healHistFleet();
         const r = seeded(seed, runHistFormBattle);
         last = r;
-        if (!r.err && r.rank === 'S' && r.histMatch === true) return r;
+        if (!r.err && r.rank === 'S' && r.histMatch === true) return Object.assign({ seed }, r);
       }
       return last || { err: '无可用种子' };
     };
@@ -4124,6 +4130,11 @@ section('V0.305·批次2 军需处：章账本 / 产出源 / 兑换表');
     assert('集成：真实 H1 史实重演走通（固定种子下必出 S 胜，全程未手工构造 ctx）',
       !r1.err && r1.rank === 'S' && r1.histMatch === true,
       JSON.stringify(r1.err ? r1 : { rank: r1.rank, match: r1.histMatch }));
+    /* ★ 坑 #41 重标锚点：把「种子 → S 胜」钉成一条**会红**的断言。
+     * 此前它只由搜索循环隐式保证 —— 引擎一改映射就变，本段仍全绿却已失去意义（静默失效）。
+     * V0.306 批次2 改动 `battle.js`（新增支援炮击阶段 + `SUPPORT_*` 导出）后重标：S 胜落在种子 1。 */
+    assert('集成：§2.8 种子锚点 = 1（坑 #41：任何动 battle.js 的版本必须重跑并更新这里）',
+      r1.seed === 1, 'seed=' + r1.seed);
     assert('集成：当周首场史实重演 S 胜 → 周项 +1，且写进战报（不许静默发放）',
       r1.weekly.length === 1 && r1.weekly[0].n === 1 && /战功章 \+1（每周首次史实重演/.test(r1.log),
       JSON.stringify(r1.weekly) + ' | ' + (r1.log.match(/战功章[^\n]*/g) || []).join(' / '));
@@ -4363,6 +4374,356 @@ section('V0.306·批次1 海域难度评级（数据护栏）');
     neg.length === 1 && neg[0].startsWith('5-5('), neg.join('；') || '(无违规)');
   boss55.diff = keep55;
   assert('（原语层·负向）还原后护栏回到零违规', guardViolations().filter(v => !DIFF_GUARD_EXCEPTIONS[v.split('(')[0]]).length === 0);
+}
+
+/* ============================================================
+ * V0.306·批次2 支援舰队（含集成层 + 红绿验证）
+ * 冻结值来源：design/支援舰队定价实测_V0.306.md（coef 0.5 / 2~3 艘 / dmg 模式）
+ * 纪律：
+ *   坑 #40 支援是新的随机数消费者 → `opts.support` 假值时零消耗（基线在 drift_check，本段不重复）
+ *   坑 #42 消耗写点唯一 —— 深比较：支援舰除油弹士气外，别的字段一个都不许动
+ *   坑 #51 每个跨模块机制 ≥1 条**集成层**断言（走真实 Sortie.start→prepareBattle→settleBattle）
+ *          + 红绿验证（把接线掐断 → 恰好那几条变红、其余仍绿）
+ * ============================================================ */
+section('V0.306·批次2 支援舰队（含集成层 + 红绿验证）');
+{
+  const realRandom = Math.random;
+
+  /* ---- 测试基建 --------------------------------------------------------
+   * 固定随机流：两次运行消耗**完全相同**的随机序列 → 目标选择 / 命中 / 暴击逐发对齐，
+   * 于是「只改一个旋钮」的差分才有意义（否则分不清是旋钮生效还是运气）。 */
+  const mkPrng = seed => { let s = (seed >>> 0) || 1; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+  const withSeed = (seed, fn) => { Math.random = mkPrng(seed); try { return fn(); } finally { Math.random = realRandom; } };
+  /* 常数随机流：Math.random 恒返回 c → 整场战斗退化为 c 的确定性函数。
+   * 用途见「四项反向断言」：改旋钮、跑遍 c 的取值域，若支援结果一次都不变 → 支援确实没读那个乘区。
+   * 关键性质：常数流是**移位不变**的，因此「触接阶段多吃 1~2 个随机数」不会污染后续对齐。 */
+  const withConst = (c, fn) => { Math.random = () => c; try { return fn(); } finally { Math.random = realRandom; } };
+  const near = (x, y, eps = 1e-9) => Math.abs(x - y) < eps;
+
+  /* newGame 会清空舰队解锁状态 —— 3/4 号舰队的解锁必须每次重建，否则「候选集含第 3 舰队」的断言会假红 */
+  const freshGame = () => { Game.newGame(); Game.unlockFleet(3); };
+  freshGame();
+
+  const mkShip = (id, lv) => {
+    const s = Game.createShip(id, lv);
+    s.kai = 2;
+    s.hp = Game.shipStats(s.uid).hpMax;
+    Game.equipDefaults(s.uid);
+    const rec = Game.state.ships[s.uid];
+    rec.supply.fuel = 1; rec.supply.ammo = 1; rec.morale = 100;
+    return s.uid;
+  };
+  const mkFleet = (ids, lv) => ids.map(id => mkShip(id, lv));
+
+  const gunFleet = mkFleet(['iowa', 'washington', 'southdakota', 'indiana', 'baltimore', 'sanfrancisco'], 90); // 无航空战力：昼战不会先被空袭改写敌编成
+  const airFleet = mkFleet(['iowa', 'washington', 'enterprise', 'saratoga', 'baltimore', 'cleveland'], 90);    // 带航母：触接断言需要航空战阶段
+  const supFleet = mkFleet(['southdakota', 'indiana', 'atlanta', 'helena', 'fletcher', 'kidd'], 90);           // 炮击型后备（航母型后备支援价值极低，见定价实测）
+
+  const fight = (fleet, enemyKey, formA, opts) => Battle.battle(
+    fleet, ENEMY_FLEETS[enemyKey].ships, formA, ENEMY_FLEETS[enemyKey].formation,
+    Object.assign({ allowNight: false, fleetIdx: 1, support: true, supportFleet: supFleet }, opts));
+  const hasSupportEvent = r => r.log.some(l => l && l.event && l.event.kind === 'support');
+
+  /* ---- 常量冻结（改这里必须重跑 scripts/sim_support.js 并更新定价实测报告）---- */
+  assert('（原语层）支援常量 = 实测冻结值：coef 0.5 / 2~3 艘 / dmg 模式 / 名义阵型单纵阵',
+    Battle.SUPPORT_COEF === 0.5 && Battle.SUPPORT_MIN_SHIPS === 2 && Battle.SUPPORT_MAX_SHIPS === 3 &&
+    Battle.SUPPORT_MODE === 'dmg' && Battle.SUPPORT_FORM === '单纵阵',
+    `coef=${Battle.SUPPORT_COEF} n=${Battle.SUPPORT_MIN_SHIPS}~${Battle.SUPPORT_MAX_SHIPS} mode=${Battle.SUPPORT_MODE} form=${Battle.SUPPORT_FORM}`);
+
+  assert('（原语层）支援消耗 = 附录 C P-2 冻结值：油弹各 5%、士气 10（低于出击的 15）',
+    Sortie.SUPPORT_COST.fuel === 0.05 && Sortie.SUPPORT_COST.ammo === 0.05 && Sortie.SUPPORT_COST.morale === 10,
+    JSON.stringify(Sortie.SUPPORT_COST));
+
+  assert('（原语层）候选集由**结构**给出：已解锁 − 出击中（坑 #43，不靠 UI 校验兜底）',
+    JSON.stringify(Sortie.supportCandidates(1)) === JSON.stringify([2, 3]) &&
+    JSON.stringify(Sortie.supportCandidates(2)) === JSON.stringify([1, 3]) &&
+    !Sortie.supportCandidates(1).includes(1),
+    'f1→' + JSON.stringify(Sortie.supportCandidates(1)) + ' f2→' + JSON.stringify(Sortie.supportCandidates(2)));
+
+  /* ---- 正向：固定系数（三条臂共用同一随机流）----
+   * 臂 A = 生产默认（不带 cfg，走 SUPPORT_COEF）｜臂 B = 显式 coef 1.0｜臂 C = 显式 coef 0.25。
+   * 每发伤害 dmg = max(0, round(calcDamage(...))) 再乘 coef 取整，故 |Σdmg − Σbase×coef| ≤ 0.5×命中数。
+   * 这条同时锁死两件事：① 默认值就是冻结的 0.5；② 系数**真的**作用在最终伤害上（不是写着好看）。 */
+  let armDef = null, armOne = null, armQ = null;
+  for (let sd = 1000; sd < 1060; sd++) {
+    const x1 = withSeed(sd, () => fight(gunFleet, 'F01', '单纵阵', {}));
+    const x2 = withSeed(sd, () => fight(gunFleet, 'F01', '单纵阵', { support: { coef: 1.0 } }));
+    if (x1.support && x1.support.dmg > 0 && x2.support && x2.support.dmg > 0) {
+      armDef = x1; armOne = x2; armQ = withSeed(sd, () => fight(gunFleet, 'F01', '单纵阵', { support: { coef: 0.25 } }));
+      break;
+    }
+  }
+  assert('（原语层·正向）昼战开幕出现 kind:\'support\' 事件，且参与舰数落在 2~3',
+    !!armDef && armDef.support.fired && hasSupportEvent(armDef) &&
+    armDef.support.ships.length >= 2 && armDef.support.ships.length <= 3,
+    armDef ? `ships=${JSON.stringify(armDef.support.ships)}` : '未找到可用随机种子');
+
+  assert('（原语层·正向）支援伤害符合固定系数 0.5（与 coef=1.0 同一随机流逐发对拍）',
+    !!armDef && !!armOne && Math.abs(armDef.support.dmg - armOne.support.dmg / 2) <= armDef.support.hit / 2,
+    `default=${armDef && armDef.support.dmg} coef1.0=${armOne && armOne.support.dmg} hit=${armDef && armDef.support.hit}`);
+
+  assert('（原语层·正向）系数被真正读取：coef=0.25 的伤害 ≈ coef=1.0 的四分之一',
+    !!armQ && Math.abs(armQ.support.dmg - armOne.support.dmg / 4) <= armOne.support.hit / 2 &&
+    armQ.support.dmg <= armDef.support.dmg,
+    `coef0.25=${armQ && armQ.support.dmg} coef1.0=${armOne && armOne.support.dmg}`);
+
+  assert('（原语层·正向）三条臂的参战舰与命中数完全一致（证明对齐成立、差分不是运气）',
+    !!armDef && !!armOne && !!armQ &&
+    JSON.stringify(armDef.support.ships) === JSON.stringify(armOne.support.ships) &&
+    JSON.stringify(armOne.support.ships) === JSON.stringify(armQ.support.ships) &&
+    armDef.support.hit === armOne.support.hit && armOne.support.hit === armQ.support.hit,
+    armOne ? `ships=${JSON.stringify(armOne.support.ships)} hit=${armOne.support.hit}` : '');
+
+  /* ---- 正向：不吃四项加成（四条反向断言）----
+   * 手法：常数随机流（移位不变）+ 只翻一个旋钮 + 扫遍 c 的取值域。
+   * 只要支援**真的**读了某个乘区，就一定存在某个 c 让命中/伤害翻转 —— 扫参必然抓到。
+   * 同时统计「两臂日志不同」（旋钮真的转到底了），防止测试退化成同义反复。 */
+  const sweepArms = (fleet, enemyKey, mkA, mkB) => {
+    const bad = []; let live = 0, note = 0;
+    for (let i = 0; i <= 30; i++) {
+      const c = 0.42 + i * 0.018;
+      const savedW = Util.weighted;
+      const stubW = e => tbl => (tbl && 'PARALLEL' in tbl && 'REVERSE' in tbl) ? e : savedW.call(Util, tbl);
+      let a, b;
+      try {
+        Util.weighted = savedW;
+        if (mkA.eng) Util.weighted = stubW(mkA.eng);
+        a = withConst(c, () => fight(fleet, enemyKey, mkA.formA || '单纵阵', mkA.opts || {}));
+        Util.weighted = savedW;
+        if (mkB.eng) Util.weighted = stubW(mkB.eng);
+        b = withConst(c, () => fight(fleet, enemyKey, mkB.formA || '单纵阵', mkB.opts || {}));
+      } finally { Util.weighted = savedW; }
+      if (JSON.stringify(a.support) !== JSON.stringify(b.support)) bad.push(c.toFixed(3));
+      if (JSON.stringify(a.log) !== JSON.stringify(b.log)) live++;
+      if (mkA.note && mkA.note(a, b)) note++;
+    }
+    return { bad, live, note };
+  };
+
+  /* ① 阵型：单纵阵 vs 复纵阵（攻击方阵型） */
+  const sForm = sweepArms(gunFleet, 'F01',
+    { formA: '单纵阵', opts: { historic: false } },
+    { formA: '复纵阵', opts: { historic: false } });
+  assert('（原语层·反向①）支援不吃**阵型**补正：31 个 c 值上支援结果一次都不变',
+    sForm.bad.length === 0, '变化点 c=' + sForm.bad.join(','));
+  assert('（原语层·反向①·元）阵型旋钮确实转到了引擎（两臂战报不同）',
+    sForm.live > 0, `live=${sForm.live}/31`);
+
+  /* ② 航向 / 交战形态：把随机源桩成固定航向（只替换选择函数，不向被测路径喂 flag） */
+  const sEng = sweepArms(gunFleet, 'F01',
+    { eng: 'T_ADV', note: (a, b) => a.engagement !== b.engagement },
+    { eng: 'T_DIS' });
+  assert('（原语层·反向②）支援不吃**航向（交战形态）**补正：31 个 c 值上支援结果一次都不变',
+    sEng.bad.length === 0, '变化点 c=' + sEng.bad.join(','));
+  assert('（原语层·反向②·元）两臂航向确实不同（T有利 vs T不利）',
+    sEng.note === 31, `note=${sEng.note}/31`);
+
+  /* ③ 触接：航空触接成功后 sideA 全员挂 _touchHit（×1.15），支援不得继承 */
+  const TOUCH_HIT = Battle.TOUCH_MY_HIT;
+  const sTouch = sweepArms(airFleet, 'F22',
+    { opts: { touch: true }, note: (a) => a.touch === 'A' },
+    { opts: { touch: false } });
+  assert('（原语层·反向③）支援不吃**航空触接**补正：31 个 c 值上支援结果一次都不变',
+    sTouch.bad.length === 0, '变化点 c=' + sTouch.bad.join(','));
+  assert('（原语层·反向③·元）本次抽样里触接真的成功过（否则该条为空转）',
+    sTouch.note > 0 && TOUCH_HIT > 1, `触接成功 c 个数=${sTouch.note}/31 触接加成=${TOUCH_HIT}`);
+
+  /* ④ 史实编成加成：historic 开时 sideA 全员挂 _histHit（×1.05） */
+  const sHist = sweepArms(gunFleet, 'F01',
+    { opts: { historic: true, histHit: Battle.HIST_HIT, histEvd: Battle.HIST_HIT }, note: (a, b) => a.mySide.some(s => s._histHit > 1) && !b.mySide.some(s => s._histHit > 1) },
+    { opts: { historic: false } });
+  assert('（原语层·反向④）支援不吃**史实编成加成**：31 个 c 值上支援结果一次都不变',
+    sHist.bad.length === 0, '变化点 c=' + sHist.bad.join(','));
+  assert('（原语层·反向④·元）史实加成确实挂到了主队（_histHit>1）而对照组没有',
+    sHist.note === 31, `note=${sHist.note}/31`);
+
+  /* ---- 集成层：走真实 Sortie.start → prepareBattle → settleBattle ----
+   * **禁止喂 flag / 合成 ctx**：全程只调公开入口，四件事必须在**同一次出击**里同时发生。 */
+  const diffPaths = (x, y, p = '', out = []) => {
+    const keys = new Set([...Object.keys(x || {}), ...Object.keys(y || {})]);
+    for (const k of keys) {
+      const xv = x ? x[k] : undefined, yv = y ? y[k] : undefined;
+      if (xv && yv && typeof xv === 'object' && typeof yv === 'object' && !Array.isArray(xv) && !Array.isArray(yv)) diffPaths(xv, yv, p + k + '.', out);
+      else if (JSON.stringify(xv) !== JSON.stringify(yv)) out.push(p + k);
+    }
+    return out.sort();
+  };
+  const gunIds = ['iowa', 'washington', 'southdakota', 'indiana', 'baltimore', 'sanfrancisco'];
+  const supIds = ['southdakota', 'indiana', 'atlanta', 'helena', 'fletcher', 'kidd'];
+  const ddIds = ['fletcher', 'kidd'];
+
+  /* 集成层入口：返回一次完整出击里「支援四件事」的取证结果。 */
+  const integrate = (seedBase) => {
+    freshGame();
+    Game.state.fleet[1] = mkFleet(gunIds, 90);
+    Game.state.fleet[2] = mkFleet(supIds, 90);
+    Game.state.fleet[3] = mkFleet(ddIds, 90);
+    const r = Sortie.start('1-1', 1, { supportFleet: 2 });
+    if (!r.ok) return { startOk: false, msg: r.msg };
+    Sortie.moveToNext();                                  // S → A（战斗点）
+    let prep = null;
+    for (let i = 0; i < 14; i++) {                        // 只重掷「本节点这一场」，四件事仍发生在同一次出击
+      prep = withSeed(seedBase + i, () => Sortie.prepareBattle('单纵阵'));
+      if (prep.ok && prep.result.support && prep.result.support.fired && prep.result.support.dmg > 0) break;
+    }
+    if (!prep || !prep.ok) { Sortie.returnHome(); return { startOk: true, prepOk: false }; }
+    /* 支援舰赛前快照 —— 用于「写入点唯一」的深比较 */
+    const before = {}; for (const u of Game.state.fleet[2]) before[u] = JSON.parse(JSON.stringify(Game.state.ships[u]));
+    const settled = Sortie.settleBattle(prep);
+    const paths = [], deltas = [];
+    for (const u of Game.state.fleet[2]) {
+      const a = before[u], b = Game.state.ships[u];
+      paths.push(diffPaths(a, b).join('|'));
+      deltas.push([b.supply.fuel - a.supply.fuel, b.supply.ammo - a.supply.ammo, b.morale - a.morale]);
+    }
+    const costOk = deltas.length === Game.state.fleet[2].length && deltas.length > 0 &&
+      paths.every(p => p === 'morale|supply.ammo|supply.fuel') &&
+      deltas.every(d => near(d[0], -0.05) && near(d[1], -0.05) && near(d[2], -10));
+    const out = {
+      startOk: true, prepOk: true,
+      fired: !!(prep.result.support && prep.result.support.fired),
+      dmg: prep.result.support ? prep.result.support.dmg : -1,
+      event: hasSupportEvent(prep.result),
+      attr: prep.result.log.some(l => typeof l === 'string' && l.includes('【结算归因】支援舰队')),
+      paths, deltas, costOk,
+      usedToday: Logistics.supportUsedToday(2) && Array.isArray(Game.state.support.fleets) && Game.state.support.fleets.indexOf(2) >= 0,
+      marked: !!(r.supportMark && r.supportMark.fleets && r.supportMark.fleets.indexOf(2) >= 0),
+      settled: !!(settled && settled.ok)
+    };
+    out.allFour = out.fired && out.dmg > 0 && out.event && out.attr && out.usedToday && out.marked && out.costOk;
+    Sortie.returnHome();
+    return out;
+  };
+
+  const integ = integrate(777);
+  assert('（集成层）Sortie.start → prepareBattle → settleBattle 真实路径走通', integ.startOk === true && integ.prepOk === true, JSON.stringify(integ.msg || ''));
+  assert('（集成层）① 支援伤害：同一次出击里 kind:\'support\' 事件 + dmg>0', !!integ.fired && integ.dmg > 0 && integ.event === true, `dmg=${integ.dmg}`);
+  assert('（集成层）② 消耗：支援队各舰扣减正确，且**写入点唯一**（深比较只动 morale / supply.fuel / supply.ammo）',
+    integ.costOk === true,
+    `deltas=${JSON.stringify(integ.deltas)} paths=${JSON.stringify(integ.paths)}`);
+  assert('（集成层）③ 互斥标记：当日占用写入 state.support 且可被 Logistics 读到', integ.usedToday === true && integ.marked === true);
+  assert('（集成层）④ 战报行：结算归因明示支援贡献（不许静默发放）', integ.attr === true);
+  assert('（集成层）四件事在**同一次出击**里同时发生', integ.allFour === true, JSON.stringify(integ));
+
+  /* ---- 反向：全员红脸 → 不发动 + 归因 + 出击正常完成（P0-2 不做硬死档）---- */
+  {
+    freshGame();
+    Game.state.fleet[1] = mkFleet(gunIds, 90);
+    Game.state.fleet[2] = mkFleet(supIds, 90);
+    for (const u of Game.state.fleet[2]) Game.state.ships[u].morale = 10;   // 全员红脸（<30）
+    assert('（原语层·反向）全员红脸时 fleetFiringShips 为空', Logistics.fleetFiringShips(2).length === 0 &&
+      Logistics.fleetDispatchBlocker(2).ok === true, 'firing=' + Logistics.fleetFiringShips(2).length);
+    const r = Sortie.start('1-1', 1, { supportFleet: 2 });
+    Sortie.moveToNext();
+    const prep = withSeed(31, () => Sortie.prepareBattle('单纵阵'));
+    assert('（原语层·反向）全员红脸：出击**正常完成**（ok===true，不做硬死档）', r.ok === true && prep.ok === true);
+    assert('（原语层·反向）全员红脸：支援不发动，且战报写明归因（不许静默）',
+      !prep.result.support && prep.result.log.some(l => typeof l === 'string' && l.includes('全员士气过低')),
+      JSON.stringify((prep.result.log || []).filter(l => typeof l === 'string' && l.includes('支援')).slice(0, 2)));
+    const b0 = JSON.parse(JSON.stringify(Game.state.ships[Game.state.fleet[2][0]]));
+    Sortie.settleBattle(prep);
+    const a0 = Game.state.ships[Game.state.fleet[2][0]];
+    assert('（原语层·反向）未发动则**不扣**支援消耗（避免静默收费），且战报明示',
+      a0.supply.fuel === b0.supply.fuel && a0.supply.ammo === b0.supply.ammo && a0.morale === b0.morale &&
+      prep.result.log.some(l => typeof l === 'string' && l.includes('不扣除油弹与士气')),
+      `fuel ${b0.supply.fuel}→${a0.supply.fuel} morale ${b0.morale}→${a0.morale}`);
+    Sortie.returnHome();
+  }
+
+  /* ---- 反向：三种拒绝理由必须可分辨（且都拦在出击之前）---- */
+  {
+    freshGame();
+    Game.state.fleet[1] = mkFleet(gunIds, 90);
+    Game.state.fleet[3] = mkFleet(ddIds, 90);
+    Game.state.fleet[2] = [];
+    const mEmpty = Sortie.start('1-1', 1, { supportFleet: 2 }).msg;
+    Game.state.fleet[2] = mkFleet(supIds, 90);
+    Game.state.expeditions[3] = { exId: 'ex1', end: Date.now() + 60000 };
+    const mExp = Sortie.start('1-1', 1, { supportFleet: 3 }).msg;
+    Game.state.repairs.push({ ship: Game.state.fleet[2][0], end: Date.now() + 60000 });
+    const mRep = Sortie.start('1-1', 1, { supportFleet: 2 }).msg;
+    Game.state.repairs.length = 0;
+    assert('（原语层·反向）支援队为空 / 远征中 / 入渠中 → 不发动，三种理由各不相同',
+      mEmpty !== mExp && mExp !== mRep && mEmpty !== mRep,
+      JSON.stringify([mEmpty, mExp, mRep]));
+    assert('（原语层·反向）三条理由各自指向正确原因（关键词可分辨）',
+      /为空/.test(mEmpty) && /远征/.test(mExp) && /入渠/.test(mRep),
+      JSON.stringify([mEmpty, mExp, mRep]));
+    assert('（原语层·反向）支援校验失败时**不进战场**（未创建 sortie 状态）', !Game.state.sortie);
+  }
+
+  /* ---- 互斥（双向）+ 周期（同日第二次被拒 / 跨日可再支援）---- */
+  {
+    freshGame();
+    Game.state.fleet[1] = mkFleet(gunIds, 90);
+    Game.state.fleet[2] = mkFleet(supIds, 90);
+    Game.state.fleet[3] = mkFleet(ddIds, 90);
+
+    /* 方向一：已作为支援出击的舰队 → 不能远征 */
+    Logistics.markSupportUsed(3);
+    const ex1 = Logistics.startExpedition(3, 'ex1');
+    assert('（原语层·互斥）当日已支援的舰队，startExpedition 被拒',
+      ex1.ok === false && /支援/.test(ex1.msg || ''), ex1.msg);
+    /* 反向对照：清掉占用后同一支舰队可以正常远征（证明拦住它的就是那条互斥） */
+    Game.state.support = { day: '', fleets: [] };
+    const ex2 = Logistics.startExpedition(3, 'ex1');
+    assert('（原语层·互斥）清掉当日占用后同一支舰队可正常远征（对照臂）', ex2.ok === true, ex2.msg || '');
+    /* 方向二：远征中的舰队不能被选为支援 */
+    const sup3 = Sortie.start('1-1', 1, { supportFleet: 3 });
+    assert('（原语层·互斥）远征中的舰队不能被选为支援（硬拦截，理由指向远征）',
+      sup3.ok === false && /远征/.test(sup3.msg || ''), sup3.msg);
+
+    /* 周期：同日第二次被拒 */
+    const r = Sortie.start('1-1', 1, { supportFleet: 2 });
+    assert('（原语层·周期）首次派遣支援成功', r.ok === true, r.msg || '');
+    const todayKey = Game.state.support.day;
+    Sortie.returnHome();
+    const again = Sortie.start('1-1', 1, { supportFleet: 2 });
+    assert('（原语层·周期）同日第二次派遣被拒（每支舰队每天 1 次）',
+      again.ok === false && /今日已作为支援出击/.test(again.msg || ''), again.msg);
+    /* 跨日：把 day 改成别的日期键 → 视为新的一天 */
+    Game.state.support = { day: '1999-01-01', fleets: [2] };
+    assert('（原语层·周期）跨日后占用自动翻页（supportUsedToday=false）', Logistics.supportUsedToday(2) === false);
+    const nextDay = Sortie.start('1-1', 1, { supportFleet: 2 });
+    assert('（原语层·周期）跨日后可再次支援', nextDay.ok === true, nextDay.msg || '');
+    assert('（原语层·周期）占用键走 periodKeys().daily（不得另写 24h 冷却）',
+      Progression.periodKeys(Date.now()).daily === todayKey);
+    Sortie.returnHome();
+  }
+
+  /* ---- 存档形状（v7 → v8；坑 #30 负向要点在 test_save_migration.js 里全量覆盖）---- */
+  {
+    freshGame();
+    assert('（原语层·存档）CURRENT_SAVE_VERSION = 8，newGame 自带 support 键',
+      Game.CURRENT_SAVE_VERSION === 8 && JSON.stringify(Game.state.support) === '{"day":"","fleets":[]}',
+      `ver=${Game.CURRENT_SAVE_VERSION} support=${JSON.stringify(Game.state.support)}`);
+  }
+
+  /* ---- 红绿验证：把支援接线掐断 → 恰好集成层那几条变红、其余仍绿 ----
+   * 掐点选 `Logistics.fleetDispatchBlocker`：它是 `Sortie.startInternal` 校验支援时的必经调用，
+   * 掐断后「派遣支援」这条路彻底走不通，而**不派支援的出击**不受任何影响。 */
+  {
+    const keepBlk = Logistics.fleetDispatchBlocker;
+    Logistics.fleetDispatchBlocker = () => ({ ok: false, msg: 'MUT-掐断支援接线' });
+    const mut = integrate(4242);
+    freshGame();
+    Game.state.fleet[1] = mkFleet(gunIds, 90);
+    const ctrlStart = Sortie.start('1-1', 1);                 // 不派支援
+    const ctrl = ctrlStart.ok === true;
+    Sortie.returnHome();
+    const candUnderMut = JSON.stringify(Sortie.supportCandidates(1));
+    Logistics.fleetDispatchBlocker = keepBlk;
+
+    assert('（红绿·变异）掐断支援接线后：派遣支援被拒 → 集成层那条**恰好**变红',
+      mut.startOk === false && /MUT-掐断支援接线/.test(mut.msg || ''), JSON.stringify(mut));
+    assert('（红绿·变异）同一变异下「其余仍绿」：不派支援的出击照常可用',
+      ctrl === true && candUnderMut === JSON.stringify([2, 3]),
+      `ctrl=${ctrl} candidates=${candUnderMut}`);
+
+    const restored = integrate(777);
+    assert('（红绿·还原）还原接线后集成层回到全绿（四件事再次同时发生）',
+      restored.allFour === true, JSON.stringify(restored));
+  }
 }
 
 section('总结');

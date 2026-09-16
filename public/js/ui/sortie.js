@@ -340,6 +340,7 @@ const SortieUI = (() => {
         <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
       </div>
       ${histRewardHtml(m)}
+      ${supportPicker(m, fidx)}
       <div class="hist-hard-box">
         <div class="hh-head">强敌阶</div>
         <div class="sb-body">${briefHtml(m.hard.brief)}</div>
@@ -403,6 +404,16 @@ const SortieUI = (() => {
         : `<span class="dim">${detail}</span>`}</div>`;
     }
     html += specialsHtml(it.specials, it.airSup);
+    /* 支援舰队自检行（V0.306 批次2 / 坑 #50）：与选择器**同源**（同一个 `Sortie.supportCandidates`），
+     * 让玩家在"舰队能力"这一组里就看到"这一场有没有人能来支援、大概来几艘"。 */
+    if (!Sortie.isHistoricMap(m)) {
+      const cands = Sortie.supportCandidates(fidx);
+      const cur = (selSupport && cands.includes(selSupport)) ? supportInfo(selSupport) : null;
+      html += cur
+        ? `<div><b>支援舰队</b>：<span class="ok">第 ${cur.idx} 舰队</span>（预计 ${cur.expect} 艘参与，士气 ${cur.minMorale}）`
+          + ` —— 每场消耗该队油弹各 5%、士气 10</div>`
+        : `<div><b>支援舰队</b>：<span class="dim">未派遣${cands.length ? '（可派：' + cands.map(i => '第 ' + i + ' 舰队').join('、') + '）' : '（无可用舰队）'}</span></div>`;
+    }
     if (m.threatNote) html += `<div class="md-threat"><b>威胁评估</b>：${Util.esc(m.threatNote)}</div>`;
     html += `<div class="dim">自检只作提示，不阻止出击。对位不满足、士气偏低仍可出击，失败后可按归因调整编成。</div>`;
     return html;
@@ -439,6 +450,96 @@ const SortieUI = (() => {
     </div>`;
   }
 
+  /* ============ 支援舰队选择器（V0.306 批次2）============
+   * 坑 #50：它必须出现在**出击准备页**，不能是一个孤立的新页面。
+   * 候选集与可用性与引擎**同源**：
+   *   - `Sortie.supportCandidates` = 已解锁 − 出击中（**结构**排除，坑 #43）
+   *   - `Logistics.fleetDispatchBlocker / fleetFiringShips` = 远征那一套（坑 #44）
+   * Gate 3：不满足的一律**置灰并写明原因**，玩家要在操作前知道自己在选什么。
+   * 两条设计事实（定价实测的结论）必须写进 UI，不许让玩家自己试出来：
+   *   ① 高装甲决战图（T5）上支援近乎无效；② 航母面板火力极低 → 航母型后备几乎没有支援价值。 */
+  let selSupport = 0;
+
+  /* 单支候选舰队的支援信息 —— UI 与引擎读同一批判据，不另算一套 */
+  function supportInfo(idx) {
+    const st = Game.state;
+    const fleet = st.fleet[idx] || [];
+    const L = (typeof Logistics !== 'undefined') ? Logistics : null;
+    const fire = L ? L.fleetFiringShips(idx) : fleet.slice();
+    const blk = L ? L.fleetDispatchBlocker(idx) : { ok: true, msg: null };
+    const used = L ? L.supportUsedToday(idx) : false;
+    const ex = st.expeditions[idx];
+    const ships = fleet.map(u => st.ships[u]).filter(Boolean);
+    const minMorale = ships.length ? Math.min.apply(null, ships.map(s => Number(s.morale) || 0)) : 0;
+    const minFuel = ships.length ? Math.min.apply(null, ships.map(s => (s.supply ? s.supply.fuel : 1))) : 1;
+    const minAmmo = ships.length ? Math.min.apply(null, ships.map(s => (s.supply ? s.supply.ammo : 1))) : 1;
+    const carriers = ships.filter(s => { const t = Game.shipDef(s).type; return t === 'CV' || t === 'CVL'; }).length;
+    const B = (typeof Battle !== 'undefined') ? Battle : null;
+    const minN = (B && B.SUPPORT_MIN_SHIPS) || 2, maxN = (B && B.SUPPORT_MAX_SHIPS) || 3;
+    const expect = Math.max(0, Math.min(maxN, fire.length));
+    let state = 'ok', reason = '';
+    if (!blk.ok) { state = 'blocked'; reason = blk.msg.replace(/[！!]$/, ''); }
+    else if (used) { state = 'blocked'; reason = '今日已作为支援出击（每支舰队每天 1 次）'; }
+    else if (ex) { state = 'blocked'; reason = '远征中'; }
+    else if (!fire.length) { state = 'weak'; reason = '全员士气过低，派出去也不会开火'; }
+    else if (fire.length < fleet.length) { state = 'weak'; reason = `${fleet.length - fire.length} 艘士气过低，仅 ${fire.length} 艘会开火`; }
+    return {
+      idx, state, reason, expect, minN, maxN, carriers, minMorale,
+      fuel: Math.round(minFuel * 100), ammo: Math.round(minAmmo * 100),
+      exLeft: ex ? Math.max(0, Math.round((ex.end - Date.now()) / 1000)) : 0,
+      count: fleet.length
+    };
+  }
+
+  function supportPicker(m, fidx) {
+    const st = Game.state;
+    if (Sortie.isHistoricMap(m)) {
+      return `<div class="sup-pick">
+        <div class="sp-head">支援舰队</div>
+        <div class="sp-note dim">史实重演要求参战舰艇独立作战 —— <b>历史战役无法派遣支援舰队</b>。
+          （Q4：允许支援会与史实加成链多一处对拍，本版不做。）</div>
+      </div>`;
+    }
+    const cands = Sortie.supportCandidates(fidx);
+    if (!cands.length) {
+      return `<div class="sup-pick">
+        <div class="sp-head">支援舰队</div>
+        <div class="sp-note dim">尚未解锁其他舰队 —— 解锁第 2 舰队后即可在出击时派遣支援。</div>
+      </div>`;
+    }
+    /* 选中的舰队若此刻已不可用（临时变化），回落到"不派遣"并给出提示 */
+    if (selSupport && !cands.includes(selSupport)) selSupport = 0;
+    if (selSupport) {
+      const si = supportInfo(selSupport);
+      if (si.state === 'blocked') selSupport = 0;
+    }
+    /* 定价实测的两条设计事实：T5 高装甲图无效 / 航母型后备无价值 */
+    const warn = [];
+    if (Number(m.diff) >= 5) warn.push('本图为**决战级高装甲海域**：实测支援在此类图上几乎无收益（伤害多为个位数），建议改派别的舰队做远征。');
+    const si = selSupport ? supportInfo(selSupport) : null;
+    if (si && si.carriers > 0 && si.carriers >= Math.ceil(si.count / 2)) {
+      warn.push('该队以**航母为主**：面板火力极低，作为支援的贡献远低于炮击舰。');
+    }
+    const opts = [`<button class="sp-opt${selSupport === 0 ? ' sel' : ''}" data-sup="0">不派遣</button>`]
+      .concat(cands.map(i => {
+        const s = supportInfo(i);
+        const dis = s.state === 'blocked';
+        const lab = `第 ${i} 舰队`;
+        const meta = dis ? s.reason
+          : `${s.expect} 艘可支援 · 士气 ${s.minMorale} · 油${s.fuel}% 弹${s.ammo}%`;
+        return `<button class="sp-opt${selSupport === i ? ' sel' : ''}${s.state === 'weak' ? ' weak' : ''}${dis ? ' dis' : ''}" data-sup="${i}" ${dis ? 'disabled' : ''} title="${UI.esc(meta)}">
+          <span class="sp-lab">${lab}</span><span class="sp-meta">${UI.esc(meta)}</span></button>`;
+      })).join('');
+    return `<div class="sup-pick">
+      <div class="sp-head">支援舰队（可选）</div>
+      <div class="sp-opts">${opts}</div>
+      <div class="sp-note dim">支援在<b>每个战斗节点</b>发动一次（随机 2~3 艘自由炮击，伤害约为主力的半手）；
+        发动时消耗该队油弹各 5%、士气 10（低于出击的 15），<b>未发动则不扣</b>；
+        但<b>当日派遣即占用</b> —— 该舰队今天不能再去远征。</div>
+      ${warn.length ? `<div class="sp-warn">${briefHtml(warn.join(' '))}</div>` : ''}
+    </div>`;
+  }
+
   /* 地图详情面板：迷你海图预览 + 血条 + 出击（BOSS海域锁定态提示）；fleetIdx 用于跟随所选舰队的索敌/出击判断 */
   function mapDetailPanel(m, fleetIdx) {
     const st = Game.state;
@@ -472,6 +573,7 @@ const SortieUI = (() => {
         <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
       </div>
       ${briefBox(m)}
+      ${locked ? '' : supportPicker(m, fidx)}
       ${locked
         ? `<div class="md-lock">🔒 未解锁！先击破 <b>${m.need}</b> 后开放此 BOSS 海域。</div>`
         : `<button class="btn btn-gold md-btn" data-start ${canGo ? '' : 'disabled'}>出击</button>`}
@@ -576,14 +678,24 @@ const SortieUI = (() => {
           draw();
         });
       });
+      /* 支援舰队选择（V0.306）：只改选择，不落存档 —— 真正的占用在 `Sortie.start` 内写入 `st.support` */
+      root.querySelectorAll('[data-sup]').forEach(b => {
+        b.addEventListener('click', () => {
+          selSupport = Number(b.dataset.sup) || 0;
+          draw();
+        });
+      });
       /* 出击：常规海域 / 战役常规阶 / 战役强敌阶共用同一条路径（只有 mapId 与 hard 标记不同） */
       const launch = (mapId, hard) => {
         if (lowSupply) {
           const ok = confirm(`第${['', '一', '二', '三', '四'][selFleet]}舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！\n弹药<50%伤害减半，0%无法炮击。建议先补给再出击！\n\n仍然出击？`);
           if (!ok) return;
         }
-        const r = hard ? Sortie.startHard(mapId, selFleet) : Sortie.start(mapId, selFleet);
+        /* 支援舰队（V0.306 批次2）：选择随出击一起提交；战役图一律不传（引擎侧也会拒绝） */
+        const supFleet = Sortie.isHistoricMap(Sortie.resolveMap(mapId)) ? 0 : selSupport;
+        const r = hard ? Sortie.startHard(mapId, selFleet) : Sortie.start(mapId, selFleet, { supportFleet: supFleet });
         if (!r.ok) { UI.toast(r.msg); return; }
+        selSupport = 0;   /* 占用已写入存档，选择状态归零（下次出击要重新选） */
         /* 油弹警告 + 士气轮换提醒（均为提示，不拦截出击） */
         const notes = [r.warn, r.advice && r.advice.text].filter(Boolean);
         if (notes.length) UI.toast(notes.join('\n'), 5200);
@@ -1397,10 +1509,13 @@ const SortieUI = (() => {
         case 'recon': reconAnim(ev); break;
         case 'touch': touchAnim(ev); break;
         case 'flak': (ev.shots ? flakBulkAnim(ev) : flakAnim(ev, atkEl, tgtEl)); break;
+        /* 支援炮击（V0.306）：不播弹道特效（支援队不在场上），只留一个短停顿呼应战报行 */
+        case 'support': break;
       }
     }
     const evDur = ev => {
       switch (ev.kind) {
+        case 'support': return 420;
         case 'torp': case 'open_torp': return flightTorp + 250;
         case 'air': return ev.strikes ? flightAir + 350 : flightAir + 260;
         case 'asw': return 540;
@@ -1454,7 +1569,7 @@ const SortieUI = (() => {
         if ((e.includes('炮击战') || e.includes('雷击战') || e.includes('先制对潜') || e.includes('夜战') || e.includes('战斗结束')) && !e.includes('航空')) clearAirGroup();
         const line = document.createElement('div');
         line.className = 'line' + (e.includes('击沉') ? ' sink'
-          : (e.includes('发动') || e.includes('空袭') || e.includes('Cut-in')) ? ' ci'
+          : (e.includes('发动') || e.includes('空袭') || e.includes('Cut-in') || e.includes('支援炮击')) ? ' ci'
           : isPhase ? ' phase' : '');
         line.textContent = e;
         logEl.appendChild(line);
@@ -1485,6 +1600,21 @@ const SortieUI = (() => {
 
     function showResult() {
       bf.classList.remove('night');
+      /* ⚠️ 「结算行冲刷」——**接线缺陷修复（V0.306 批次2 实测发现）**：
+       * `opts.finish()`（= `Sortie.settleBattle`）是在演出**最后一步**执行的，它会把结算期才产生的行
+       * （支援的【结算归因】、大破进击轰沉、消耗品消耗…）push 进 `r.result.log`；而播放器 `pos` 早已走到
+       * 当时的末尾，**这些行永远不会显示** —— 对支援而言就是任务书 2.5 明令禁止的「静默发放」。
+       * `entries` 与 `r.result.log` 是同一个数组引用，因此这里补一次冲刷即可把尾行补齐。 */
+      while (pos < entries.length) {
+        const e = entries[pos++];
+        if (typeof e === 'string') {
+          const line = document.createElement('div');
+          line.className = 'line' + (e.includes('击沉') ? ' sink'
+            : (e.includes('发动') || e.includes('支援炮击') || e.includes('【结算归因】')) ? ' ci' : '');
+          line.textContent = e;
+          logEl.appendChild(line);
+        } else if (e && e.snap) updateBars(e.snap);
+      }
       const histMap = isSortie ? Sortie.currentMap() : null;
       const isHistSortie = !!(histMap && Sortie.isHistoricMap(histMap));
       /* 战役：经验照给，但**不推进常规任务计数**（周常「出击 X 次」不含战役，坑 #20） */

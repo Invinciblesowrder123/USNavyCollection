@@ -1217,6 +1217,33 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .md-morale.red { color: #ffb0b0; border-left: 2px solid var(--red); background: rgba(224,85,85,.10); }
 .md-morale.low { color: #ffd6a8; border-left: 2px solid var(--orange); background: rgba(240,160,80,.10); }
 .morale-row { font-size: 11.5px; line-height: 1.9; }
+/* ---- 支援舰队选择器（V0.306 批次2）：出击准备页内，不另起页面（坑 #50）----
+ * 配色纪律：与 `.diff-badge` 同族（冷色=可用、暖色=警示），不做彩虹。 */
+.sup-pick { margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; background: rgba(10, 20, 36, .5); padding: 7px 8px; }
+.sp-head { font-size: 11.5px; color: var(--blue); letter-spacing: .5px; margin-bottom: 5px; }
+.sp-opts { display: flex; flex-wrap: wrap; gap: 5px; }
+.sp-opt {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  min-width: 104px; flex: 1 1 104px; padding: 4px 7px; cursor: pointer;
+  font-size: 11px; line-height: 1.4; text-align: left;
+  color: var(--text); background: rgba(30, 48, 74, .55);
+  border: 1px solid var(--line); border-radius: 4px;
+}
+.sp-opt:hover:not(:disabled) { border-color: var(--blue); }
+.sp-opt .sp-lab { font-size: 11.5px; color: var(--text); }
+.sp-opt .sp-meta { font-size: 10px; color: var(--dim); }
+.sp-opt.sel { border-color: var(--gold); background: rgba(212, 168, 84, .16); }
+.sp-opt.sel .sp-lab { color: var(--gold); }
+.sp-opt.weak { border-color: rgba(240, 160, 80, .55); }
+.sp-opt.weak .sp-meta { color: var(--orange); }
+.sp-opt.dis { opacity: .5; cursor: not-allowed; }
+.sp-opt.dis .sp-meta { color: #ffb0b0; }
+.sp-note { font-size: 10.5px; line-height: 1.7; color: var(--dim); margin-top: 6px; }
+.sp-warn {
+  font-size: 10.5px; line-height: 1.7; margin-top: 5px; padding: 5px 7px;
+  color: #ffd6a8; background: rgba(240, 160, 80, .10);
+  border-left: 2px solid var(--orange); border-radius: 3px;
+}
 /* 舰历页签（方向二）：履历摘要 / 荣誉墙 / 舰史 */
 .rec-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .rec-item { border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; background: rgba(10,20,36,.5); display: flex; justify-content: space-between; align-items: baseline; }

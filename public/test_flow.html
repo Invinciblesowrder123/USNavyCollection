@@ -1014,6 +1014,102 @@
       localStorage.removeItem('usnc_form_fixed');
       document.querySelector('#modal-root').innerHTML = '';
 
+      /* ===== V0.306 批次2：支援舰队 UI（选择器 / 置灰理由 / 结算归因必须可见） ===== */
+      {
+        Sortie.returnHome();
+        document.querySelector('#modal-root').innerHTML = '';
+        Game.newGame();
+        Game.unlockFleet(3);
+        Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+        Game.state.admiral.level = 60;
+        const mkS = ids => ids.map(id => {
+          const s = Game.createShip(id, 90);
+          s.hp = Game.shipStats(s.uid).hpMax; s.supply = { fuel: 1, ammo: 1 }; s.morale = 96;
+          Game.equipDefaults(s.uid);
+          return s.uid;
+        });
+        Game.state.fleet[1] = mkS(['iowa', 'washington', 'baltimore']);
+        Game.state.fleet[2] = mkS(['southdakota', 'indiana', 'atlanta']);
+        Game.state.fleet[3] = mkS(['helena', 'fletcher', 'kidd']);
+        Game.state.expeditions[3] = { exId: 'ex1', end: Date.now() + 600000 };
+
+        /* ① 选择器在**既有页面**里（坑 #50）：海域详情面板，不是孤立新页 */
+        UI.go('sortie');
+        const sa1 = scrEl.querySelector('[data-area="1"]'); if (sa1) sa1.click();
+        const sm11 = scrEl.querySelector('[data-map="1-1"]'); if (sm11) sm11.click();
+        const spick = scrEl.querySelector('.sup-pick');
+        R(!!spick, 'sup:pickerInMapDetail');
+        const sopts = scrEl.querySelectorAll('.sup-pick .sp-opt');
+        const cands1 = Sortie.supportCandidates(1);
+        R(sopts.length === cands1.length + 1, 'sup:pickerOptionCount',
+          sopts.length + ' vs ' + (cands1.length + 1));
+        const uiSup = Array.prototype.slice.call(sopts)
+          .map(o => o.getAttribute('data-sup')).filter(v => v !== '0').sort();
+        R(JSON.stringify(uiSup) === JSON.stringify(cands1.map(String).sort()),
+          'sup:pickerSameSource', JSON.stringify({ ui: uiSup, engine: cands1 }));
+        const sdis = scrEl.querySelector('.sup-pick .sp-opt.dis');
+        R(!!sdis && sdis.hasAttribute('disabled') && /远征/.test(sdis.textContent),
+          'sup:pickerBlockedReason', sdis ? sdis.textContent.replace(/\s+/g, ' ').trim() : '(无)');
+        R((spick ? spick.innerHTML : '').indexOf('**') < 0, 'sup:pickerNoMarkdownLeak');
+
+        /* ② 选中 → 高亮 + 元信息（艘数 / 士气）；Gate 3：操作前知道自己在选什么 */
+        const ssel = scrEl.querySelector('.sup-pick .sp-opt[data-sup="2"]');
+        if (ssel) ssel.click();
+        const sselNow = scrEl.querySelector('.sup-pick .sp-opt.sel');
+        R(!!sselNow && sselNow.getAttribute('data-sup') === '2', 'sup:pickerSelect',
+          sselNow ? sselNow.getAttribute('data-sup') : '(无)');
+        R(!!sselNow && /艘可支援/.test(sselNow.textContent) && /士气/.test(sselNow.textContent),
+          'sup:pickerSelectedMeta', sselNow ? sselNow.textContent.replace(/\s+/g, ' ').trim() : '(无)');
+        R(scrEl.innerHTML.indexOf('出击') >= 0, 'sup:stillOnSortiePrep');
+
+        /* ③ 历史战役页：明确说明不可派支援（Q4），且不得漏出 markdown */
+        const stabH = scrEl.querySelector('[data-tab="hist"]');
+        if (stabH) {
+          stabH.click();
+          const sbH1 = scrEl.querySelector('[data-battle="H1"]');
+          if (sbH1) sbH1.click();
+          const hpick = scrEl.querySelector('.sup-pick');
+          R(!!hpick && /无法派遣支援舰队/.test(hpick.textContent), 'sup:histDisabled',
+            hpick ? hpick.textContent.replace(/\s+/g, ' ').slice(0, 70) : '(无 .sup-pick)');
+          R(!!hpick && hpick.innerHTML.indexOf('**') < 0, 'sup:histNoMarkdownLeak');
+        }
+
+        /* ④ **结算归因可见性**（接线缺陷回归锁，V0.306 批次2 实测发现）：
+         * 【结算归因】行产生于 `settleBattle`，而演出播放器早已走完 —— 若 `showResult` 不冲刷尾行，
+         * 它（连同 MVP / 新荣誉 / 新击）**永远不会显示** = 任务书 2.5 明令禁止的「静默发放」。 */
+        localStorage.setItem('usnc_form_fixed', '单纵阵');
+        let supFireLine = false, supAttrLine = '';
+        for (let attempt = 0; attempt < 4 && !supAttrLine; attempt++) {
+          Sortie.returnHome();
+          document.querySelector('#modal-root').innerHTML = '';
+          Game.state.support = { day: '', fleets: [] };      // 每次重试前清掉当日占用
+          const stS = Sortie.start('1-1', 1, { supportFleet: 2 });
+          if (!stS.ok) { break; }
+          Game.state.sortie.node = 'A';                      // 1-1 A = 战斗点
+          UI.go('sortie');
+          const sadv = scrEl.querySelector('[data-act="advance"]');
+          if (!sadv) { break; }
+          sadv.click();
+          const sf = document.querySelector('#modal-root [data-f="单纵阵"]');
+          if (sf) sf.click();
+          const ssk = scrEl.querySelector('#fxSkip') || document.querySelector('#fxSkip');
+          if (ssk) ssk.click();
+          const send = document.querySelector('#modal-root [data-end]');
+          if (send) send.click();                            // 追击选择：不夜战（保证结算行一次到位）
+          const slog = (scrEl.querySelector('#battleLog') || {}).textContent || '';
+          if (slog.indexOf('支援炮击') >= 0) supFireLine = true;
+          if (slog.indexOf('【结算归因】支援舰队') >= 0) supAttrLine = slog;
+          const sback = scrEl.querySelector('#battleLog [data-back]');
+          if (sback) sback.click();
+        }
+        localStorage.removeItem('usnc_form_fixed');
+        document.querySelector('#modal-root').innerHTML = '';
+        R(supFireLine, 'sup:battleLogSupportLine');
+        R(!!supAttrLine, 'sup:settleAttrVisible',
+          supAttrLine ? supAttrLine.replace(/\s+/g, ' ').slice(-150) : '(战报里没有【结算归因】行)');
+        Sortie.returnHome();
+      }
+
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {
       window.__errors.push('FATAL ' + e.message + ' ' + (e.stack || '').split('\n')[1]);

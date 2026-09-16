@@ -1567,7 +1567,7 @@ const Battle = (() => {
     /* 交战形态权重（方向五：侦察引导航向） */
     ENG_WEIGHTS, engagementWeights,
     /* 支援舰队（V0.306 批次2）：常量 + 跳过原因，UI 与测量工具读这里，不硬编码 */
-    SUPPORT_COEF, SUPPORT_MIN_SHIPS, SUPPORT_MAX_SHIPS, SUPPORT_REASON
+    SUPPORT_COEF, SUPPORT_MIN_SHIPS, SUPPORT_MAX_SHIPS, SUPPORT_REASON, SUPPORT_FORM, SUPPORT_MODE
   };
 })();
 
