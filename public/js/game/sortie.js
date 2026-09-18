@@ -191,7 +191,9 @@ const Sortie = (() => {
 
   function nodeDef(map, nodeId) { return map.defs[nodeId] || { type: 'empty' }; }
 
-  /* 运输能力唯一计算点（V0.306 坑 #47）：AV=10，携带上陆用舟艇=8，其余=0。 */
+  /* 运输能力唯一计算点（V0.306 坑 #47）：AV=10，携带上陆用舟艇=8，其余=0。
+   * 判据是**类别** `cat === '上陆用舟艇'`，不是槽位 `SLOT.EQUIP` ——
+   * 槽位 14 同时容纳「设备」类装备，按槽位判会把设备误算成运输力。 */
   function transportCapacity(fleetIdx) {
     const G = GameRef(); const st = G.state;
     return (st.fleet[fleetIdx] || []).reduce((sum, uid) => {
@@ -205,12 +207,31 @@ const Sortie = (() => {
     }, 0);
   }
 
-  function transportReward(map, total) {
+  /* 运输门槛的唯一读取点（V0.306 修复 / 坑 #47）：节点 `def.goal` 优先，回落 `map.transportGoal`。
+   * 旧实现「奖励触发读 map.transportGoal、UI 展示读 def.goal」两处各读一个字段 ——
+   * 将来某图只改一处就会出现「UI 显示 18、奖励永不触发」的静默不一致。UI 与结算必须同源。 */
+  function transportGoalOf(map, def) {
+    return Number((def && def.goal) || map.transportGoal || 0);
+  }
+
+  /* mapProgress 条目取用：形状定义点在 `state.js::mapProgressEntry`（坑 #49），此处只取不造。 */
+  function mapProgressOf(st, map) {
+    if (!st.mapProgress[map.id]) st.mapProgress[map.id] = GameRef().mapProgressEntry(map);
+    return st.mapProgress[map.id];
+  }
+
+  /* 一次性奖励：查账本 → 发放 → 记账（坑 #48）。
+   * 账本项 = `mapProgress[id].transportRewarded`（0 = 未发；非 0 = 发放时间戳），
+   * 与 `st.stats.objectives` / `historic` / `medalLedger` 同构。
+   * 置于 mapProgress 而非 stats 的理由：它与被守护的进度计数**同生共死** ——
+   * 若某次存档异常把该图条目整个重建，进度归零、账本也归零，玩家重做即可再领；
+   * 若账本单独存活而进度被清，则会「做满门槛却什么都不发」的静默损失。 */
+  function transportReward(map, total, def) {
     const G = GameRef(); const st = G.state;
-    const mp = st.mapProgress[map.id] || (st.mapProgress[map.id] = { gauge: map.gauge, cleared: false, kills: 0, transport: 0 });
-    const goal = Number(map.transportGoal || 0);
+    const mp = mapProgressOf(st, map);
+    const goal = transportGoalOf(map, def);
     if (goal > 0 && total >= goal && !mp.transportRewarded) {
-      mp.transportRewarded = true;
+      mp.transportRewarded = Date.now();
       if (typeof Progression !== 'undefined' && Progression.grantRewardBundle) Progression.grantRewardBundle({ fuel: 300, ammo: 300 });
       return true;
     }
@@ -256,13 +277,15 @@ const Sortie = (() => {
       return { ok: true, type: 'move', advance: true };
     }
 
-    /* ---- 运输点：只结算载荷，不战斗、不耗弹药、不消费随机数 ---- */
+    /* ---- 运输点：只结算载荷，不战斗、不耗弹药、不消费随机数 ----
+     * V0.306 修复：T 已是 2-4 / 4-2 的**主干节点**（分支点由 A 移到 T），
+     * 因此"点了没反应"这类缺陷不会再出现（旧结构下 T 恒为 `next[0]` 的第 2 位，永远走不到）。 */
     if (def.type === 'transport') {
-      const mp = st.mapProgress[map.id] || (st.mapProgress[map.id] = { gauge: map.gauge, cleared: false, kills: 0, transport: 0 });
+      const mp = mapProgressOf(st, map);
       const amount = transportCapacity(so.fleetIdx);
       mp.transport = Number(mp.transport || 0) + amount;
-      const rewarded = transportReward(map, mp.transport);
-      return { ok: true, type: 'transport', amount, total: mp.transport, goal: Number(def.goal || map.transportGoal || 0), rewarded, advance: true };
+      const rewarded = transportReward(map, mp.transport, def);
+      return { ok: true, type: 'transport', amount, total: mp.transport, goal: transportGoalOf(map, def), rewarded, advance: true };
     }
 
     /* ---- 资源点 ---- */
@@ -1190,8 +1213,8 @@ const Sortie = (() => {
 
   return {
     start, startHard, advance, prepareBattle, continueNight, settleBattle, moveToNext, currentMap, nextNodes,
-    nodeDef, transportCapacity,
-    atBoss, retreat, returnHome, nodeDef, sortieConsumption, daPoShips, flagshipDaPo,
+    nodeDef, transportCapacity, transportGoalOf,
+    atBoss, retreat, returnHome, sortieConsumption, daPoShips, flagshipDaPo,
     /* 历史战役（V0.303）：唯一接入点 + 门槛 + 二波制 */
     resolveMap, isHistoricMap, historicGate, startHardWave, fleetTypes,
     enemyFleet: key => { const B = BattleRef(); return (B && B.enemyFleet) ? B.enemyFleet(key) : null; },

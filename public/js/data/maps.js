@@ -427,7 +427,7 @@ const MAPS = [
     diff: 2,          // 难度档 1~5（T1 基础 / T2 常规 / T3 考验 / T4 高难 / T5 决战）
     diffNote: '四线同考：夜战 + 潜艇 + 航空 + 索敌≥60。制空要求高（单航母 37%，双航母 95%）。',
     brief: '瓜达尔卡纳尔。机场在敌人手里，舰队的每一寸制空都要自己抢回来。\nA 点与 BOSS 编成均带舰载机，未携带舰战将丧失制空，昼战特殊攻击全部无法发动。同时设夜战节点与潜艇伏击点——\n编成要同时照顾制空、夜战火力与对潜（驱逐舰、轻巡洋舰天生具备对潜能力）。',
-    /* threat：asw ← C 点 mode:'sub'；night ← B 点 mode:'night'；los ← A 点 branch.if.los；air ← A/BOSS 敌军含舰载机 */
+    /* threat：asw ← C 点 mode:'sub'；night ← B 点 mode:'night'；los ← T 点 branch.if.los；air ← A/BOSS 敌军含舰载机 */
     threat: ['air', 'asw', 'los', 'night'],
     threatNote: '本海域四线并考。索敌≥60 走 B 点夜战线，否则迎击 C 点潜艇伏击。A 点含航空战力敌编成，未携带舰战将丧失制空；夜战点与潜艇点分别要求夜战火力与对潜手段。',
     start: 'S', boss: 'D', gauge: 5,
@@ -435,7 +435,7 @@ const MAPS = [
     nodes: {
       S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, T: { x: 560, y: 260 }, D: { x: 820, y: 260 }
     },
-    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D'], ['A', 'T'], ['T', 'C']],
+    edges: [['S', 'A'], ['A', 'T'], ['T', 'B'], ['T', 'C'], ['B', 'D'], ['C', 'D']],
     defs: {
       S: { type: 'start' },
       T: { type: 'transport', goal: 18 },
@@ -444,7 +444,11 @@ const MAPS = [
       C: { type: 'battle', enemy: 'F93', mode: 'sub' },     // 潜艇点：哨戒线下的潜水伏击
       D: { type: 'boss', enemy: 'F29' }
     },
-    branch: { at: 'A', if: { los: 60 }, to: ['B'] },   // 索敌≥60 走夜战水雷线；否则走哨戒线
+    /* V0.306 修复：T 改为主干节点（所有编成必经），分支点由 A 移到 T。
+     * 旧结构把 T 挂在 A 的"低索敌支线"上，而自动选路 `moveToNext()` 恒取 `next[0]`
+     * → T 永远落在 `[C,T]` 的第 2 位 ⇒ **运输点全游戏不可达**（V0.306 评审 P0）。
+     * 分支语义未变：索敌≥60 仍走 B 点夜战线，否则仍走 C 点哨戒线。 */
+    branch: { at: 'T', if: { los: 60 }, to: ['B'] },   // 索敌≥60 走夜战水雷线；否则走哨戒线
     /* 作战目标（方向四）：双空母编成要求 —— 该图是制空决战，但要牺牲两个水面输出位 */
     objectives: [
       { id: '2-4-cv2', type: 'typeLimit', types: ['CV', 'CVB', 'CVL'], min: 2, desc: '编成含 ≥2 艘空母（该图是制空决战）', reward: { baux: 500, fuel: 300 } },
@@ -713,7 +717,7 @@ const MAPS = [
     nodes: {
       S: { x: 0, y: 260 }, A: { x: 280, y: 260 }, B: { x: 560, y: 120 }, C: { x: 560, y: 400 }, T: { x: 560, y: 260 }, D: { x: 820, y: 260 }
     },
-    edges: [['S', 'A'], ['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D'], ['A', 'T'], ['T', 'C']],
+    edges: [['S', 'A'], ['A', 'T'], ['T', 'B'], ['T', 'C'], ['B', 'D'], ['C', 'D']],
     defs: {
       S: { type: 'start' },
       T: { type: 'transport', goal: 18 },
@@ -722,7 +726,10 @@ const MAPS = [
       C: { type: 'battle', enemy: 'F65' },
       D: { type: 'boss', enemy: 'F66' }
     },
-    branch: { at: 'A', if: { los: 45 }, to: ['B'] },   // 索敌≥45 走铝土补给线；否则走警戒线
+    /* V0.306 修复：同 2-4 —— T 改主干节点、分支点由 A 移到 T。
+     * 本图尤其必要：运输编成（AV+舟艇）实测索敌 59 ≥ 本图阈值 45，
+     * 即使只调边序也会被分支甩到 B 线，**永远碰不到 T**。 */
+    branch: { at: 'T', if: { los: 45 }, to: ['B'] },   // 索敌≥45 走铝土补给线；否则走警戒线
     drops: ['archerfish', 'gato', 'dace', 'darter'],
     bossDrops: ['yorktown', 'alabama', 'washington']
   },

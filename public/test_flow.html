@@ -360,7 +360,11 @@
       R(msHtml.indexOf('100%') >= 0 && msHtml.indexOf('纪念荣誉') >= 0, 'v305:milestone100HonorOnly');
       R(Progression.LIB_MILESTONES.join(',') === '25,50,75', 'v305:milestoneNoHundredTier');
       R(typeof Acquisition === 'object' && Acquisition.shipRoutes('fletcher').length > 0, 'v305:acquisitionApi');
-      R(Acquisition.unimplemented('equip').length === 6, 'v305:unimplementedMarked', Acquisition.unimplemented('equip').join(','));
+      /* V0.306 修复：m4a1（全装备表唯一「上陆用舟艇」）已挂 2-1 任务奖励 —— 运输作战的 P0-3 前置。
+       * 锁定数量 6 → 5；这 5 件仍无渠道，数量变化即需人复核（坑 #6 的正向用法）。 */
+      R(Acquisition.unimplemented('equip').length === 5, 'v305:unimplementedMarked', Acquisition.unimplemented('equip').join(','));
+      R(Acquisition.equipRoutes('m4a1').some(r => r.key === 'quest'), 'v306:m4a1Obtainable',
+        JSON.stringify(Acquisition.equipRoutes('m4a1').map(r => r.key + ':' + r.text)));
 
       /* ===== V0.305 军需处 ===== */
       UI.go('medals');
@@ -1108,6 +1112,91 @@
         R(!!supAttrLine, 'sup:settleAttrVisible',
           supAttrLine ? supAttrLine.replace(/\s+/g, ' ').slice(-150) : '(战报里没有【结算归因】行)');
         Sortie.returnHome();
+      }
+
+      /* ============================================================
+       * V0.306 批次3：运输作战（可达性 + 详情进度行 + 节点 UI + 结果提示）
+       * 断言的基准是 `Sortie.transportGoalOf` / `Sortie.transportCapacity` 这份唯一数据源 ——
+       * UI 若另算一套门槛/容量，这里会红。
+       * ⚠️ 本段是 V0.306 评审 P0 的回归锁：旧结构下运输点 `T` 在自动选路里永远取不到，
+       *    玩家点都点不到；`trans:routeReachesT` 就是钉住这一点的。
+       * ============================================================ */
+      {
+        Sortie.returnHome();
+        document.querySelector('#modal-root').innerHTML = '';
+        UI.go('sortie');
+        document.querySelector('#screen [data-area="2"]').click();
+
+        const m24 = MAPS.find(m => m.id === '2-4');
+        const goal24 = Sortie.transportGoalOf(m24, m24.defs.T);
+
+        /* ① 海域详情：运输进度行必须存在、与数据同源、无 undefined、点明两种能力来源 */
+        const dbtn = document.querySelector('#screen [data-map="2-4"]');
+        R(!!dbtn, 'trans:mapEntryExists');
+        if (dbtn) dbtn.click();
+        const mdEl = document.querySelector('#screen .map-detail');
+        const rowWith = kw => {
+          if (!mdEl) return null;
+          const rows = mdEl.querySelector('.md-rows');
+          if (!rows) return null;
+          return Array.prototype.slice.call(rows.querySelectorAll('div')).find(x => x.textContent.indexOf(kw) >= 0) || null;
+        };
+        const tRow = rowWith('运输进度');
+        R(!!tRow, 'trans:detailRow', mdEl ? mdEl.querySelector('.md-rows').textContent.replace(/\s+/g, ' ').slice(0, 160) : '(无详情)');
+        const tRowTxt = tRow ? tRow.textContent.replace(/\s+/g, ' ').trim() : '(无)';
+        R(/\d+\s*\/\s*\d+/.test(tRowTxt) && tRowTxt.indexOf(String(goal24)) >= 0, 'trans:detailRowSameSource', tRowTxt);
+        R(tRowTxt.indexOf('undefined') < 0, 'trans:detailRowNoUndefined', tRowTxt);
+        R(tRowTxt.indexOf('上陆用舟艇') >= 0 && tRowTxt.indexOf('AV') >= 0, 'trans:detailRowSources', tRowTxt);
+
+        /* ② 可达性：走**真实路由**到运输点，节点屏必须给「卸载作业」而不是「迎击」 */
+        const mkTShip = (id, lv, eqs) => {
+          const sh = Game.createShip(id, lv);
+          sh.equipped = (eqs || []).map(x => Game.createEquip(x).uid);
+          sh.hp = Game.shipStats(sh.uid).hpMax;
+          return sh.uid;
+        };
+        /* 专门运输编成 = AV(curtiss) + 带「上陆用舟艇」(m4a1) 的驱逐 → 10 + 8 = 18 = 门槛 */
+        const tFleet = [mkTShip('curtiss', 30, ['soc']), mkTShip('fletcher', 30, ['m4a1'])];
+        Game.state.fleet[2] = tFleet.slice();
+        Game.state.mapProgress['2-4'].cleared = false;
+        const stT = Sortie.start('2-4', 2);
+        R(stT.ok === true, 'trans:start24', JSON.stringify(stT));
+        if (stT.ok) {
+          let guard = 0;
+          while (Game.state.sortie.node !== 'T' && guard++ < 8) Sortie.moveToNext();
+          R(Game.state.sortie.node === 'T', 'trans:routeReachesT',
+            'path=' + (Game.state.sortie.path || []).join('→') + ' node=' + Game.state.sortie.node);
+          UI.go('sortie');
+          const advBtn = document.querySelector('#screen [data-act="advance"]');
+          R(!!advBtn && advBtn.textContent.indexOf('卸载作业') >= 0, 'trans:nodeButton',
+            advBtn ? advBtn.textContent.trim() : '(无按钮)');
+          R(document.querySelector('#screen').innerHTML.indexOf('运输点') >= 0, 'trans:nodeLabel');
+
+          /* ③ 结算：点击后累计量必须 + 容量（同源），并给出「本次/累计/门槛」提示 */
+          const before = Number(Game.state.mapProgress['2-4'].transport || 0);
+          const cap = Sortie.transportCapacity(2);
+          const toastBox = document.querySelector('#toast');
+          if (toastBox) toastBox.innerHTML = '';
+          if (advBtn) advBtn.click();
+          const after = Number(Game.state.mapProgress['2-4'].transport || 0);
+          const tEl = document.querySelector('#toast .toast');
+          const toast = tEl ? tEl.textContent.replace(/\s+/g, ' ') : '';
+          R(after - before === cap, 'trans:advanceAddsCapacity', `before=${before} after=${after} cap=${cap}`);
+          R(/\d+\s*\/\s*\d+/.test(toast) && toast.indexOf(String(goal24)) >= 0, 'trans:resultToastShowsProgressGoal', toast.slice(0, 140));
+          R(cap >= goal24 && toast.indexOf('奖励已发放') >= 0, 'trans:goalReachedRewarded', toast.slice(0, 140));
+
+          /* ④ 详情页进度行随后同步（回列表再进详情，读的是存档而不是上次渲染的残留） */
+          Sortie.returnHome();
+          UI.go('sortie');
+          const dbtn2 = document.querySelector('#screen [data-map="2-4"]');
+          if (dbtn2) dbtn2.click();
+          const tRow2 = rowWith('运输进度');
+          const txt2 = tRow2 ? tRow2.textContent.replace(/\s+/g, ' ').trim() : '(无)';
+          R(!!tRow2 && txt2.indexOf(String(after)) >= 0, 'trans:detailRowRefreshed', txt2);
+        }
+        Sortie.returnHome();
+        document.querySelector('#modal-root').innerHTML = '';
+        UI.go('sortie');
       }
 
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });

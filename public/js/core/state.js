@@ -469,7 +469,7 @@ const Game = (() => {
     const starterEq = ['gun5in_30', 'gun5in_30', 'sec5in_1', 'aa_20mm', 'aa_20mm', 'torp_mk15'];
     for (const id of starterEq) createEquip(id);
     for (const m of MAPS) {
-      state.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0, transport: 0 };
+      state.mapProgress[m.id] = mapProgressEntry(m);
     }
     save();
   }
@@ -657,6 +657,13 @@ const Game = (() => {
     return save;
   }
 
+  /* `mapProgress[m.id]` 条目的**唯一形状定义点**（坑 #47/#49，V0.306 修复）：
+   * `newGame()` / `normalizeSave()` / 引擎运行时兜底三条路径必须产出**同一键集合**。
+   * 旧实现三处各写一份字面量 → 运行时领奖后多出 `transportRewarded`，键集合出现第三种形态。
+   * 新增字段只改这里。 */
+  function mapProgressEntry(m) {
+    return { gauge: m.gauge, cleared: false, kills: 0, transport: 0, transportRewarded: 0 };
+  }
   const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5, 5: migrateV5ToV6, 6: migrateV6ToV7, 7: migrateV7ToV8 };
   function normalizeSave(save) {
     if (!save.resources || typeof save.resources !== 'object') {
@@ -673,8 +680,14 @@ const Game = (() => {
     save.fleetUnlock[4] = save.fleetUnlock[4] === true;
     if (!save.mapProgress || typeof save.mapProgress !== 'object') save.mapProgress = {};
     for (const m of MAPS) {
-      if (!save.mapProgress[m.id]) save.mapProgress[m.id] = { gauge: m.gauge, cleared: false, kills: 0, transport: 0 };
-      else if (save.mapProgress[m.id].transport === undefined) save.mapProgress[m.id].transport = 0;
+      const mp = save.mapProgress[m.id];
+      if (!mp || typeof mp !== 'object') { save.mapProgress[m.id] = mapProgressEntry(m); continue; }
+      /* 老档缺新键（坑 #49：`transport` / `transportRewarded` 是本版新增）→ 逐键补齐，
+       * **不整条覆盖**，否则会把玩家已有的 gauge/kills 清零。
+       * 注意：这里只补 `mapProgress` 内的键 —— 版本级新键（support 等）一律由迁移器补，
+       * `normalizeSave` 补了会让迁移测试变空转（坑 #30）。 */
+      if (mp.transport === undefined) mp.transport = 0;
+      if (mp.transportRewarded === undefined) mp.transportRewarded = 0;
     }
     if (!save.ships || typeof save.ships !== 'object') save.ships = {};
     if (!save.equipment || typeof save.equipment !== 'object') save.equipment = {};
@@ -816,6 +829,7 @@ const Game = (() => {
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
     setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets,
     migrateSave, normalizeSave, CURRENT_SAVE_VERSION, defaultRecord, normalizeRecord,
+    mapProgressEntry,
     libraryStats, libraryHasShip, libraryHasEquip
   };
 })();

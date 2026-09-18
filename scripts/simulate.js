@@ -2645,16 +2645,30 @@ section('V0.303·任务1.3 史实加成乘区 _histHit（独立乘区，绝不�
       const m = Battle.hitMods(s);
       return m.hist === 1 && Math.abs(m.total - (s._reconHit || 1) * (s._touchHit || 1)) < 1e-12;
     }));
-  /* 实战胜率方向：史实加成只应让战役内的我方更强（不是反向） */
+  /* ---- 史实乘区的方向性（V0.306 评审整改：把「不可判定的统计判据」换成确定性判据）----
+   * 旧判据 =「60 场未加种子的 S 率对照：sOn >= sOff − 12」。
+   * 2026-09-18 实测：本编成（airKeyFleet Lv110 vs H1A）**没有裕度** —— 我方零沉船、
+   * 敌方总输出仅约 9k/300 场，5% 命中/回避乘区的效应量**小于噪声底**：
+   * N=300 时 ΔS 仍在 ±10 内正负翻转（4 轮：+6/−4/−10/+8；另测 Lv70/Lv45/H1X 亦同）。
+   * ⇒ 该统计判据既不能证实也不能证伪"方向反转"，只会间歇性假红（本轮即 off=27 / on=13 撞线）。
+   * 按坑 #6 的正向用法替换为**确定性判据**：直接读引擎的命中乘区纯函数与乘区挂载位置。
+   * 这套判据对"方向反转"的实际判别力**强于**旧判据 —— 旧判据要等到效应量大于噪声底才有分辨力。 */
   const airKeyFleet = () => mkHist(['enterprise', 'essex', 'saratoga', 'iowa', 'fletcher', 'baltimore'], 110, eqF);
-  let sOff = 0, sOn = 0;
-  for (let i = 0; i < 60; i++) { airKeyFleet(); if (Battle.battle(Game.state.fleet[1].slice(), en.ships, '单纵阵', en.formation, { allowNight: true, fleetIdx: 1, airMode: true }).rank === 'S') sOff++; }
-  for (let i = 0; i < 60; i++) { airKeyFleet(); if (Battle.battle(Game.state.fleet[1].slice(), en.ships, '单纵阵', en.formation, { allowNight: true, fleetIdx: 1, airMode: true, historic: true, histHit: 1.05, histEvd: 1.05 }).rank === 'S') sOn++; }
-  assert('史实加成方向正确：开启后 S 胜次数不少于关闭（60 场对照，只作方向性检查）',
-    /* V0.304：容差 ±6 → ±12。根因：hist_balance 的 equipAir 配装修正（舰战+舰爆混装）后
-     * CV 队 S 胜方差增大，60 场样本下差值标准差 ≈5.5，±6 仅约 1σ（实测约 1/12 跑次误报）。
-     * ±12 ≈ 2σ，仍保留「加成方向不得反转」的判别力。 */
-    sOn >= sOff - 12, `off=${sOff} on=${sOn}`);
+  airKeyFleet();
+  const offBattle = Battle.battle(Game.state.fleet[1].slice(), en.ships, '单纵阵', en.formation,
+    { allowNight: true, fleetIdx: 1, airMode: true });
+  assert('（原语层）未开史实时：我方命中乘区 hist 恒为 1，且不写 `_histHit` / `_histEvd` 字段（逐位不变）',
+    offBattle.mySide.every(s => Battle.hitMods(s).hist === 1 && s._histHit === undefined && s._histEvd === undefined),
+    JSON.stringify(offBattle.mySide.map(s => Battle.hitMods(s).hist)));
+  airKeyFleet();
+  const onBattle = Battle.battle(Game.state.fleet[1].slice(), en.ships, '单纵阵', en.formation,
+    { allowNight: true, fleetIdx: 1, airMode: true, historic: true, histHit: 1.05, histEvd: 1.05 });
+  assert('（原语层）史实乘区方向正确：开启后我方**命中与回避两条通道同时**×1.05（只增不减）',
+    onBattle.mySide.length > 0 && onBattle.mySide.every(s => Battle.hitMods(s).hist === 1.05 && s._histEvd === 1.05),
+    JSON.stringify(onBattle.mySide.map(s => [Battle.hitMods(s).hist, s._histEvd])));
+  assert('（原语层）史实乘区不越界：只挂我方，敌方单舰两个字段都不许带（挂错边方向即反转）',
+    onBattle.enemySide.every(s => s._histHit === undefined && s._histEvd === undefined),
+    JSON.stringify(onBattle.enemySide.map(s => [s._histHit, s._histEvd])));
 }
 
 section('V0.303·任务1.4 结算 / 全局账本 / 存档 v6 / item 奖励通道');
@@ -2955,23 +2969,31 @@ section('V0.303·任务2.1 强敌阶二波制（waves）');
     histShip2('baltimore', 120, ['gun8in_55', 'gun8in_55', 'radar_sg', 'ap_mk8'])
   ]);
   Game.state.sortie.node = 'X';
-  const prepW = Sortie.prepareBattle('单纵阵');
+  /* V0.306 整改：本段原先依赖「残弹 0 ⇒ 必败」这个**不完全成立**的确定性假设 ——
+   * 全员残弹 0 只禁掉炮击，鱼雷与夜战仍能输出，全量套件跑多了偶发 B 胜（实测约 1/55 轮），
+   * 会让下面 3 条归因断言一起假红。改为**固定种子**（与 §2.8 同一套手法）：同一种子 ⇒ 同一场战斗。 */
+  const waveSeed = 20260918;
+  const mkPrngW = s0 => { let s = (s0 >>> 0) || 1; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+  const withSeedW = (seed, fn) => { const real = Math.random; Math.random = mkPrngW(seed); try { return fn(); } finally { Math.random = real; } };
+  const prepW = withSeedW(waveSeed, () => Sortie.prepareBattle('单纵阵'));
   let lost = null;
   if (prepW && prepW.ok) {
     prepW.histContinue = true;
-    Sortie.settleBattle(prepW);
+    withSeedW(waveSeed + 1, () => Sortie.settleBattle(prepW));
     /* 模拟"第一波打完之后"的真实状态：残弹见底 + 僚舰全员大破（旗舰保住 40%，否则连进击都不允许——
      * 这本身也印证了「旗舰大破禁进击」在二波制下依然生效） */
     const uids = Game.state.fleet[1].filter(u => Game.state.ships[u]);
     uids.forEach((u, i) => {
       const s = Game.state.ships[u];
       /* V0.304 稳固化：残弹 0.04（补正 0.08）下高练度队偶发 B 胜 → 归因断言 flaky（实测 1/10）。
-       * 残弹 0 = 「0% 无法炮击」（引擎既有规则），战败构造确定化。 */
+       * 残弹 0 = 「0% 无法炮击」（引擎既有规则）。
+       * V0.306 整改补记：**残弹 0 并不足以保证必败** —— 它只禁掉炮击，鱼雷与夜战仍能输出；
+       * 全量套件里仍偶发 B 胜（约 1/55 轮）。故上面三层调用一律走**固定种子**。 */
       s.supply.ammo = 0; s.supply.fuel = 0.04;
       s.hp = i === 0 ? Math.max(1, Math.floor(Game.shipStats(u).hpMax * 0.4)) : 1;
     });
-    const p2 = Sortie.startHardWave(prepW);
-    if (p2 && p2.ok) lost = Sortie.settleBattle(p2);
+    const p2 = withSeedW(waveSeed + 2, () => Sortie.startHardWave(prepW));
+    if (p2 && p2.ok) lost = withSeedW(waveSeed + 3, () => Sortie.settleBattle(p2));
   }
   const attr = lost ? lost.result.log.filter(l => typeof l === 'string') : [];
   assert('二波战败：归因命中「连续作战 / 弹药」分支（二波制的难度来源可解释）',
@@ -3712,7 +3734,13 @@ section('V0.304·批次4 分段战斗流程回归（原 test_night_split 并入�
     Sortie.continueNight(nfPrep2);
     assert('分段回归：夜战突入后 nightUsed=true', nfPrep2.result.nightUsed === true);
   } else {
+    /* V0.306 整改：原实现在此**静默跳过**一条断言 ⇒ 套件分母在 1965/1966 之间浮动
+     * （soak 第 25 轮实测 1966、其余 1965），覆盖悄悄丢一条而没有任何提示。
+     * 改为两个分支各发一条断言，分母恒定；并顺带校验"跳过的理由"真的成立。 */
     nfPrep2.result.nightUsed = true;   // 昼战即全歼时，直接校验结算的30%弹药分支
+    assert('分段回归：无夜战可突入时**理由成立**（昼战即有一方全灭），改走 30% 弹药分支',
+      !nfPrep2.result.mySide.some(s => s.alive) || !nfPrep2.result.enemySide.some(s => s.alive),
+      'myAlive=' + nfPrep2.result.mySide.filter(s => s.alive).length + ' enAlive=' + nfPrep2.result.enemySide.filter(s => s.alive).length);
   }
   const nfAmmoBefore30 = Game.state.ships[nfStrongFleet[0]].supply.ammo;
   Sortie.settleBattle(nfPrep2);
@@ -3747,14 +3775,17 @@ section('V0.305·批次1 图鉴获取途径与收集率里程碑');
   const unShip = Acquisition.unimplemented('ship');
   const unEquip = Acquisition.unimplemented('equip');
   assert('获取途径：舰船无"未实装"条目（104 舰全部可获得）', unShip.length === 0, unShip.join(','));
-  assert('获取途径：装备"未实装"恰好 6 件（V0.302~V0.304 遗留，本版范围冻结不补渠道）',
-    unEquip.length === 6 &&
-    JSON.stringify(unEquip.slice().sort()) === JSON.stringify(['crew_vet', 'fleetcom', 'fr1', 'm4a1', 'repair_facility', 'xf5u']),
+  assert('获取途径：装备"未实装"恰好 5 件（V0.306 修复：m4a1 已挂 2-1 任务奖励，6 → 5）',
+    unEquip.length === 5 &&
+    JSON.stringify(unEquip.slice().sort()) === JSON.stringify(['crew_vet', 'fleetcom', 'fr1', 'repair_facility', 'xf5u']),
     unEquip.join(','));
+  assert('获取途径：m4a1 不再是"未实装"，且渠道为任务奖励（运输作战 P0-3 前置，V0.306 修复）',
+    !unEquip.includes('m4a1') && Acquisition.equipRoutes('m4a1').some(r => r.key === 'quest'),
+    JSON.stringify(Acquisition.equipRoutes('m4a1').map(r => r.key)));
   assert('获取途径：未实装项渲染为 none（UI 会标红而非留白）',
     Acquisition.equipRoutes('xf5u').some(r => r.key === 'none'));
   /* 装备 100% 收集率因此**不可达** → 里程碑 100% 档只能给纪念荣誉（规划方案 §3.2(3) 的实证依据） */
-  assert('获取途径：因 6 件未实装，装备 100% 不可达 —— 里程碑最高档位不得低于 100%',
+  assert('获取途径：因 5 件未实装，装备 100% 不可达 —— 里程碑最高档位不得低于 100%',
     Acquisition.unimplemented('equip').length > 0 && Progression.LIB_MILESTONES.every(m => m < 100));
 
   /* ---- 1.2 与真实数据交叉核对（抽样：期望值从数据表算出，不写死 —— 数据一改断言不该变噪声） ---- */
@@ -4726,20 +4757,229 @@ section('V0.306·批次2 支援舰队（含集成层 + 红绿验证）');
   }
 }
 
-section('V0.306·批次3 运输作战（零随机数 + 门槛）');
+section('V0.306·批次3 运输作战（可达性 + 零随机数 + 门槛硬验收）');
 {
+  /* ================================================================
+   * V0.306 评审整改（2026-09-18）
+   * 旧版本段 7 条断言全部是「数据结构存在性」：其中
+   *   ① `4734`「…且可达」只查 `m.edges.some(e => e.includes('T'))` —— **用数据表自证可达性**
+   *      ⇒ 运输点在 `moveToNext()` 恒取 `next[0]` 的路由下**永远走不到**，绿灯照样全绿；
+   *   ② `4737`「门槛高于裸舰容量」实现只判 `goal > 0`（裸舰容量恒 0 ⇒ 同义反复）；
+   *   ③ `4742`「normalizeSave 保留 transport 键」的 `raw` 来自已含该键的 serialize ⇒ 恒真、空转。
+   * 本段重写：可达性走**真实路由**、门槛走**两条对照的硬验收**、补齐任务书 §394-398 点名的行为断言，
+   * 并补 1 条集成层断言（坑 #51）。断言名一律标层级。
+   * ================================================================ */
   const m24 = MAPS.find(m => m.id === '2-4');
   const m42 = MAPS.find(m => m.id === '4-2');
-  assert('运输试点仅落在 2-4 / 4-2', !!m24 && !!m42 && m24.transportGoal >= 1 && m42.transportGoal >= 1);
-  assert('运输节点定义完整且可达', ['2-4','4-2'].every(id => { const m=MAPS.find(x=>x.id===id); return Object.values(m.defs).some(d=>d.type==='transport') && m.edges.some(e=>e.includes('T')); }));
-  assert('运输容量函数单点导出', typeof Sortie.transportCapacity === 'function');
-  assert('运输节点不属于战斗类型', ['2-4','4-2'].every(id => { const m=MAPS.find(x=>x.id===id); const d=Object.values(m.defs).find(x=>x.type==='transport'); return d && !d.enemy; }));
-  assert('运输门槛高于裸舰容量', m24.transportGoal > 0 && m42.transportGoal > 0);
-  const ng = Game.newGame();
-  const keys = Object.keys(Game.state.mapProgress['2-4'] || {}).sort().join(',');
-  const raw = JSON.parse(JSON.stringify(Game.serialize())); Game.normalizeSave(raw);
-  assert('newGame mapProgress 含 transport', keys.includes('transport'));
-  assert('normalizeSave 保留 transport 键', Object.prototype.hasOwnProperty.call(raw.mapProgress['2-4'], 'transport'));
+  const realRandom3 = Math.random;
+
+  const freshGame3 = () => { Game.newGame(); Game.unlockFleet(3); };
+  const mkShip3 = (id, lv) => {
+    const s = Game.createShip(id, lv); s.kai = 2; s.hp = Game.shipStats(s.uid).hpMax;
+    Game.equipDefaults(s.uid);
+    const rec = Game.state.ships[s.uid]; rec.supply.fuel = 1; rec.supply.ammo = 1; rec.morale = 100;
+    return s.uid;
+  };
+  const mkFleet3 = (ids, lv) => ids.map(id => mkShip3(id, lv));
+  /* 把装备挂到该舰**合法槽位**上（判据 = `ShipData[id].slots[i].includes(slotType)`，与换装器同源）。
+   * 不这样做就等于绕过游戏规则伪造运输力，断言会变成自证。 */
+  const equipOn = (uid, eqId, slotType) => {
+    const inst = Game.createEquip(eqId);
+    const def = ShipData[Game.state.ships[uid].id];
+    let idx = -1;
+    for (let i = 0; i < def.slots.length; i++) if (def.slots[i].includes(slotType)) { idx = i; break; }
+    if (idx < 0) return false;
+    Game.state.ships[uid].equipped[idx] = inst.uid;
+    return true;
+  };
+  const goalOf = id => { const m = MAPS.find(x => x.id === id); const tn = Object.keys(m.defs).find(n => m.defs[n].type === 'transport'); return Sortie.transportGoalOf(m, m.defs[tn]); };
+  /* 真实路由：从 S 出发只用 `moveToNext()` 走到底（引擎唯一入口，禁止查数据表自证可达） */
+  const walkRoute = (mapId, ids, lv) => {
+    const m = MAPS.find(x => x.id === mapId);
+    freshGame3();
+    Game.state.fleet[1] = mkFleet3(ids, lv);
+    const r = Sortie.start(mapId, 1);
+    if (!r.ok) return { err: r.msg, path: [] };
+    const path = [Game.state.sortie.node];
+    for (let i = 0; i < 12; i++) { const n = Sortie.moveToNext(); if (!n) break; path.push(n); if (n === m.boss) break; }
+    Sortie.returnHome();
+    return { path };
+  };
+
+  const NORMAL = ['iowa', 'southdakota', 'enterprise', 'essex', 'fletcher', 'baltimore']; // 常规最优：2BB+2CV+2DD
+  const TRANSPORT = ['curtiss', 'fletcher'];                                             // 专门运输：AV + 舟艇舰
+
+  /* ---- A. 试点范围与节点定义 ---- */
+  assert('运输试点仅落在 2-4 / 4-2', !!m24 && !!m42 && goalOf('2-4') >= 1 && goalOf('4-2') >= 1);
+  assert('运输节点不属于战斗类型（无 enemy 字段 ⇒ 引擎不会为它开战斗）',
+    ['2-4', '4-2'].every(id => { const m = MAPS.find(x => x.id === id); const d = Object.values(m.defs).find(x => x.type === 'transport'); return d && !d.enemy; }));
+  assert('（原语层）运输容量/门槛函数单点导出（坑 #47：UI 与结算同源的前提）',
+    typeof Sortie.transportCapacity === 'function' && typeof Sortie.transportGoalOf === 'function');
+
+  /* ---- B. 可达性（本段最重要的修复点）---- */
+  const rt = {};
+  for (const id of ['2-4', '4-2']) rt[id] = {
+    low: walkRoute(id, ['fletcher', 'benson'], 20),
+    normal: walkRoute(id, NORMAL, 90),
+    transport: walkRoute(id, TRANSPORT, 30),
+  };
+  const rtTxt = () => ['2-4', '4-2'].map(id =>
+    `${id} low=${rt[id].low.path.join('→')} normal=${rt[id].normal.path.join('→')} transport=${rt[id].transport.path.join('→')}`).join(' | ');
+  assert('（集成层·可达）2-4 / 4-2 的运输点 T 出现在**真实路由**里（三类编成 × 两图 全部命中）',
+    ['2-4', '4-2'].every(id => ['low', 'normal', 'transport'].every(k => rt[id][k].path.includes('T'))),
+    rtTxt());
+  assert('（集成层·可达）旧缺陷形态不会复现：T 位于主干、不是 `next[0]` 永远取不到的第 2 位',
+    ['2-4', '4-2'].every(id => ['low', 'normal', 'transport'].every(k => { const p = rt[id][k].path; return p.indexOf('T') === 2; })),
+    rtTxt());
+  assert('（集成层·可达）分支语义未被改坏：索敌达标走 B、不达标走 C（T 为两者共用主干）',
+    ['2-4', '4-2'].every(id => {
+      const lo = rt[id].low.path, no = rt[id].normal.path;
+      return lo.includes('C') && !lo.includes('B') && no.includes('B') && !no.includes('C') && rt[id].transport.path[0] === 'S';
+    }),
+    rtTxt());
+
+  /* ---- C. capacity 三档取值（任务书 §393）---- */
+  const capOfFleet = (ids, lv, boatOn) => {
+    freshGame3();
+    Game.state.fleet[1] = mkFleet3(ids, lv);
+    if (boatOn != null) equipOn(Game.state.fleet[1][boatOn], 'm4a1', SLOT.EQUIP);
+    return Sortie.transportCapacity(1);
+  };
+  const capBare = capOfFleet(['fletcher', 'benson'], 20);
+  const capAv = capOfFleet(['curtiss', 'fletcher'], 20);
+  const capBoat = capOfFleet(['fletcher', 'benson'], 20, 0);
+  const capBoth = capOfFleet(['curtiss', 'fletcher'], 20, 1);
+  assert('（原语层）capacity 三档取值：AV=10 / 携带上陆用舟艇=8 / 裸舰=0（且可叠加 = 18）',
+    capBare === 0 && capAv === 10 && capBoat === 8 && capBoth === 18,
+    `裸=${capBare} AV=${capAv} 舟艇=${capBoat} AV+舟艇=${capBoth}`);
+
+  /* ---- D. 运输结算：零随机数 / 不战斗 / 不耗资源 / 与阵型无关（任务书 §394-395）----
+   * ⚠️ 防御性：若路由改动导致 T 不可达，本函数必须**干净地返回 res:null** 而不能驱动一场真实战斗，
+   * 否则会污染随机数流并把整个套件打断（红绿变异试验实测过这个坑）。 */
+  const atTransport = (mapId, ids, lv, form) => {
+    const fail = extra => Object.assign({ node: null, res: null, calls: 0, same: false, fuelSame: false, before: {}, after: {} }, extra);
+    freshGame3();
+    Game.state.fleet[1] = mkFleet3(ids, lv);
+    const r = Sortie.start(mapId, 1);
+    if (!r.ok) return fail({ err: r.msg });
+    let guard = 0;
+    while (Game.state.sortie.node !== 'T' && guard++ < 8) Sortie.moveToNext();
+    if (Game.state.sortie.node !== 'T') { const n = Game.state.sortie.node; Sortie.returnHome(); return fail({ err: '路径未经过运输点 T', node: n }); }
+    const snap = u => JSON.stringify({ f: Game.state.ships[u].supply.fuel, a: Game.state.ships[u].supply.ammo, hp: Game.state.ships[u].hp });
+    const before = Object.fromEntries(Game.state.fleet[1].map(u => [u, snap(u)]));
+    const res0 = Game.state.resources.fuel;
+    let res = null, calls = 0;
+    Math.random = () => { calls++; return realRandom3(); };
+    try { res = Sortie.advance(form, true); } finally { Math.random = realRandom3; }
+    const after = Object.fromEntries(Game.state.fleet[1].map(u => [u, snap(u)]));
+    Sortie.returnHome();
+    return { node: 'T', res, calls, same: Object.keys(before).every(k => before[k] === after[k]), fuelSame: Game.state.resources.fuel - res0 === 0, before, after };
+  };
+  const tA = atTransport('2-4', TRANSPORT, 30, '单纵阵');
+  const tB = atTransport('2-4', TRANSPORT, 30, '轮形阵');
+  assert('（原语层）运输结算**零随机数消费**（坑 #46）：`advance` 在运输点对 `Math.random` 调用 0 次',
+    tA.calls === 0 && tA.res && tA.res.ok && tA.res.type === 'transport',
+    `calls=${tA.calls} res=${JSON.stringify(tA.res)}`);
+  assert('（原语层）运输节点不产生战斗事件（返回值无 battle/log 字段、无 result）',
+    assert_noBattle(tA.res), JSON.stringify(tA.res));
+  assert('（原语层）运输节点不消耗弹药/燃料/耐久（全队快照前后逐位相同）',
+    tA.same === true && tA.fuelSame === true, JSON.stringify({ before: tA.before, after: tA.after }));
+  assert('（原语层）运输结算与阵型无关（单纵阵 vs 轮形阵，载荷相同）',
+    tA.res && tB.res && tA.res.amount === tB.res.amount, `${tA.res && tA.res.amount} vs ${tB.res && tB.res.amount}`);
+
+  /* ---- E. 一次性奖励 + 账本（任务书 §396 / 坑 #48）----
+   * 同样防御性：T 不可达时返回 `res:null`，由断言判红而不是抛异常。 */
+  const oneTransportRun = mapId => {
+    const mp0 = Game.state.mapProgress[mapId] || {};
+    const fail = extra => Object.assign({ res: null, gain: { fuel: 0, ammo: 0 }, mp: mp0 }, extra);
+    const r = Sortie.start(mapId, 1);
+    if (!r.ok) return fail({ err: r.msg });
+    let guard = 0;
+    while (Game.state.sortie.node !== 'T' && guard++ < 8) Sortie.moveToNext();
+    if (Game.state.sortie.node !== 'T') { Sortie.returnHome(); return fail({ err: '路径未经过运输点 T' }); }
+    const f0 = Game.state.resources.fuel, a0 = Game.state.resources.ammo;
+    const res = Sortie.advance('单纵阵', true);
+    const gain = { fuel: Game.state.resources.fuel - f0, ammo: Game.state.resources.ammo - a0 };
+    Sortie.returnHome();
+    return { res, gain, mp: Game.state.mapProgress[mapId] };
+  };
+  const beginTransportSave = (ids, lv, boatOn) => { freshGame3(); Game.state.fleet[1] = mkFleet3(ids, lv); if (boatOn != null) equipOn(Game.state.fleet[1][boatOn], 'm4a1', SLOT.EQUIP); };
+
+  beginTransportSave(TRANSPORT, 30, 1);
+  const g24 = goalOf('2-4');
+  const r1 = oneTransportRun('2-4'), r2 = oneTransportRun('2-4'), r3 = oneTransportRun('2-4');
+  assert('（集成层·一次性）专门运输编成**首趟即达标**（AV 10 + 舟艇 8 = 门槛 18），并真的发放资源',
+    !!r1.res && r1.res.amount === 18 && r1.res.rewarded === true && r1.gain.fuel === 300 && r1.gain.ammo === 300,
+    `goal=${g24} res=${JSON.stringify(r1.res)} gain=${JSON.stringify(r1.gain)} ${r1.err || ''}`);
+  assert('（集成层·一次性）重复达成**不重复发**（第 2、3 趟 rewarded=false 且资源零增）',
+    !!r2.res && !!r3.res && r2.res.rewarded === false && r3.res.rewarded === false &&
+    r2.gain.fuel === 0 && r3.gain.fuel === 0 && r3.mp.transport === 54,
+    `r2=${JSON.stringify(r2.gain)} r3=${JSON.stringify(r3.gain)} total=${r3.mp.transport} ${r2.err || ''} ${r3.err || ''}`);
+  assert('（原语层·账本）一次性走 `mapProgress.transportRewarded` 账本（存发放时间戳，非 boolean 状态位）',
+    typeof r1.mp.transportRewarded === 'number' && r1.mp.transportRewarded > 0 && r1.mp.transportRewarded <= Date.now(),
+    JSON.stringify(r1.mp.transportRewarded));
+  const rtKeys = Object.keys(r3.mp).sort().join(',');
+
+  /* ---- F. 存档形状：两路径键集合完全一致 + 真补键（坑 #49）---- */
+  freshGame3();
+  const ngKeys = Object.keys(Game.state.mapProgress['2-4']).sort().join(',');
+  const rawShape = JSON.parse(JSON.stringify(Game.serialize()));
+  delete rawShape.mapProgress['2-4'].transport;
+  delete rawShape.mapProgress['2-4'].transportRewarded;
+  const hadBefore = Object.prototype.hasOwnProperty.call(rawShape.mapProgress['2-4'], 'transport');
+  Game.normalizeSave(rawShape);
+  const nzKeys = Object.keys(rawShape.mapProgress['2-4']).sort().join(',');
+  assert('（原语层·存档）先删键再 normalizeSave → 两个新键都被**补回**（旧版此断言恒真、等于没测）',
+    hadBefore === false && rawShape.mapProgress['2-4'].transport === 0 && rawShape.mapProgress['2-4'].transportRewarded === 0,
+    `hadBefore=${hadBefore} after=${JSON.stringify(rawShape.mapProgress['2-4'])}`);
+  assert('（原语层·存档）newGame 与 normalizeSave 两条路径的 mapProgress **键集合完全一致**（坑 #49）',
+    ngKeys === nzKeys, `newGame=${ngKeys} normalizeSave=${nzKeys}`);
+  assert('（原语层·存档）运行时（含领奖后）键集合仍与 newGame 一致 —— 不许出现未登记的第三种形态',
+    rtKeys === ngKeys, `runtime=${rtKeys} newGame=${ngKeys}`);
+
+  /* ---- G. 与 BOSS 通关解耦（任务书 §397）---- */
+  {
+    freshGame3();
+    Game.state.fleet[1] = mkFleet3(NORMAL, 90);
+    const rs = Sortie.start('2-4', 1);
+    Game.state.sortie.node = 'D';                       // 只测「BOSS 结算 vs 运输进度」互不干扰
+    const prep = Sortie.prepareBattle('单纵阵');
+    const settled = prep.ok ? Sortie.settleBattle(prep) : null;
+    const mpB = Game.state.mapProgress['2-4'];
+    Sortie.returnHome();
+    assert('（原语层）未达成运输目标 → BOSS 结算照常推进（血条/击破前进），且运输进度保持 0',
+      !!rs.ok && !!settled && settled.ok && mpB.transport === 0 && (mpB.kills > 0 || mpB.gauge < m24.gauge),
+      JSON.stringify({ transport: mpB.transport, kills: mpB.kills, gauge: mpB.gauge }));
+  }
+
+  /* ---- H. ★ 硬验收：门槛不是装饰（任务书 §399）---- */
+  const capNormal = capOfFleet(NORMAL, 90);
+  const capTrans = capOfFleet(TRANSPORT, 30, 1);
+  const goals = ['2-4', '4-2'].map(goalOf);
+  assert('★（硬验收）门槛不是装饰：常规最优编成输送量 = 0 **低于**门槛，专门运输编成**达到**门槛',
+    capNormal === 0 && capTrans > capNormal && goals.every(g => capNormal < g && capTrans >= g),
+    `常规=${capNormal} 专门=${capTrans} 门槛=${JSON.stringify(goals)}`);
+
+  /* ---- I. P0-3 前置：两项能力在试点图之前均可获得（任务书 §367）---- */
+  const m4a1Quest = QUESTS.find(q => ((q.reward && q.reward.equip) || []).includes('m4a1'));
+  assert('（原语层·P0-3）运输两项前置在 2-4 / 4-2 之前可得：AV curtiss 有获取途径、m4a1 有任务渠道',
+    Acquisition.shipRoutes('curtiss').length > 0 && Acquisition.equipRoutes('m4a1').some(r => r.key === 'quest') &&
+    !Acquisition.unimplemented('equip').includes('m4a1'),
+    JSON.stringify({ curtiss: Acquisition.shipRoutes('curtiss').map(r => r.key), m4a1: Acquisition.equipRoutes('m4a1').map(r => r.key) }));
+  assert('（原语层·P0-3）m4a1 的任务渠道挂在 2-1（早于运输试点图，与 AV 同图产出）',
+    !!m4a1Quest && m4a1Quest.cond && m4a1Quest.cond.param === '2-1',
+    m4a1Quest ? JSON.stringify(m4a1Quest.cond) : '未找到 m4a1 任务渠道');
+  /* 这 5 件仍无渠道 —— 数量锁死，补一件就会红（坑 #6 的正向用法） */
+  assert('（原语层）本版**未**顺手补其余 5 件装备渠道（范围冻结，数量已锁）',
+    Acquisition.unimplemented('equip').length === 5,
+    Acquisition.unimplemented('equip').join(','));
+
+  Math.random = realRandom3;
+}
+
+function assert_noBattle(res) {
+  if (!res || typeof res !== 'object') return false;
+  return !('battle' in res) && !('log' in res) && !('result' in res);
 }
 
 section('总结');

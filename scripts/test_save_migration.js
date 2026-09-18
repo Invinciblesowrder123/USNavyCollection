@@ -166,7 +166,10 @@ function v7Save() {
       historic: { 'H1:firstClear': 1700000000000 }, objectives: { '1-2-s': 1700000000001 }
     },
     presets: [{ name: '常用', ships: ['iowa'], at: 1700000000009 }],
-    mapProgress: {}
+    /* 故意保留一张**已有进度**的图：V0.306 的运输键是 `mapProgress[id]` 内的新增键，
+     * 老档迁移时只能**逐键补齐**，绝不能整条重建（否则会把玩家的 gauge/kills 清零）。
+     * 注意本条目**故意不含** transport / transportRewarded —— 那是 V0.306 新增的键。 */
+    mapProgress: { '1-1': { gauge: 3, cleared: true, kills: 4 } }
   };
 }
 
@@ -364,7 +367,28 @@ check('v7 档迁移不覆盖履历与资源',
   fromV7.resources.screws === 18 && fromV7.resources.devMats === 24);
 check('v7 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV7)) === JSON.stringify(fromV7));
 
-/* 全链路：v1 旧档一路迁到 v8，也必须带齐 support（链路无缺口） */
+/* ---- V0.306 修复（评审 P1）：运输进度键 `transport` / `transportRewarded`（坑 #49）----
+ * 它们住在 `mapProgress[id]` 内，由 `normalizeSave` 的 mapProgress 循环补 ——
+ * **不是**迁移器（任务书 Q5 已把这一条明确为坑 #49 的唯一例外，故不升存档版本）。 */
+check('v7 旧档补运输键：transport=0 与 transportRewarded=0 都被补上',
+  (() => {
+    const mp = fromV7.mapProgress['1-1'];
+    return !!mp && mp.transport === 0 && mp.transportRewarded === 0;
+  })(), JSON.stringify(fromV7.mapProgress['1-1']));
+check('v7 旧档补运输键**不覆盖既有进度**：gauge/cleared/kills 保持原值（逐键补，不整条重建）',
+  (() => {
+    const mp = fromV7.mapProgress['1-1'];
+    return !!mp && mp.gauge === 3 && mp.cleared === true && mp.kills === 4;
+  })(), JSON.stringify(fromV7.mapProgress['1-1']));
+check('迁移产出的 mapProgress 条目键集合 == `mapProgressEntry()` 单点定义的键集合（坑 #49）',
+  (() => {
+    const want = Object.keys(Game.mapProgressEntry(MAPS.find(m => m.id === '1-1'))).sort().join(',');
+    const got = Object.keys(fromV7.mapProgress['1-1']).sort().join(',');
+    const allSame = Object.keys(fromV7.mapProgress).every(id => Object.keys(fromV7.mapProgress[id]).sort().join(',') === want);
+    return got === want && allSame;
+  })(), Object.keys(fromV7.mapProgress['1-1']).sort().join(','));
+
+/* 全链路：v1 旧档一路迁到当前版本，也必须带齐 support（链路无缺口） */
 check('v1 旧档一路迁移到当前版本同样带齐 support',
   fromV1.support && fromV1.support.day === '' && Array.isArray(fromV1.support.fleets) &&
   fromV1.support.fleets.length === 0,

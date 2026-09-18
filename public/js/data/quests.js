@@ -106,8 +106,13 @@ const QUESTS = [
     cond: { kind: 'develop_success', count: 1 }, reward: { devMats: 5, baux: 200 } },
   { id: 'o17', type: 'once', name: '防卫线突破', desc: '击破 1-4 欧胡岛防卫线的海域血条。',
     cond: { kind: 'clear_map', param: '1-4', count: 1 }, reward: { equip: ['radar_sg'], fuel: 400 } },
-  { id: 'o18', type: 'once', name: '所罗门桥头堡', desc: '击破 2-1 图拉吉急袭的海域血条。',
-    cond: { kind: 'clear_map', param: '2-1', count: 1 }, reward: { equip: ['searchlight'], ammo: 300 } },
+  /* V0.306 修复（批次 4.1 的 m4a1 部分）：`m4a1` 是全装备表**唯一**的「上陆用舟艇」，
+   * 而运输作战的容量函数要靠它才够得到门槛（AV 10 + 舟艇 8 = 18）。
+   * 原批次 4 被砍 ⇒ 运输的"专门编成"在数据上不可能成立（V0.306 评审 P1）。
+   * 挂在本任务（击破 2-1，早于运输试点图 2-4 / 4-2）——与 AV `curtiss` 同图产出，
+   * 即任务书 P0-3「玩家到达该图时理论上已能获得」的两项前置同时落地。 */
+  { id: 'o18', type: 'once', name: '所罗门桥头堡', desc: '击破 2-1 图拉吉急袭的海域血条。缴获试制 DD 水陆两用车。',
+    cond: { kind: 'clear_map', param: '2-1', count: 1 }, reward: { equip: ['searchlight', 'm4a1'], ammo: 300 } },
   { id: 'o19', type: 'once', name: '潜水栖姬讨伐', desc: '在 2-2 取得对深海潜水栖姬的S胜利。',
     cond: { kind: 'boss_s_win', param: '2-2', count: 1 }, reward: { equip: ['sonar_qc'], steel: 300 } },
   { id: 'o20', type: 'once', name: '圣克鲁斯哨戒', desc: '击破 2-3 圣克鲁斯海域的海域血条。',

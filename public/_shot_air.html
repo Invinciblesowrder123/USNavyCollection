@@ -292,6 +292,36 @@
         return;
       }
 
+      if (c.indexOf('trans') === 0) {
+        /* V0.306 批次3：运输作战人工核对页（2026-09-18 评审整改补拍）
+         *   transDetail —— 2-4 海域详情：`.md-rows` 的「运输进度 N / 门槛」行 + 两种能力来源
+         *   transNode   —— 走到运输点的节点屏（运输点横幅 + 「卸载作业并前进」按钮）
+         * 编成 = 柯蒂斯(AV 10) + 带 m4a1 的驱逐(8) = 18 = 门槛，正好演示"专门运输编成单趟达标"。
+         * 用法：npm start 后打开 http://127.0.0.1:3000/_shot_air.html?case=transNode */
+        var mkT = function (id, lv, eqs) {
+          var s = Game.createShip(id, lv);
+          if (eqs) s.equipped = eqs.map(function (x) { return Game.createEquip(x).uid; });
+          s.hp = Game.shipStats(s.uid).hpMax;
+          s.supply = { fuel: 1, ammo: 1 }; s.morale = 100;
+          return s.uid;
+        };
+        Game.state.fleet[2] = [mkT('curtiss', 30, ['soc']), mkT('fletcher', 30, ['m4a1'])];
+        if (c === 'transDetail') {
+          Game.state.mapProgress['2-4'].transport = 10;      // 半程进度更便于核对"未达成"态
+          SortieUI.mapList(scr);
+          var a2t = scr.querySelector('[data-area="2"]'); if (a2t) a2t.click();
+          var m24t = scr.querySelector('[data-map="2-4"]'); if (m24t) m24t.click();
+          return;
+        }
+        Game.state.mapProgress['2-4'].cleared = false;
+        var stT = Sortie.start('2-4', 2);
+        if (!stT.ok) { scr.innerHTML = '<pre style="color:#f88">' + stT.msg + '</pre>'; return; }
+        var gT = 0;
+        while (Game.state.sortie.node !== 'T' && gT++ < 8) Sortie.moveToNext();
+        SortieUI.sortieActive(scr);
+        return;
+      }
+
       var st = Sortie.start('2-3', 1);
       if (!st.ok) { scr.innerHTML = '<pre style="color:#f88">' + st.msg + '</pre>'; return; }
       Game.state.sortie.node = 'A';                      // 2-3 A = 航空战点

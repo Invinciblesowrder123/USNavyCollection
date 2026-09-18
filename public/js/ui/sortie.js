@@ -555,6 +555,12 @@ const SortieUI = (() => {
     const los = Game.fleetLos(fidx);
     const locked = mapLocked(m);
     const canGo = !locked && !st.sortie && (st.fleet[fidx] || []).length > 0;
+    /* 运输试点（V0.306 / 坑 #50）：有 transport 节点的图，进度与 BOSS 血条**并列**在 `.md-rows` 里。
+     * 门槛走 `Sortie.transportGoalOf` —— 与奖励触发同源（坑 #47），不另读一份字段。 */
+    const tNode = Object.keys(m.defs).find(n => m.defs[n] && m.defs[n].type === 'transport');
+    const tGoal = tNode ? Sortie.transportGoalOf(m, m.defs[tNode]) : 0;
+    const tHave = Number(mp.transport || 0);
+    const tDone = tGoal > 0 && tHave >= tGoal;
     return `<div class="map-detail${locked ? ' locked' : ''}">
       <div class="md-board">${mapBoard(m, null, { mini: true })}</div>
       <div class="md-title">${m.id} ${m.name} ${diffBadge(m, true)}
@@ -567,6 +573,7 @@ const SortieUI = (() => {
       </div>
       <div class="md-desc">${m.desc}</div>
       <div class="md-rows">
+        ${tGoal > 0 ? `<div><b>运输进度</b>：<span class="${tDone ? 'ok' : ''}">${tHave} / ${tGoal}</span>${tDone ? '（已达成，奖励已发放）' : ''}<span class="dim"> · 运输点 ${tNode}：每舰 AV +10 / 携带「上陆用舟艇」+8</span></div>` : ''}
         ${items.length ? `<div><b>出现物品</b>：${items.join('、')}</div>` : ''}
         ${losNeed ? `<div><b>分支索敌</b>：≥${losNeed}<span class="${los >= losNeed ? '' : 'red'}">（当前 ${los}${los >= losNeed ? '，满足' : '，不足' }）</span></div>` : ''}
         ${ddNeed ? `<div><b>分支驱逐</b>：≥${ddNeed} 艘</div>` : ''}
