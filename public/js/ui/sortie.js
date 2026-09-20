@@ -279,7 +279,31 @@ const SortieUI = (() => {
    * ============================================================ */
   const typeZh = t => SHIP_TYPE_ZH[t] || t;
   /* 史实匹配度自检：逐条列出玩家自己能核对的条件；禁入命中给红色警示（Gate 3 + 坑 #22） */
-  function histRuleHtml(it) {
+  /* V0.307 批3（Q-3 提示 ②/③）：若编成里有「基础舰种本应计入史实要求、但因改造转舰种（如 langley CVL→AV）
+   * 而不再计入」的舰，附注一行，避免玩家改完才发现史实重演 S 胜条件被自己破坏（Gate 3：操作前知情）。 */
+  function histTypeChangeNote(m, fidx) {
+    const req = (m && m.histRule && m.histRule.require) || [];
+    if (!req.length) return '';
+    const st = Game.state;
+    const fids = (st.fleet[fidx || 1] || []).map(u => st.ships[u]).filter(Boolean);
+    if (!fids.length) return '';
+    const offenders = [];
+    for (const g of req) {
+      const set = g.types || [];
+      if (!set.length) continue;
+      for (const ship of fids) {
+        const base = ShipData[ship.id] && ShipData[ship.id].type;
+        const cur = Game.shipDef(ship).type;
+        if (set.includes(base) && !set.includes(cur)) {
+          const nm = (ShipData[ship.id] && ShipData[ship.id].zh) || ship.id;
+          if (!offenders.includes(nm)) offenders.push(nm);
+        }
+      }
+    }
+    if (!offenders.length) return '';
+    return `<div class="hist-ban">ℹ 提示：${Util.esc(offenders.join('、'))} 已改造转舰种（如 AV），不再计入本场「${Util.esc(req.map(g => (g.types || []).map(typeZh).join('/')).join('、'))}」要求——史实重演加成可能因此不满足。</div>`;
+  }
+  function histRuleHtml(it, m, fidx) {
     const h = it && it.historic;
     if (!h) return '';
     const rows = h.rows.map(r => `<div class="hist-rule-row">${r.ok ? '<span class="ok">✓</span>' : '<span class="red">✗</span>'} ${Util.esc(r.text)} <span class="dim">（${Util.esc(r.now)}）</span></div>`).join('');
@@ -293,7 +317,7 @@ const SortieUI = (() => {
       ? `<div class="dim">强敌阶：敌军拥有第二梯队（第一波击破后将询问「迎击 / 收兵」）；入口需提督 Lv.${h.hardAdmReq} + 常规阶首通${h.hardUnlocked ? '（已开放）' : '（未开放）'}。</div>`
       : '';
     return `<div class="hist-rule"><div><b>史实编成规则</b>：${Util.esc(h.rule)}</div>${ban}${rows}<div>${verdict}</div>
-      <div class="dim">${Util.esc(h.tip)}</div>${hard}</div>`;
+      <div class="dim">${Util.esc(h.tip)}</div>${hard}${histTypeChangeNote(m, fidx)}</div>`;
   }
   /* 奖励预览（4 层）+ 已领取标记（口径与发放同源：Progression.historicRewardState ← 全局账本） */
   function histRewardHtml(m) {
@@ -338,6 +362,7 @@ const SortieUI = (() => {
         <span class="md-eo">历史战役</span> <span class="dim">${m.date}</span></div>
       <div class="md-desc">史实背景：${Util.esc(m.histRule.tip)}</div>
       ${briefBox({ brief: m.brief })}
+      ${histTypeChangeNote(m, fleetIdx)}
       <div class="md-rows">
         <div><b>BOSS掉落</b>：${m.bossDrops.map(id => UI.shipNameHtml(ShipData[id])).join('、')}</div>
       </div>
@@ -369,7 +394,7 @@ const SortieUI = (() => {
     /* 出击前轮换提醒（方向三）：置顶，因为它决定「现在打还是先休整」 */
     if (it.moraleAdvice) html += `<div class="md-morale ${it.moraleAdvice.level}">⚠ ${Util.esc(it.moraleAdvice.text)}</div>`;
     /* 历史战役（V0.303）：史实匹配度自检紧随其后 —— 它决定本场是否有加成（坑 #22：出击前可见） */
-    if (it.historic) html += histRuleHtml(it);
+    if (it.historic) html += histRuleHtml(it, m, fidx);
     html += `<div><b>舰队能力</b>：制空 <b>${s.air}</b> ｜ 索敌 <b>${s.los}</b> ｜ 对潜 <b>${s.asw}</b> ｜ 速力 ${speedTxt} ｜ 夜战火力 <b>${s.night}</b></div>`;
     /* 士气档位（方向三）：修正数值由 battle.js 的档位表给出，UI 不硬编码 */
     const mr = it.morale;

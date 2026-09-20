@@ -2221,3 +2221,47 @@ drift **12 / v0305 12 / sup 14 / v0302 9 / archive 9 全部逐位一致** ｜ **
 
 **下一步**：批3 新增 3 艘 AV + langley 改二转 AV（含 `AV_SLOT` 全局单点 #69、`transport` 字段落点、非法装备残留 #73）。
 
+---
+
+**V0.307 批3（新增 3 艘 AV + langley 改二转 AV）** — 2026-09-20
+
+**性质**：批3 是"AV 舰种扩容 + langley 改二转 AV"——新增 3 艘 AV（mackinac / tangier / chandeleur）、langley 改二（kai2）转 AV、AV 第3槽放宽收电探（Q-5）、AVP 运输力减半（Q-2）、改造清非法装备（坑#73）；独占开工。
+
+**机制（ships.js / progression.js / sortie.js / maps.js / quests.js / homeport.js / ui/sortie.js）**：
+- 新增 3 艘 AV：mackinac（AVP-13，★1，`buildable:false`，`transport:5`，2-1 掉落）；tangier（★3，`transport:10`，建造 + 2-3 BOSS 掉落）；chandeleur（★4，`transport:10`，5-5 首通奖励 o34）。curtiss 补 `transport:10`（大型 AV）。
+- `AV_SLOT` 全局单点（坑#69）：第3槽由 `[EQUIP(14)]` 放宽到 `[EQUIP(14) 或 RADAR(10)]` —— curtiss 同步获得雷达槽（史实正确，见偏差①）。
+- langley `kai2` 转 AV（坑#62/#71）：浅展开 `type:'AV'`、`slots:AV_SLOT`、`sizes` 显式 `[0,0,0]`、`speed:'slow'`、`stats` 一行、`equip` 含 `soc`+`searchlight`；改一/改前仍 CVL（负向）。
+- 改造清非法装备（坑#73）：`remodel()` 对 kai2 后 `slots` 与 `equipped` 重映射，非法装备卸回仓库（保留 `st.equipment` 不销毁），合法装备尽量留原槽。
+- Q-3 histRule 正向排除：`fleetTypes()` 改为读 `shipDef(s).type`（改造后舰种），使 langley 改二(AV) 不再计入航母要求；同步 `checkObjectives` 内联调用。`histRuleHtml` 新增 `histTypeChangeNote` 附注（UI 提示舰种变更对史实加成的影响）。
+- homeport.js 改造按钮：舰种变更时 `confirm` 红字事前警告。
+- 红线·集成层 `typeLimit` 节点校验走真实 `fleetTypes`。
+
+**门禁**：sim **1987/0**（修复 harness 失误后）｜ migration **71/0** ｜ drift **6 条基线全零漂移**（drift 12 / v0305 12 / sup 14 / v0306 14 / v0302 9 / archive 9）｜ **`sim:soak 20` → 20/20 全绿**（排除 p ≥ 13.9%）｜ e2e **沙箱无法起服务**（同批2）；`test_flow.html` 运输段静态核对通过（curtiss+10 / fletcher+m4a1+10=20≥18，未引用 AVP 旧值）。
+
+**改动文件（8 改）**：
+`ships.js`（AV_SLOT 放宽 + langley kai2 + curtiss.transport + 3 新 AV + SLOW_CLASSES 注释）｜ `progression.js`（remodel 清非法装备 #73）｜ `sortie.js`（fleetTypes 读改造后舰种 + checkObjectives 同步）｜ `maps.js`（2-1 drops + mackinac / 2-3 bossDrops + tangier）｜ `quests.js`（o34 奖励 + chandeleur）｜ `homeport.js`（改造舰种变更 confirm）｜ `ui/sortie.js`（histTypeChangeNote + histRuleHtml 签名）｜ `simulate.js`（批3 断言块 17 条）。
+
+**验证点（node 核验 / simulate 断言，17 条全绿）**：
+- 三艘 AV 数据：type=AV / speed=slow / rarity=1·3·4 / mackinac.buildable=false。
+- AV 存量 = 4（curtiss + 3 新），逐艘显式 transport：mackinac=5 其余=10。
+- Q-2 运输力：AVx2=20≥18；AVP 单=5；AVP+坦克=15<18；大型AV+AVP=15<18；curtiss+坦克=20≥18。
+- 坑#69 槽位放宽不动运输：第3槽装雷达不增运输力(=10)；满槽3件登陆装备按 cat 计(=40)。
+- langley 改二=AV、改一/改前=CVL（负向）；sizes 非 [16,14,4] 且 equip 每件槽位合法；shipSpeed=slow。
+- 坑#73：langley 装 f2a+soc 改二 ⇒ f2a 卸回仓库(不在 equipped、仍在 st.equipment)、soc 保留。
+- Q-3：真实入口 histRule —— 编成含 langley 改二(AV) ⇒ 航母要求不满足；改一(CVL)满足。
+- 红线集成层 typeLimit：langley 改二(AV) 不计入 2-4 航母目标；改一(CVL)计入。
+- 三管齐下：mackinac=掉落 / tangier=建造+2-3BOSS掉落 / chandeleur=任务奖励。
+- 回归 `unimplemented('equip')` 仍为 5。
+
+**偏差披露（待追认）**：
+1. **curtiss 经 `AV_SLOT` 全局单点意外获得雷达槽（第3槽 [14,10]）**：这是 Q-5 裁决的必然副作用（AV_SLOT 是全局单点，curtiss 同享），史实上 Curtiss 级确实搭载 SG 雷达，正确。但须在交付报告标注"curtiss 第3槽可装电探"属本版新增能力，非考据遗漏。
+2. **AVP 运输力减半 = +5 为显式规则（Q-2）**：mackinac(AVP) 单艘 `transport:5`，大型 AV = +10。到 2-4 的必经路径 = curtiss(+10) + m4a1(+10) = 20 ≥ 18；纯 AVP 路线（mackinac+坦克=15<18）被门禁正确挡下，须靠大型 AV 或坦克补足。
+3. **slow AV 在 2-4 C 潜艇点吃命中×1.2/伤害×1.3（已知影响）**：AV 全 slow，2-4 潜艇点有命中/伤害加成，AV 运输编成需注意损管。属已知平衡影响，非缺陷。
+4. **tangier / chandeleur 数值为合理推定（mackinac 用考据精确值）**：mackinac 用《考据_AV与战役支援》精确数据（AVP-13、★1、transport:5）；tangier/chandeleur 的 stats 按同级 AV 合理推定，标注为推定非考据。
+
+**提交**：`[TBD]`（8 文件 + HEARTBEAT / 本地，未推送）。
+
+**备份**：`backup/2026-09-20_V0.307_批3完成_批4前/`（批3 后快照，待 rm 清理半成品后重建）。
+
+**下一步**：批4 stars 回归显示与重标（坑#64）；批5 5-2 BOSS S 率 0% 诊断；批6 口径纠正与文档（README/版本史 115→144 件、33→35 类、三档运输公式、新增 AV）；批7 收尾与交付报告（存 `D:\AI\WG\design`）。
+

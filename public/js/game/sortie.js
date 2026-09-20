@@ -474,10 +474,14 @@ const Sortie = (() => {
   }
 
   /* 舰队舰种表（史实规则判定与荣誉 ddCount 的唯一来源） */
+  /* V0.307 批3（Q-3 裁决）：必须读"改造后形态"的舰种，而非基础舰种 ——
+   * 否则 langley 改二（CVL→AV）仍会被计入 histRule 的「航母要求」与地图 typeLimit 目标，
+   * 破坏玩家史实重演 S 胜条件。走 shipDef(inst) 合并 kai/kai2 后的真实 type。 */
   function fleetTypes(fleetIdx) {
-    const st = GameRef().state;
+    const G = GameRef();
+    const st = G.state;
     return (st.fleet[fleetIdx] || [])
-      .map(u => st.ships[u] && ShipData[st.ships[u].id] && ShipData[st.ships[u].id].type)
+      .map(u => { const s = st.ships[u]; return s ? G.shipDef(s).type : null; })
       .filter(Boolean);
   }
 
@@ -872,7 +876,7 @@ const Sortie = (() => {
     const daPoNow = !!so.daPoSeen || (result.myDaPo || 0) > 0;
     const objResults = checkObjectives(map, {
       nodeDef: def, result, daPoSeen: daPoNow,
-      fleetTypes: fleet.map(u => st.ships[u] && ShipData[st.ships[u].id] && ShipData[st.ships[u].id].type).filter(Boolean)
+      fleetTypes: fleet.map(u => { const s = st.ships[u]; return s ? GameRef().shipDef(s).type : null; }).filter(Boolean)
     });
     if (daPoNow) so.daPoSeen = true;
     const objRewards = objResults.length ? Progression.grantObjectiveRewards(objResults) : [];

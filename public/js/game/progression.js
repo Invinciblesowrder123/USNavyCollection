@@ -95,6 +95,26 @@ const Progression = (() => {
     /* 改造不继承改修值（参照 wiki：火力/雷装/对空/装甲重置，运/对潜/耐久保留） */
     for (const k of ['fp', 'tp', 'aa', 'arm']) s.modern[k] = 0;
     const def = G.shipDef(s);
+    /* 坑 #73（V0.307 批3）：改造后按新形态槽位重新校验装备合法性。
+     * 非法装备（槽位类型不在新形态任何槽位允许集内）卸回仓库（保留在 st.equipment，不销毁）；
+     * 合法装备尽量留在原槽位，原槽位不再合法则重排到第一个合法空槽。
+     * 这同时修复了「langley 改二转 AV 后，旧舰战/舰攻仍挂在 CV 槽位」的违和。 */
+    const slotTypesAt = i => (def.slots && def.slots[i] ? (def.slots[i].types || def.slots[i]) : []);
+    const newTypes = new Set();
+    (def.slots || []).forEach(sl => (sl.types || sl).forEach(t => newTypes.add(t)));
+    const placed = new Array((def.slots || []).length).fill(null);
+    for (let i = 0; i < (s.equipped || []).length; i++) {
+      const euid = s.equipped[i];
+      if (!euid) continue;
+      const ed = st.equipment[euid] && EquipmentData[st.equipment[euid].id];
+      if (!ed || !newTypes.has(ed.slot)) continue;            // 非法 → 卸回仓库（仍在 st.equipment）
+      if (slotTypesAt(i).includes(ed.slot)) { placed[i] = euid; }
+      else {
+        const tgt = placed.findIndex((v, idx) => !v && slotTypesAt(idx).includes(ed.slot));
+        if (tgt >= 0) placed[tgt] = euid;
+      }
+    }
+    s.equipped = placed;
     const max = G.shipStats(uid).hpMax;
     s.hp = max;
     s.supply = { fuel: 1, ammo: 1 };

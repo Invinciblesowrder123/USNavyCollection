@@ -20,7 +20,10 @@ const DD_SLOT = [[1,13],[5,13],[5,10,11,12,13],[10,11,12,13,14]];
 const DE_SLOT = [[1,13],[5,13],[13,14]];
 const SS_SLOT = [[5],[5],[13]];
 const AS_SLOT = [[13],[13,14],[14],[14,9]];
-const AV_SLOT = [[9,14],[9,14],[14]];
+/* V0.307 批3（Q-5 裁决）：AV 第 3 槽从「只收 EQUIP(14)」放宽到「EQUIP(14) 或 RADAR(10)」，
+ * 让 AV 能带 SG 雷达。全局单点：curtiss + 3 艘新 AV + langley 改二共用本常量，一次改全体生效。
+ * 运输上限不受影响（transportCapacity 判装备 cat 而非槽位）。 */
+const AV_SLOT = [[9,14],[9,14],[14,10]];
 
 const SHIPS = [
 /* ==================== 驱逐舰 DD ==================== */
@@ -290,6 +293,14 @@ const SHIPS = [
   stats:[28,0,0,15,12,32,0,22,8], slots:[[6,7,8],[6,7,8],[9]], sizes:[16,14,4], equip:['f2a','sbd','soc'],
   consum:{fuel:16,ammo:14}, build:{fuel:250,ammo:250,steel:300,baux:300,hours:1.5},
   kai:{lv:25, stats:[42,0,0,25,19,40,0,27,11], slots:[[6,7,8],[6,7,8],[9]], sizes:[18,16,5], equip:['f4f','sbd','soc']},
+  /* V0.307 批3（任务 3.2，Q-3 裁决）：改二转入 AV（水上机母舰）形态 —— 史实 CV-1→AV-3 的舰种变更。
+   * 改一仍 CVL。坑 #62/#71：slots 改 AV_SLOT、sizes 必须显式写 [0,0,0]（否则浅展开残留 [16,14,4]）；
+   * 坑 #73：改造时非法装备由 Progression.remodel 卸回仓库。speed:'slow' 显式标注（cls 已在 SLOW_CLASSES）。
+   * 强度倒挂的叙事处理：不写"恢复航母"，写"转入水上机母舰形态——换一份工作"（考据 §1.5.3）。 */
+  kai2:{ lv:40, type:'AV', slots:AV_SLOT, sizes:[0,0,0], speed:'slow',
+    stats:[34,8,0,20,14,30,16,26,14], equip:['soc','soc','searchlight'],
+    line:'1937 年春，我把前半段飞行甲板拆了，换来一台起重机——编号从 CV-1 变成 AV-3。这不是退役，是换一份工作：不再起飞，而是让别人能从我背上起飞。',
+    bio:'美国海军第一艘航空母舰（CV-1）。1937 年改装为水上机母舰 AV-3，1942 年 2 月 27 日在爪哇南方运送 P-40 途中遭日机击沉。' },
   line:'美国海军第一艘航空母舰！航母的黎明，由我见证！' },
 { id:'cabot', en:'CABOT', zh:'卡伯特', cls:'独立级', type:'CVL', rarity:3,
   stats:[30,0,0,18,14,39,0,25,13], slots:[[6,7,8],[6,7,8],[7,8],[9]], sizes:[22,20,18,4], equip:['f4f','sbd','tbd','soc'],
@@ -555,11 +566,33 @@ const SHIPS = [
   kai:{lv:40, stats:[26,10,47,0,12,44,17,20,19], equip:['torp_mk15r','torp_mk14','radar_sg']},
   line:'鲷鱼姐姐，把重巡舰长抓到岸上，可是我的功劳！' },
 /* ==================== 水上机母舰 AV ==================== */
-{ id:'curtiss', en:'CURTISS', zh:'柯蒂斯', cls:'柯蒂斯级', type:'AV', rarity:2,
+{ id:'curtiss', en:'CURTISS', zh:'柯蒂斯', cls:'柯蒂斯级', type:'AV', rarity:2, transport:10,
   stats:[20,3,0,10,7,26,12,12,9], slots:AV_SLOT, equip:['soc','soc','searchlight'],
   consum:{fuel:12,ammo:8}, build:{fuel:150,ammo:100,steel:150,baux:200,hours:2},
   kai:{lv:35, stats:[34,7,0,17,12,34,20,16,12], equip:['soc','pby','searchlight']},
   line:'水上机母舰柯蒂斯！侦察与支援，交给我！' },
+/* ==================== 水上机母舰 AV（V0.307 批3 新增 · 考据 §1.4） ==================== */
+/* mackinac：★1 低稀有、2-1 掉落、buildable:false（坑 #68）；AVP 运输力减半 = +5（Q-2 裁决，显式 transport 字段）。 */
+{ id:'mackinac', en:'MACKINAC', zh:'马基纳克', cls:'Barnegat级(AVP)', type:'AV', rarity:1, transport:5, speed:'slow', buildable:false,
+  stats:[15,3,0,7,4,30,10,14,20], slots:AV_SLOT, equip:['soc','radar_sg_i','searchlight'],
+  consum:{fuel:8,ammo:6}, build:{fuel:150,ammo:100,steel:150,baux:200,hours:2},
+  kai:{lv:25, stats:[26,7,0,14,8,38,16,19,26], equip:['soc','soc_r','searchlight']},
+  line:'“大力水机”马基纳克！最浅的锚地，交给我——',
+  bio:'Barnegat 级小型水上机母舰（AVP-13）。1942 年 8 月 8 日在马莱塔岛开设水机基地，是所罗门群岛最早的美军水机据点之一；同年 9 月 12 日在圣克鲁斯群岛遭日本潜艇炮击并还击。共获 6 枚战斗之星。' },
+/* tangier：★3、建造（200/150/200/200·2.5h）+ 2-3 BOSS 掉落双入口。 */
+{ id:'tangier', en:'TANGIER', zh:'坦吉尔', cls:'坦吉尔级', type:'AV', rarity:3, transport:10, speed:'slow',
+  stats:[22,4,0,12,8,28,14,14,10], slots:AV_SLOT, equip:['soc','soc','searchlight'],
+  consum:{fuel:12,ammo:9}, build:{fuel:200,ammo:150,steel:200,baux:200,hours:2.5},
+  kai:{lv:35, stats:[36,8,0,18,13,36,22,18,14], equip:['soc','soc','searchlight']},
+  line:'水上机母舰坦吉尔！珍珠港的目击者，珊瑚海的救援者——交给我！',
+  bio:'水上机母舰（AV-8）。珍珠港遇袭时泊于 F-10 泊位，珊瑚海海战后参与救援落水舰员。' },
+/* chandeleur：★4、后期任务奖励（o34，5-5 首通）；史实上 1945-04-07 由水侦发现大和。 */
+{ id:'chandeleur', en:'CHANDELEUR', zh:'尚德勒尔', cls:'尚德勒尔级', type:'AV', rarity:4, transport:10, speed:'slow',
+  stats:[24,5,0,14,9,30,16,16,12], slots:AV_SLOT, equip:['soc','soc','searchlight'],
+  consum:{fuel:13,ammo:10}, build:{fuel:200,ammo:150,steel:200,baux:200,hours:2.5},
+  kai:{lv:35, stats:[38,9,0,20,14,38,24,20,16], equip:['soc','soc','searchlight']},
+  line:'水上机母舰尚德勒尔！海平线上的眼睛，由我来当——交给我！',
+  bio:'水上机母舰（AV-10）。1942 年 11 月 19 日服役；1945 年 4 月 7 日其水侦率先发现大和号战列舰，为冲绳战役的击沉提供关键情报。' },
 /* ==================== 工作舰 AS ==================== */
 { id:'vestal', en:'VESTAL', zh:'维斯塔尔', cls:'维斯塔尔级', type:'AS', rarity:2,
   stats:[22,4,0,12,8,30,14,10,10], slots:AS_SLOT, equip:['dc_mk6','sonar_qc','searchlight'],
@@ -597,6 +630,8 @@ const STARTER_IDS = ['fletcher', 'benson'];
  * 美军低速舰：21 节"标准战列舰"（纽约/内华达/宾夕法尼亚/新墨西哥/田纳西/科罗拉多级）
  * 与低速航母（兰利 15 节）；未来扩展 CVE。其余舰种默认高速（含北卡/南达/爱荷华级、
  * 列克星敦/约克城/埃塞克斯级等 27-33 节新锐）。单舰可用 def.speed 覆盖舰级默认值。 */
+/* V0.307 批3：'兰利级' 在列 —— langley 改二转 AV 后仍 slow（15.5 节史实低速天然保留），正确勿改；
+ * 新增 AV/AVP 全部显式标 speed:'slow'（见上方三艘新 AV 与 langley.kai2）。 */
 const SLOW_CLASSES = ['纽约级', '宾夕法尼亚级', '内华达级', '新墨西哥级', '田纳西级', '科罗拉多级', '兰利级'];
 function shipSpeed(def) {
   if (!def) return 'fast';

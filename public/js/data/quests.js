@@ -148,7 +148,7 @@ const QUESTS = [
   { id: 'o33', type: 'once', name: '菲律宾前哨', desc: '击破 5-1 莱特湾前哨的海域血条。',
     cond: { kind: 'clear_map', param: '5-1', count: 1 }, reward: { equip: ['sb2c'], baux: 1000 } },
   { id: 'o34', type: 'once', name: '大和栖姬讨伐', desc: '击破 5-5 莱特湾决战的海域血条，终结深海的野心！',
-    cond: { kind: 'clear_map', param: '5-5', count: 1 }, reward: { ship: ['iowa'], screws: 40, fuel: 2000 } },
+    cond: { kind: 'clear_map', param: '5-5', count: 1 }, reward: { ship: ['iowa', 'chandeleur'], screws: 40, fuel: 2000 } },
 
   /* ---------------- 一次性（后期主线链·装备扩充） ---------------- */
   { id: 'o35', type: 'once', name: '夸贾林要塞攻略', desc: '击破 4-2 夸贾林环礁海域的海域血条。',

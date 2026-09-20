@@ -163,6 +163,13 @@ const Homeport = (() => {
       if (rmBtn) rmBtn.addEventListener('click', () => {
         const hasMod = ['fp', 'tp', 'aa', 'arm'].some(k => (s.modern[k] || 0) > 0);
         if (hasMod && !confirm('改造后 火力/雷装/对空/装甲 的近代化改修值将不被继承（运/对潜/耐久可继承）。确定改造？')) return;
+        /* V0.307 批3（Q-3 提示 ①）：舰种变更事前红字警告。
+         * langley 改二 CVL→AV 会使其不再计入战役「航母要求」与地图 typeLimit，可能破坏玩家史实重演 S 胜。 */
+        const curDef = Game.shipDef(s);
+        const ri = Progression.remodelInfo(uid);
+        const nextType = ri && ri.next && ri.next.type;
+        if (nextType && nextType !== curDef.type &&
+            !confirm(`改造后舰种将从「${SHIP_TYPE_ZH[curDef.type]}」变更为「${SHIP_TYPE_ZH[nextType]}」！\n舰种变更会影响史实编成加成（如航母要求）与编成限制。确定改造？`)) return;
         const r = Progression.remodel(uid);
         if (!r.ok) { UI.toast(r.msg); return; }
         UI.toast(`${Game.shipDef(s).zh} 改造完成！`);

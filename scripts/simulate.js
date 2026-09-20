@@ -4981,6 +4981,166 @@ section('V0.306·批次3 运输作战（可达性 + 零随机数 + 门槛硬验�
   Math.random = realRandom3;
 }
 
+/* ================================================================
+ * V0.307 批次3（新增 3 艘 AV + langley 改二转 AV）
+ * 断言覆盖任务书 §批次3·任务 3.3 全部条目。纪律（沿用批次3 整改教训）：
+ *   - 一律走真实入口（shipDef / fleetTypes / History.matchRule / Sortie.transportCapacity），
+ *     禁止 `ShipData[id].type === 'AV'` 式数据表自证（Q-3 红线）。
+ *   - 改造清装备（坑 #73）、kai2 无残留（坑 #71）、AV_SLOT 全局单点（坑 #69）逐一锚定。
+ * ================================================================ */
+section('V0.307·批次3 新增 AV + langley 改二转 AV');
+{
+  const realRandom3b = Math.random;
+  const freshGameB3 = () => { Game.newGame(); Game.unlockFleet(3); };
+  const mkShipB3 = (id, lv, kai) => {
+    const s = Game.createShip(id, lv);
+    if (kai != null) s.kai = kai;
+    s.hp = Game.shipStats(s.uid).hpMax;
+    Game.equipDefaults(s.uid);
+    const rec = Game.state.ships[s.uid]; rec.supply.fuel = 1; rec.supply.ammo = 1; rec.morale = 100;
+    return s.uid;
+  };
+  const mkFleetB3 = (ids, lv) => ids.map(id => mkShipB3(id, lv));
+
+  /* ---- 3.1 三艘新 AV 数据 ---- */
+  assert('（原语层）三艘新 AV 数据：type=AV / speed=slow / rarity=1·3·4 且 mackinac.buildable=false',
+    ['mackinac', 'tangier', 'chandeleur'].every(id => { const d = ShipData[id]; return d && d.type === 'AV' && d.speed === 'slow'; }) &&
+    ShipData.mackinac.rarity === 1 && ShipData.tangier.rarity === 3 && ShipData.chandeleur.rarity === 4 &&
+    ShipData.mackinac.buildable === false,
+    ['mackinac', ShipData.mackinac.rarity, ShipData.mackinac.buildable, 'tangier', ShipData.tangier.rarity, 'chandeleur', ShipData.chandeleur.rarity].join(' '));
+
+  /* ---- 3.1 投放可达性 ---- */
+  const m21 = MAPS.find(m => m.id === '2-1');
+  const m24 = MAPS.find(m => m.id === '2-4');
+  assert('（原语层）投放可达性：2-1 drops 含 mackinac；且 2-1 序位在 2-4 之前（到 2-4 前必拿）',
+    (m21.drops || []).includes('mackinac') && MAPS.indexOf(m21) < MAPS.indexOf(m24),
+    JSON.stringify({ m21drop: (m21.drops || []).includes('mackinac'), idx21: MAPS.indexOf(m21), idx24: MAPS.indexOf(m24) }));
+
+  /* ---- 3.1 AV 存量 + 显式 transport（Q-2 后）---- */
+  const avShips = Object.values(ShipData).filter(d => d.type === 'AV');
+  assert('（原语层）AV 存量 = 4（curtiss + 3 新）且逐艘显式 transport：mackinac=5 其余=10',
+    avShips.length === 4 &&
+    avShips.every(d => typeof d.transport === 'number') &&
+    ShipData.mackinac.transport === 5 &&
+    ['curtiss', 'tangier', 'chandeleur'].every(id => ShipData[id].transport === 10),
+    'count=' + avShips.length + ' ' + avShips.map(d => d.id + ':' + d.transport).join(' '));
+
+  /* ---- 3.1 运输力（Q-2 后）---- */
+  const capOfFleetB3 = (ids, lv, boatOn) => {
+    freshGameB3();
+    Game.state.fleet[1] = mkFleetB3(ids, lv);
+    if (boatOn != null) { const u = Game.state.fleet[1][boatOn]; const inst = Game.createEquip('m4a1'); const def = ShipData[Game.state.ships[u].id]; let idx = -1; for (let i = 0; i < def.slots.length; i++) if (def.slots[i].includes(SLOT.EQUIP)) { idx = i; break; } if (idx >= 0) Game.state.ships[u].equipped[idx] = inst.uid; }
+    return Sortie.transportCapacity(1);
+  };
+  const capAVx2 = capOfFleetB3(['curtiss', 'tangier'], 30);          // 大型AV×2 = 20
+  const capAVP = capOfFleetB3(['mackinac', 'fletcher'], 30);          // AVP 单艘 = 5
+  const capAVPboat = capOfFleetB3(['mackinac', 'fletcher'], 30, 1);   // AVP + 两栖坦克 = 15
+  const capAV_AVP = capOfFleetB3(['curtiss', 'mackinac'], 30);        // 大型AV + AVP = 15
+  const capCurtBoat = capOfFleetB3(['curtiss', 'fletcher'], 30, 1);   // curtiss + 两栖坦克 = 20
+  assert('（原语层·Q-2 运输力）大型AV×2=20≥18；AVP 单=5；AVP+坦克=15<18；大型AV+AVP=15<18；curtiss+坦克=20≥18',
+    capAVx2 === 20 && capAVP === 5 && capAVPboat === 15 && capAV_AVP === 15 && capCurtBoat === 20,
+    `AVx2=${capAVx2} AVP=${capAVP} AVP+boat=${capAVPboat} AV+AVP=${capAV_AVP} curt+boat=${capCurtBoat}`);
+
+  /* ---- 3.1 槽位放宽不动运输（坑 #69 防御）---- */
+  freshGameB3();
+  Game.state.fleet[1] = mkFleetB3(['curtiss', 'fletcher'], 30);
+  const avUidR = Game.state.fleet[1][0];
+  const radarR = Game.createEquip('radar_sg');
+  Game.state.ships[avUidR].equipped[2] = radarR.uid;     // 第3槽（放宽后含 RADAR）装雷达
+  const capRadar = Sortie.transportCapacity(1);
+  freshGameB3();
+  Game.state.fleet[1] = mkFleetB3(['curtiss', 'fletcher'], 30);
+  const avUidB = Game.state.fleet[1][0];
+  for (let i = 0; i < 3; i++) Game.state.ships[avUidB].equipped[i] = Game.createEquip('m4a1').uid; // 满槽 3 件两栖坦克
+  const cap3Boats = Sortie.transportCapacity(1);
+  assert('（原语层·坑#69 槽位放宽不动运输）AV 第3槽装雷达不增运输力(=10)；满槽3件登陆装备按 cat 计(=40)',
+    capRadar === 10 && cap3Boats === 40,
+    `radar=${capRadar} 3boats=${cap3Boats}`);
+
+  /* ---- 3.2 langley 改二转 AV：kai2 数据 / 改一仍 CVL（负向）---- */
+  const lkK0 = Game.shipDef({ id: 'langley', kai: 0 });
+  const lkK1 = Game.shipDef({ id: 'langley', kai: 1 });
+  const lkK2 = Game.shipDef({ id: 'langley', kai: 2 });
+  assert('（原语层）langley 改二 = AV、改一/改前 = CVL（负向）',
+    lkK2.type === 'AV' && lkK1.type === 'CVL' && lkK0.type === 'CVL',
+    'k0=' + lkK0.type + ' k1=' + lkK1.type + ' k2=' + lkK2.type);
+
+  /* ---- 3.2 kai2 无残留（坑 #71）：sizes 非 [16,14,4] 且 equip 每件槽位合法 ---- */
+  const avSlotsTypes = new Set(); (lkK2.slots || []).forEach(sl => (sl.types || sl).forEach(t => avSlotsTypes.add(t)));
+  const lkSizesOk = Array.isArray(lkK2.sizes) && lkK2.sizes.length === 3 && JSON.stringify(lkK2.sizes) !== JSON.stringify([16, 14, 4]);
+  const lkEquipOk = (lkK2.equip || []).every(id => { const ed = EquipmentData[id]; return ed && avSlotsTypes.has(ed.slot); });
+  assert('（原语层·坑#71 kai2 无残留）langley 改二 sizes 非 [16,14,4] 且 equip 每件槽位合法',
+    lkSizesOk && lkEquipOk,
+    'sizes=' + JSON.stringify(lkK2.sizes) + ' equip=' + JSON.stringify(lkK2.equip) + ' equipOk=' + lkEquipOk);
+
+  /* ---- 3.1/3.2 电探槽（Q-5）：走 homeport:211 同源判据，不读 AV_SLOT 自证 ---- */
+  const slotAllows = (slot, edSlot) => (slot.types || slot).includes(edSlot);
+  const radarSlot = SLOT.RADAR; // 10
+  const avDef = ShipData.curtiss; // 共用 AV_SLOT
+  assert('（原语层·Q-5 电探槽）雷达可装入 AV 第3槽（同源判据），第1/2槽装不进',
+    slotAllows(avDef.slots[2], radarSlot) && !slotAllows(avDef.slots[0], radarSlot) && !slotAllows(avDef.slots[1], radarSlot)
+    && slotAllows(lkK2.slots[2], radarSlot) && !slotAllows(lkK2.slots[0], radarSlot),
+    'radarSlot=' + radarSlot + ' curtiss=' + JSON.stringify(avDef.slots) + ' lk2=' + JSON.stringify(lkK2.slots));
+
+  /* ---- 3.2 速力 ---- */
+  assert('（原语层）langley 改二 shipSpeed = slow（15.5 节史实低速，正确勿改）',
+    shipSpeed(lkK2) === 'slow', 'speed=' + shipSpeed(lkK2));
+
+  /* ---- 3.2 改造清装备（坑 #73）---- */
+  freshGameB3();
+  const lu = mkShipB3('langley', 40, 1);                 // CVL 改一形态
+  const f2aU = Game.createEquip('f2a'), socU = Game.createEquip('soc');
+  Game.state.ships[lu].equipped[0] = f2aU.uid;            // 舰战（CVL 槽 6）
+  Game.state.ships[lu].equipped[2] = socU.uid;            // 水侦（CVL 槽 9）
+  const rRem = Progression.remodel(lu);                  // → 改二 AV
+  const afterDef = Game.shipDef(Game.state.ships[lu]);
+  const eqAfter = Game.state.ships[lu].equipped;
+  const f2aKept = Object.values(eqAfter).includes(f2aU.uid);
+  const socKept = Object.values(eqAfter).includes(socU.uid);
+  assert('（原语层·坑#73 改造清装备）langley 装 f2a+soc 改二 ⇒ f2a 卸回仓库(不在 equipped 仍在 st.equipment)、soc 保留',
+    rRem.ok && afterDef.type === 'AV' && !f2aKept && !!Game.state.equipment[f2aU.uid] && socKept,
+    JSON.stringify({ ok: rRem.ok, type: afterDef.type, f2aKept, socKept }));
+
+  /* ---- 3.3 histRule 正向排除（Q-3）：走真实 fleetTypes + History.matchRule 入口 ---- */
+  const cvRule = HISTORY_BATTLES.find(b => ((b.histRule && b.histRule.require) || []).some(g => (g.types || []).includes('CV') && (g.types || []).includes('CVL') && g.min >= 2));
+  freshGameB3();
+  const lk2uid = mkShipB3('langley', 40, 2), entUid = mkShipB3('enterprise', 90);
+  Game.state.fleet[1] = [lk2uid, entUid];
+  const ft2 = Sortie.fleetTypes(1);                      // 真实入口：应返回 ['AV','CV']
+  const mK2 = History.matchRule(cvRule.histRule, ft2).ok;
+  freshGameB3();
+  const lk1uid = mkShipB3('langley', 40, 1), entUid2 = mkShipB3('enterprise', 90);
+  Game.state.fleet[1] = [lk1uid, entUid2];
+  const ft1 = Sortie.fleetTypes(1);                      // 真实入口：应返回 ['CVL','CV']
+  const mK1 = History.matchRule(cvRule.histRule, ft1).ok;
+  assert('（原语层·Q-3 histRule 正向排除）真实入口：编成含 langley 改二(AV) ⇒ 航母要求不满足；改一(CVL)满足',
+    ft2.includes('AV') && !ft2.includes('CVL') && mK2 === false && ft1.includes('CVL') && mK1 === true,
+    'ft2=' + JSON.stringify(ft2) + ' mK2=' + mK2 + ' ft1=' + JSON.stringify(ft1) + ' mK1=' + mK1);
+
+  /* ---- 3.3 红线·集成层：地图 typeLimit 节点校验走真实 fleetTypes ---- */
+  const obj24 = m24.objectives.find(o => o.id === '2-4-cv2');
+  const countTypes = (types, o) => types.filter(t => (o.types || []).includes(t)).length;
+  const okK2 = countTypes(ft2, obj24) >= obj24.min;       // ['AV','CV'] → CV=1 < 2
+  const okK1 = countTypes(ft1, obj24) >= obj24.min;       // ['CVL','CV'] → 2 ≥ 2
+  assert('（红线·集成层）地图 typeLimit 节点校验走真实 fleetTypes：langley 改二(AV) 不计入 2-4 航母目标；改一(CVL)计入',
+    okK2 === false && okK1 === true, 'okK2=' + okK2 + ' okK1=' + okK1);
+
+  /* ---- 3.1 三管齐下 ---- */
+  const chQuest = QUESTS.find(q => ((q.reward && q.reward.ship) || []).includes('chandeleur'));
+  const t23 = MAPS.find(m => m.id === '2-3');
+  assert('（原语层）三管齐下：mackinac=掉落 / tangier=建造+2-3BOSS掉落 / chandeleur=任务奖励',
+    (m21.drops || []).includes('mackinac') &&
+    ShipData.tangier.buildable !== false && !!ShipData.tangier.build && (t23.bossDrops || []).includes('tangier') &&
+    !!chQuest,
+    JSON.stringify({ m21mack: (m21.drops || []).includes('mackinac'), tangierBuild: !!ShipData.tangier.build, t23tang: (t23.bossDrops || []).includes('tangier'), chandQuest: chQuest && chQuest.id }));
+
+  /* ---- 3.3 回归：unimplemented('equip') 数量先数后改（坑 #67）---- */
+  assert('（回归）本批未顺手补装备渠道：unimplemented(' + "'equip'" + ') 仍为 5',
+    Acquisition.unimplemented('equip').length === 5, 'n=' + Acquisition.unimplemented('equip').length);
+
+  Math.random = realRandom3b;
+}
+
 function assert_noBattle(res) {
   if (!res || typeof res !== 'object') return false;
   return !('battle' in res) && !('log' in res) && !('result' in res);

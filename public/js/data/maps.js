@@ -360,7 +360,7 @@ const MAPS = [
       B: { type: 'resource', reward: ['fuel'] },
       C: { type: 'boss', enemy: 'F17' }
     },
-    drops: ['obannon', 'hoel', 'newyork', 'curtiss'],
+    drops: ['obannon', 'hoel', 'newyork', 'curtiss', 'mackinac'],
     bossDrops: ['wichita', 'indianapolis', 'laffey']
   },
   {
@@ -419,7 +419,7 @@ const MAPS = [
     },
     branch: { at: 'C', if: { los: 45 }, to: ['D'] },   // 索敌≥45 走燃料补给线直达BOSS；否则沟入输送舰队
     drops: ['princeton', 'sbroberts', 'aaronward', 'saltlakecity'],
-    bossDrops: ['yorktown', 'hornet', 'southdakota']
+    bossDrops: ['yorktown', 'hornet', 'southdakota', 'tangier']
   },
   {
     id: '2-4', name: '瓜达尔卡纳尔攻略', desc: '深海飞行场栖姬固守的机场！舰队全力夺取制空权！', stars: 8,
