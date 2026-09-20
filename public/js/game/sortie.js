@@ -20,9 +20,11 @@ const Sortie = (() => {
     return null;
   };
 
-  /* ============ 支援舰队（V0.306 批次2）============
-   * 候选集 = 已解锁舰队 − 正在出击的舰队 —— 用**结构**排除，不靠 UI 校验或运行时 if 兜底（坑 #43）。
-   * UI 的选择器与引擎的校验都读这一个函数。 */
+  /* ============ 支援舰队（V0.307 批次1 重写）============
+   * V0.306 的"每次出击前选择、当日一次、每个昼战节点发动"已被整体推翻
+   * （John 定性：支援应是"挂一支舰队在旁边跟着"，而不是"每次点名派一次"）。
+   * 本版：挂载态（远征态，见 logistics.js）+ 仅 BOSS 节点 + 仅困难海域；战役（hist）永不激活玩家支援（A6）。
+   * 候选集（supportCandidates）= 已解锁舰队 − 正在出击的舰队，用**结构**排除（坑 #43）—— 现用于挂载 UI。 */
   function supportCandidates(sortieFleetIdx) {
     const G = GameRef();
     const out = [];
@@ -33,6 +35,20 @@ const Sortie = (() => {
     }
     return out;
   }
+
+  /* 困难海域判据（V0.307 批次1 / 坑 #58）：**单点派生**，不许手写 7 个 id。
+   *   困难海域 = diff ≥ 3 且存在至少一个"昼战战斗节点"（type 为 battle/boss 且 mode ≠ 'night'，
+   *   或 BOSS 无 mode 视作昼战）。全夜战图（如 5-2）自动排除 —— 判据是"是否存在昼战节点"，不写死 5-2。
+   *   战役（histRule 存在）不适用（A6）。UI 与引擎同源（prepareBattle 与 UI 都调本函数）。 */
+  function supportEligible(map) {
+    if (!map || map.histRule) return false;            // 战役不适用（A6）
+    if (!(map.diff >= 3)) return false;                 // T3 起
+    const defs = map.defs || {};
+    return Object.values(defs).some(d => (d.type === 'battle' || d.type === 'boss') && d.mode !== 'night')
+      || Object.values(defs).some(d => (d.type === 'boss' && !d.mode));   // BOSS 无 mode 视作昼战
+  }
+  /* 发动节点收窄（坑 #57）：默认值即"只在 BOSS"。后续开道中支援只需改默认值（引擎一行不改）。 */
+  const SUPPORT_NODES_DEFAULT = ['boss'];
 
   /* 支援消耗（附录 C P-2）：每舰每场 油/弹 −5%、士气 −10 —— 低于出击的 −15，休整一天可回。
    * ⚠️ 与出击消耗**共用同一个写入点**（`settleBattle`），不许另写一份（坑 #42）。 */
@@ -111,6 +127,10 @@ const Sortie = (() => {
     if (!G.isFleetUnlocked(fleetIdx)) return { ok: false, msg: '该舰队尚未解锁！' };
     const fleet = st.fleet[fleetIdx];
     if (!fleet || !fleet.length) return { ok: false, msg: '舰队为空！' };
+    /* 一次只能担任一种职务（A2）：被挂为支援的舰队不能再作为本次出击主力。
+     * 必须在下方通用"正在远征"拦截（st.expeditions[fleetIdx]）之前判定，否则挂载态占用远征槽
+     * 会被误报成"远征中"，理由不可分辨（坑 #56）。 */
+    if (LogisticsRef().isSupportFleet(fleetIdx)) return { ok: false, msg: '该舰队正作为支援舰队挂载中，无法出击！' };
     for (const uid of fleet) {
       const s = st.ships[uid];
       if (!s) return { ok: false, msg: '舰队中有舰娘不存在' };
@@ -135,27 +155,23 @@ const Sortie = (() => {
     const warn = (minFuel < 0.5 || minAmmo < 0.5)
       ? `舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！弹药<50%伤害减半，0%无法炮击，建议先在后勤补给！`
       : null;
-    /* ---- 支援舰队（V0.306 批次2 / 坑 #43）----
-     * Q4：历史战役禁用支援 —— 史实重演要求参战舰艇独立作战。
-     * 候选集由**结构**给出（已解锁 − 出击中），硬可用性复用远征那一套（坑 #44）。 */
-    const supIdx = (opts && opts.supportFleet) ? Number(opts.supportFleet) : 0;
+    /* ---- 支援舰队（V0.307 批次1 重写 / 坑 #55·#56）----
+     * 支援是"挂载态"：玩家在后勤页挂好一支舰队（st.supportFleet），出击时自动跟随。
+     * 战役（hist）禁用玩家支援（A6）：史实重演要求参战舰艇独立作战。
+     * 一次只能担任一种职务（A2）：被挂为支援的舰队不能再作为本次出击主力。 */
+    const supIdx = st.supportFleet || 0;
     if (supIdx) {
       if (hist) return { ok: false, msg: '史实重演要求参战舰艇独立作战：历史战役无法派遣支援舰队！' };
-      if (!supportCandidates(fleetIdx).includes(supIdx)) {
-        return { ok: false, msg: '该舰队不能作为支援舰队（未解锁，或正是本次出击的舰队）！' };
+      if (Number(supIdx) === Number(fleetIdx)) {
+        return { ok: false, msg: '该舰队正作为支援舰队挂载中，无法出击！' };
       }
-      const blk = LogisticsRef().fleetDispatchBlocker(supIdx);
+      /* 支援队就绪性检查用 fleetCombatReady（坑 #55）：它**不**把"已挂载为支援"当拒绝理由，
+       * 否则会把正常挂载的支援队误判成不可用、把整场出击打回去。 */
+      const blk = LogisticsRef().fleetCombatReady(supIdx);
       if (!blk.ok) return { ok: false, msg: '支援舰队不可用：' + blk.msg };
-      if (LogisticsRef().supportUsedToday(supIdx)) {
-        return { ok: false, msg: '该舰队今日已作为支援出击（每支舰队每天只能支援一次）！' };
-      }
     }
     /* 士气轮换提醒（方向三）：只提示不拦截（P0-2），随出击结果一并返回给 UI */
     const advice = moraleAdvice(fleetIdx);
-    /* 当日占用：派遣即记录（坑 #45）—— 用 `periodKeys().daily`，与日常任务同一时刻翻页。
-     * 撤退也占用：这是「用后勤机会换前线容错」的代价侧（P2 取舍），不是 bug。 */
-    let supportMark = null;
-    if (supIdx) supportMark = LogisticsRef().markSupportUsed(supIdx);
     st.sortie = {
       mapId, fleetIdx, node: map.start, path: [map.start], finished: false, nightDisabled: false, daPoSeen: false,
       /* 历史战役（V0.303）：historic = 战役 id（常规图为 null）；hard = 强敌阶；wave = 第几波；
@@ -164,10 +180,10 @@ const Sortie = (() => {
       hard: !!hard,
       wave: 1,
       histSunk: 0,
-      /* 支援舰队（V0.306）：0 = 未派遣；否则为舰队编号 */
+      /* 支援舰队（V0.307）：0 = 未挂载/未激活；否则为挂载的舰队编号（记录本场参战支援，与实际发动与否无关） */
       supportFleet: supIdx || 0
     };
-    return { ok: true, warn, advice, historic: hist ? map.id : null, hard: !!hard, supportFleet: supIdx || 0, supportMark };
+    return { ok: true, warn, advice, historic: hist ? map.id : null, hard: !!hard, supportFleet: supIdx || 0 };
   }
 
   /* 当前舰队中处于大破状态的僚舰（非旗舰） */
@@ -386,9 +402,24 @@ const Sortie = (() => {
      * `opts.support` 为假值 → 引擎整个支援阶段跳过且**不消耗任何随机数**（坑 #40 / `drift:v0305` 的前提）。
      * 可开火判定（`fleetFiringShips`）与远征共用同一套可用性判据（坑 #44）：
      * **全员红脸不阻止出击**，只是不发动 —— 原因写进战报，玩家要能归因。 */
+    /* ---- 支援舰队（V0.307 批次1 重写 / 坑 #55·#57）----
+     * 玩家支援：仅 BOSS 节点（SUPPORT_NODES_DEFAULT）且困难海域（supportEligible）才发动；战役（hist）永禁用（A6）。
+     * 发动点收窄在调用方（坑 #57）：引擎只认 opts.support 真假，不认 node 类型。
+     * NPC 支援：战役配置 npcSupport 且在 BOSS 节点发动（零消耗、不经 state.ships，坑 #59）。 */
     const supIdx = so.supportFleet || 0;
-    const supShips = supIdx ? LogisticsRef().fleetFiringShips(supIdx) : [];
-    const supSkip = supIdx && !supShips.length ? 'NO_ALIVE' : null;
+    const active = supIdx && SUPPORT_NODES_DEFAULT.includes(def.type) && supportEligible(map) && !hist;
+    const supShips = active ? LogisticsRef().fleetFiringShips(supIdx) : [];
+    /* 不发动原因（四种，可分辨）：未挂载 / 全员红脸 / 本图不适用支援（非困难海域或全线夜战）/ 非 BOSS 节点 */
+    const supSkip = (supIdx && !active)
+      ? (!supportEligible(map) ? 'INELIGIBLE' : (def.type !== 'boss' ? 'NOT_BOSS' : 'INELIGIBLE'))
+      : (active && !supShips.length ? 'NO_ALIVE' : null);
+    /* NPC 支援（战役）：仅 BOSS 节点；系统编成，零消耗 */
+    let npcSup = null;
+    if (hist) {
+      const hb = (typeof History !== 'undefined' && History && typeof History.byId === 'function') ? History.byId(map.id) : null;
+      npcSup = hb && hb.npcSupport ? hb.npcSupport : null;
+    }
+    const npcActive = !!(npcSup && !npcSup.absent && def.type === 'boss');
     const result = Battle.battle(fleet, enemyFleet.ships, formation, enemyFleet.formation, {
       allowNight: false, fleetIdx: so.fleetIdx,
       sub: def.mode === 'sub',            // 潜艇点：敌潜艇速力打击修正 + 60% 耐久封顶
@@ -396,14 +427,28 @@ const Sortie = (() => {
       airMode: def.mode === 'air',        // 航空战点：无航空战力时进入被动防空分支（单次轰炸伤害封顶 60%）
       historic: hist,                     // 历史战役：史实编成加成乘区（默认 false → 不读不写任何字段）
       histHit, histEvd,
-      support: supShips.length ? true : false,   // 支援炮击开关（假值 = 阶段整体跳过，零随机数）
-      supportFleet: supShips                     // 支援队可开火舰（uid）
+      support: (supShips.length || npcActive) ? true : false,   // 支援炮击开关（假值 = 阶段整体跳过，零随机数）
+      supportFleet: supShips,                     // 玩家支援队可开火舰（uid）
+      supportSrc: npcActive ? 'npc' : 'player',   // 坑 #59：区分玩家/战役 NPC 计费通道
+      supportNpcShips: npcActive ? npcSup.ships : null,
+      supportNpcLv: npcActive ? (npcSup.lv || 50) : 0
     });
-    /* 未发动必须写明原因（不许静默）—— 三种理由可分辨：未派遣 / 全员红脸 / 无可攻击目标 */
-    if (supIdx && !result.support) {
-      result.log.push(supSkip === 'NO_ALIVE'
-        ? `支援舰队（第 ${supIdx} 舰队）全员士气过低，本场未实施支援炮击。`
-        : '支援舰队本场未实施支援炮击（无可攻击目标）。');
+    /* 未发动 / NPC 支援 必须写明原因（不许静默） */
+    if (npcSup) {
+      if (npcSup.absent) {
+        if (def.type === 'boss') result.log.push(`【史实侧记】${npcSup.note || npcSup.name}`);
+      } else if (result.support && result.support.fired) {
+        result.log.push(`【NPC 支援】${npcSup.name}（史实支援编队）抵达战场，实施炮击支援！${npcSup.note ? ' ' + npcSup.note : ''}`);
+      } else if (def.type === 'boss') {
+        result.log.push(`【NPC 支援】${npcSup.name}因故未能展开炮击支援${npcSup.note ? '（' + npcSup.note + '）' : ''}。`);
+      }
+    } else if (supIdx) {
+      if (!result.support) {
+        if (supSkip === 'NO_ALIVE') result.log.push(`支援舰队（第 ${supIdx} 舰队）全员士气过低，本场未实施支援炮击。`);
+        else if (supSkip === 'INELIGIBLE') result.log.push(`支援舰队（第 ${supIdx} 舰队）本图不适用支援（非困难海域或全线夜战），未发动。`);
+        else if (supSkip === 'NOT_BOSS') result.log.push(`支援舰队（第 ${supIdx} 舰队）非 BOSS 节点，未发动支援炮击。`);
+        else result.log.push(`支援舰队（第 ${supIdx} 舰队）本场未实施支援炮击（无可攻击目标）。`);
+      }
     }
     if (oilerUsed) result.log.unshift('「洋上补给」发动！舰队油弹恢复到100%。');
     /* 战报显式说明加成是否生效（Gate 3：操作前知道自己在选什么；这里做结算侧复核） */
@@ -699,14 +744,13 @@ const Sortie = (() => {
     if (ammoZero) {
       result.log.push('舰队弹药已耗尽！返回母港后请及时补给，否则舰娘将无法炮击。');
     }
-    /* 支援舰队消耗（V0.306 批次2 / 坑 #42）—— **扩展上面同一个写入点**，不许另起一份。
-     * 每舰每场 油/弹 −5%、士气 −10（附录 C P-2）：低于出击的 −15，休整一天可回。
-     * 注意：支援队**不参与**上面的主队循环（它不在 `fleet` 里），但消耗语义同构。 */
+    /* 支援舰队消耗（V0.307 批次1 / 坑 #42·#59）—— **扩展上面同一个写入点**，不许另起一份。
+     * 每舰每场 油/弹 −5%、士气 −10（附录 C P-2）。**仅玩家挂载支援（supportSrc==='player'）计费**：
+     * 战役 NPC 支援不经 state.ships、零消耗（坑 #59）。 */
     const supIdx = so.supportFleet || 0;
-    if (supIdx) {
+    if (supIdx && result.supportSrc === 'player') {
       /* ⚠️ **未实际开火不扣消耗**（V0.306 批次2 补）：全员红脸 / 无可攻击目标时支援并未出动，
-       * 此时照扣就是「静默收费」—— 与本项目「不许静默」纪律冲突。**派遣本身已经占用当日名额**，
-       * 那是代价侧；油弹士气只在真的打了才扣，并在战报写明。 */
+       * 此时照扣就是「静默收费」—— 与本项目「不许静默」纪律冲突。油弹士气只在真的打了才扣，并在战报写明。 */
       const fired = !!(result.support && result.support.fired);
       if (fired) {
         for (const uid of st.fleet[supIdx] || []) {
@@ -716,12 +760,12 @@ const Sortie = (() => {
           s.supply.ammo = Math.max(0, s.supply.ammo - SUPPORT_COST.ammo);
           s.morale = Math.max(0, s.morale - SUPPORT_COST.morale);
         }
-        /* 结算归因（任务 2.5）—— 支援的贡献必须显式写在战报里，不许静默 */
-        result.log.push(`【结算归因】支援舰队（第 ${supIdx} 舰队）本场贡献 ${result.support.dmg} 点伤害`
+        /* 结算归因（任务 1.4）—— 支援的贡献必须显式写在战报里，不许静默；措辞改「本次 BOSS 战」 */
+        result.log.push(`【结算归因】支援舰队（第 ${supIdx} 舰队）本次 BOSS 战贡献 ${result.support.dmg} 点伤害`
           + `${result.support.sunk ? `、击沉 ${result.support.sunk} 艘` : ''}（命中 ${result.support.hit} 发）`
-          + `；本场消耗该队油弹各 ${Math.round(SUPPORT_COST.fuel * 100)}%、士气 ${SUPPORT_COST.morale}。`);
+          + `；本次消耗该队油弹各 ${Math.round(SUPPORT_COST.fuel * 100)}%、士气 ${SUPPORT_COST.morale}。`);
       } else {
-        result.log.push(`【结算归因】支援舰队（第 ${supIdx} 舰队）本场未实施支援炮击，因此不扣除油弹与士气（当日派遣名额仍已占用）。`);
+        result.log.push(`【结算归因】支援舰队（第 ${supIdx} 舰队）本次 BOSS 战未实施支援炮击，因此不扣除油弹与士气（挂载状态仍保持）。`);
       }
     }
 
@@ -1227,8 +1271,8 @@ const Sortie = (() => {
     checkObjectives, objectiveCondText, objectivePreview, objectiveMet, rewardText,
     /* 士气（方向三） */
     fleetMorale, moraleAdvice,
-    /* 支援舰队（V0.306 批次2）：候选集（结构排除，坑 #43）+ 消耗常量（附录 C P-2） */
-    supportCandidates, SUPPORT_COST
+    /* 支援舰队（V0.307 批次1）：判据（UI 与引擎同源）+ 候选集（结构排除，坑 #43）+ 消耗常量（附录 C P-2） */
+    supportEligible, supportCandidates, SUPPORT_COST
   };
 })();
 

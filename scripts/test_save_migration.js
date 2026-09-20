@@ -303,7 +303,7 @@ check('v6 档的战役账本已存在（新档同形状）',
 /* ============ v6 → v7：战功章（V0.305）+ 编成预设槽 ============
  * 只补键、不动任何既有数值；本函数是这三个键的**唯一补写点**（坑 #30）。 */
 const fromV6 = Game.migrateSave(v6Save());
-check('v6 档升级到当前版本（v8）', fromV6.saveVersion === CUR && fromV6.version === CUR && CUR === 8, 'CUR=' + CUR);
+check('v6 档升级到当前版本（v9）', fromV6.saveVersion === CUR && fromV6.version === CUR && CUR === 9, 'CUR=' + CUR);
 check('v6 档补齐战功章余额为 0', fromV6.stats.medals === 0, String(fromV6.stats.medals));
 check('v6 档补齐章账本为空结构',
   fromV6.stats.medalLedger && typeof fromV6.stats.medalLedger === 'object' &&
@@ -348,11 +348,13 @@ check('v6 档章账本残缺 → 补形但保留已有条目',
  * 形状约定：`{ day: <periodKeys().daily 日期串>, fleets: [舰队编号...] }`。
  * ⚠️ 不许另写 24 小时冷却（坑 #45）—— day 必须与日常任务/改修次数上限同一时刻翻页。 */
 const fromV7 = Game.migrateSave(v7Save());
-check('v7 档升级到当前版本（v8）', fromV7.saveVersion === CUR && fromV7.version === CUR && CUR === 8, 'CUR=' + CUR);
-check('v7 档补齐 support 为 {day:"",fleets:[]}',
-  fromV7.support && typeof fromV7.support === 'object' && !Array.isArray(fromV7.support) &&
-  fromV7.support.day === '' && Array.isArray(fromV7.support.fleets) && fromV7.support.fleets.length === 0,
-  JSON.stringify(fromV7.support));
+/* 注意：V0.307 批次1 的 v8→v9 会**删除** support（语义变为持续挂载 supportFleet），
+ * 故 support 的形状/健壮性只在"v7→v8 这一步"验证（midV8），不再对全链结果断言 support。 */
+const midV8 = Game.SAVE_MIGRATIONS[7](v7Save());
+check('v7 → v8 补齐 support 为 {day:"",fleets:[]}',
+  midV8.support && typeof midV8.support === 'object' && !Array.isArray(midV8.support) &&
+  midV8.support.day === '' && Array.isArray(midV8.support.fleets) && midV8.support.fleets.length === 0,
+  JSON.stringify(midV8.support));
 check('v7 档迁移不覆盖既有战功章字段与预设槽',
   fromV7.stats.medals === 12 && fromV7.stats.medalLedger.once['map:1-1'] === 1 &&
   fromV7.stats.medalLedger.weekly['ex:1'] === 2 && fromV7.presets.length === 1 &&
@@ -365,7 +367,7 @@ check('v7 档迁移不覆盖履历与资源',
   fromV7.ships.s1.record.sorties === 60 &&
   fromV7.ships.s1.record.historic['H1'].hardWin === 1700000000002 &&
   fromV7.resources.screws === 18 && fromV7.resources.devMats === 24);
-check('v7 结果重复迁移稳定', JSON.stringify(Game.migrateSave(fromV7)) === JSON.stringify(fromV7));
+check('v7 → v8 重复迁移稳定（SAVE_MIGRATIONS[7] 幂等）', JSON.stringify(Game.SAVE_MIGRATIONS[7](midV8)) === JSON.stringify(midV8));
 
 /* ---- V0.306 修复（评审 P1）：运输进度键 `transport` / `transportRewarded`（坑 #49）----
  * 它们住在 `mapProgress[id]` 内，由 `normalizeSave` 的 mapProgress 循环补 ——
@@ -388,29 +390,31 @@ check('迁移产出的 mapProgress 条目键集合 == `mapProgressEntry()` 单�
     return got === want && allSame;
   })(), Object.keys(fromV7.mapProgress['1-1']).sort().join(','));
 
-/* 全链路：v1 旧档一路迁到当前版本，也必须带齐 support（链路无缺口） */
-check('v1 旧档一路迁移到当前版本同样带齐 support',
-  fromV1.support && fromV1.support.day === '' && Array.isArray(fromV1.support.fleets) &&
-  fromV1.support.fleets.length === 0,
-  JSON.stringify(fromV1.support));
+/* 全链路：v1 旧档一路迁到当前版本，support 已被删、supportFleet 补为 null（链路无缺口） */
+check('v1 旧档一路迁移到当前版本：supportFleet===null 且 support 已删除',
+  fromV1.supportFleet === null && fromV1.support === undefined,
+  'supportFleet=' + fromV1.supportFleet + ' support=' + fromV1.support);
 
-/* 迁移器健壮性：v7 档残留的 support 残缺/脏数据要被清成形，且合法部分保留 */
-check('v7 档 support 残缺 → 补形且不崩',
+/* ============ v8 → v9：支援舰队规则重写（V0.307 批次1 / 坑 #55）============
+ * 语义从"当日占用"变为"持续挂载"——单值 st.supportFleet（挂载的舰队编号）。
+ * 跨版本语义变了，不许猜玩家想挂哪一支 ⇒ **已挂载态一律清空**。
+ * `migrateV8ToV9` 是 supportFleet 键的**唯一补写点**（坑 #30）；normalizeSave 依然不补。 */
+const fromV8 = Game.SAVE_MIGRATIONS[8](Object.assign(v7Save(), { support: { day: '2026-09-16', fleets: [3] } }));
+check('v8 档升级到当前版本（v9）', fromV8.saveVersion === CUR && fromV8.version === CUR && CUR === 9, 'CUR=' + CUR);
+check('v8 → v9 **删除**旧 support 键（语义已变，旧字段无消费者）', fromV8.support === undefined, JSON.stringify(fromV8.support));
+check('v8 → v9 补齐 supportFleet 为 null（未挂载）', fromV8.supportFleet === null, String(fromV8.supportFleet));
+check('v8 → v9 不覆盖既有数值（战功章/预设/资源/履历）',
+  fromV8.stats.medals === 12 && fromV8.presets.length === 1 &&
+  fromV8.resources.screws === 18 && fromV8.ships.s1.record.sorties === 60);
+check('v8 → v9 删除不丢/不重置 mapProgress 既有进度（坑 #49 由 normalizeSave 兜底补键）',
+  (() => { const mp = fromV8.mapProgress['1-1']; return !!mp && mp.gauge === 3 && mp.cleared === true && mp.kills === 4; })(),
+  JSON.stringify(fromV8.mapProgress['1-1']));
+check('v8 → v9 重复迁移稳定（supportFleet 不被二次改写）',
+  (() => { const r = Game.SAVE_MIGRATIONS[8](fromV8); return r.supportFleet === null && r.support === undefined; })());
+check('v8 当前档（带合法 support）经 v9 后 support 被清空、supportFleet=null',
   (() => {
-    const s = Game.migrateSave(Object.assign(v7Save(), { support: { fleets: 'oops' } }));
-    return s.support.day === '' && Array.isArray(s.support.fleets) && s.support.fleets.length === 0;
-  })());
-check('v7 档 support 脏舰队编号 → 只保留 1~4 的整数',
-  (() => {
-    const s = Game.migrateSave(Object.assign(v7Save(), { support: { day: '2026-09-16', fleets: [2, 9, '3', null, 0] } }));
-    return s.support.day === '2026-09-16' && JSON.stringify(s.support.fleets) === JSON.stringify([2, 3]);
-  })());
-check('v8 当前档的 support 不被迁移器改写（当日占用跨会话保留）',
-  (() => {
-    const s = Game.migrateSave(Object.assign(v7Save(), {
-      saveVersion: 8, version: 8, support: { day: '2026-09-16', fleets: [3] }
-    }));
-    return s.support.day === '2026-09-16' && JSON.stringify(s.support.fleets) === JSON.stringify([3]);
+    const s = Game.migrateSave(Object.assign(v7Save(), { saveVersion: 8, version: 8, support: { day: '2026-09-16', fleets: [3] } }));
+    return s.support === undefined && s.supportFleet === null && s.saveVersion === CUR;
   })());
 
 /* 坑 #30 负向断言：normalizeSave **不许**补这些新键（补了就绕过迁移器，迁移测试变空转） */
@@ -420,7 +424,7 @@ check('v8 当前档的 support 不被迁移器改写（当日占用跨会话保�
   check('normalizeSave 不补战功章字段（坑 #30：新键只能由迁移器补）',
     n.stats === undefined || n.stats.medals === undefined);
   check('normalizeSave 不补编成预设槽（同上）', n.presets === undefined);
-  check('normalizeSave 不补支援舰队占用 support（同上，V0.306 v8）', n.support === undefined);
+  check('normalizeSave 不补支援舰队键（同上，V0.307 v9：support / supportFleet 都不补）', n.support === undefined && n.supportFleet === undefined);
 }
 
 /* 损坏存档 */

@@ -2158,3 +2158,31 @@ drift **12 / v0305 12 / sup 14 / v0302 9 / archive 9 全部逐位一致** ｜ **
 **下一步（留给用户决策）**：① 是否接受"运输点在主干"这一取舍（替代方案 = 加路线选择 UI）；
 ② 2-4 / 4-2 的门槛 18 是否保留（当前依赖 m4a1 可达）；③ 本轮口径修正与批次 4 遗留项是否追认。
 
+## 2026-09-20 —— V0.307 批次1 支援舰队规则重写（独占完工）
+
+**性质**：批1 是"规则重写版"不是"加内容版"；旧三条断言（当日占用 / 多节点线性累计 / 道中发动）整段重写。V0.306 遗留 3 条 P1 豁免（D1/D2/D3）全部由本批销项。
+
+**机制（sortie.js / logistics.js / battle.js / state.js）**：
+- 持续挂载：`st.supportFleet` 单值 + `st.expeditions[idx]={exId:'support_escort',end:null}`（特殊远征态，保持远征态）。
+- 仅 BOSS 节点：`SUPPORT_NODES_DEFAULT=['boss']`（道中不发动，留 `opts.supportNodes` 接口）。
+- 仅困难海域：派生式 `supportEligible` = `!histRule && diff>=3 && 存在昼战节点`；实测 `diff≥3` 的 8 张排除 5-2（全夜战，支援 0 发动）⇒ 7 张白名单。
+- 战役玩家支援禁用（A6）：`Sortie.start` 内硬拒。
+- NPC 支援（坑 #59）：H2/M2 实装、H1/M1 缺席叙事；经同一 `supportPhase` 但 `opts.supportSrc='npc'`，**零消耗**；构造走 `makeRosterShip`（不经 `state.ships`）。
+
+**存档**：`CURRENT_SAVE_VERSION=9`；`migrateV8ToV9` 删旧 `save.support`、设 `save.supportFleet=null`；`normalizeSave` 仍不补 `supportFleet`（坑 #30，唯一补写点 = 迁移器）。
+
+**drift 基线**：现有 5 条 + 新增第 6 条 `drift:v0306`（复用 `--with-support --against battle_digest.baseline_v0306_support.txt`）；`supportSrc` 仅 truthy 时写入（守字节级一致）。
+
+**改动文件（13 改 + 1 新增）**：
+`state.js`（`SAVE_MIGRATIONS` 导出 + v9 迁移）｜`history.js`（npcSupport×4）｜`sortie.js`（引擎收窄 + NPC 接线 + 导出 `supportEligible`/`supportCandidates`/`SUPPORT_COST` + 只读状态行）｜`battle.js`（`supportPhase` supportSrc 分支 + 标签）｜`logistics.js`（mount/unmount/双向互斥/tick 修 `end:null`）｜`ui/sortie.js`（删 V0.306 选择器 + 徽章）｜`ui/logistics.js`（supportBlock 挂/撤入口，仅 expedition 页）｜`test_flow.html`（整段重写为 V0.307 块 +3 条断言）｜`battle_digest.baseline_v0306_support.txt`（重冻）｜`sim_soak.js`（EBUSY 修复：spawnSync→async spawn + 重试）｜`simulate.js`（~45 条 V0.307 断言 + D1/D2/D3）｜`test_save_migration.js`（71 条）｜`package.json`（`drift:v0306` 别名）｜**新增** `scripts/assert_manifest.txt`（D1 护栏：断言名含"可达/生效/接线/端到端"必须走真实入口）。
+
+**3 个真实 bug 修复**：① 挂载态被"已在远征中"通用检查抢在支援专属理由前拒绝（`startExpedition` 重排 + `fleetCombatReady` 不把"已挂支援"当异常 + `Sortie.start` 提前拒"支援队当主力"）；② e2e 默认 dock 页无挂载块（`UI.go('logistics','expedition')`）；③ 4-4 在 area 4 非 area 1，面板导航修正。
+
+**门禁**：sim **1971/0** ｜ migration **71/0** ｜ e2e **317/0（0 JS 错误）** ｜ drift **6 条基线（drift / v0305 / v0302 / archive / sup / v0306）全部零漂移** ｜ **`sim:soak 40` → 40/40 全绿**（排除 p ≥ 7.2%）。
+
+**提交**：`<待填>`（本地，未推送）。
+
+**备份**：`backup/2026-09-20_V0.307_批1完成_批2前/`（237 文件，批2 前快照）。
+
+**下一步**：批2 登陆装备体系重做（33→36 类，独占开工，不与别批并行）。
+

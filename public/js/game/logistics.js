@@ -83,6 +83,8 @@ const Logistics = (() => {
     if (!G.isFleetUnlocked(fleetIdx)) return { ok: false, msg: '该舰队尚未解锁！' };
     const fleet = st.fleet[fleetIdx];
     if (!fleet || !fleet.length) return { ok: false, msg: '舰队为空！' };
+    /* 坑 #56：支援挂载态 → 返回专属拒绝理由（它其实也占着远征槽，但理由必须可分辨） */
+    if (isSupportFleet(fleetIdx)) return { ok: false, msg: '该舰队正作为支援舰队挂载中，无法执行其他远征！' };
     if (st.expeditions[fleetIdx]) return { ok: false, msg: '该舰队正在远征中！' };
     for (const uid of fleet) {
       const s = st.ships[uid];
@@ -108,31 +110,61 @@ const Logistics = (() => {
     });
   }
 
-  /* ============ 支援舰队的当日占用（V0.306 批次2 / 坑 #45）============
-   * 键必须走 `Progression.periodKeys().daily` —— 与日常任务 / 改修次数上限**同一时刻**翻页。
-   * **不许**另写"距上次支援 24 小时"的冷却（会与既有日重置错位，出现"日常刷新了、支援还锁着")。 */
-  function todayKey() {
-    const P = (typeof Progression !== 'undefined') ? Progression : ((typeof window !== 'undefined') ? window.Progression : null);
-    if (P && typeof P.periodKeys === 'function') return P.periodKeys(Date.now()).daily;
-    return new Date().toISOString().slice(0, 10);
-  }
-  function supportUsedToday(fleetIdx) {
-    const st = GameRef().state;
-    const sup = st.support;
-    if (!sup || typeof sup !== 'object') return false;
-    if (sup.day !== todayKey()) return false;
-    return Array.isArray(sup.fleets) && sup.fleets.some(n => Number(n) === Number(fleetIdx));
-  }
-  /* 记一次支援占用（跨日自动翻页：day 不是今天就重置 fleets） */
-  function markSupportUsed(fleetIdx) {
-    const st = GameRef().state;
-    const key = todayKey();
-    if (!st.support || typeof st.support !== 'object' || st.support.day !== key) {
-      st.support = { day: key, fleets: [] };
+  /* 出击 / 支援就绪性检查（V0.307 批次1 / 坑 #55·#56）：与 `fleetDispatchBlocker` 的唯一区别是
+   * **不**把"已作为支援挂载"本身当作拒绝理由——挂载态是支援的正常状态，不是异常。
+   * 仅检查：已解锁 / 非空 / 无入渠 / 无大破。供 `Sortie.start` 在挂载态下校验"支援队是否就绪"，
+   * 以免把"挂载中的支援舰队"误判成不可用而把整场出击打回去。 */
+  function fleetCombatReady(fleetIdx) {
+    const G = GameRef();
+    const st = G.state;
+    if (!G.isFleetUnlocked(fleetIdx)) return { ok: false, msg: '该舰队尚未解锁！' };
+    const fleet = st.fleet[fleetIdx];
+    if (!fleet || !fleet.length) return { ok: false, msg: '舰队为空！' };
+    for (const uid of fleet) {
+      const s = st.ships[uid];
+      if (!s) continue;
+      if (st.repairs.some(r => r && r.ship === uid)) return { ok: false, msg: '舰队中有舰娘正在入渠，无法出击！' };
+      if (s.hp <= Math.floor(G.shipDef(s).stats[0] * 0.25)) return { ok: false, msg: '舰队中有大破舰娘，无法出击！' };
     }
-    if (!Array.isArray(st.support.fleets)) st.support.fleets = [];
-    if (!st.support.fleets.some(n => Number(n) === Number(fleetIdx))) st.support.fleets.push(Number(fleetIdx));
-    return st.support;
+    return { ok: true };
+  }
+
+  /* ============ 支援舰队挂载（V0.307 批次1 / 坑 #55·#56·#57）============
+   * V0.307 重写：支援 = "挂一支舰队在旁边跟着"，不是"每次点名派一次"。
+   *   挂载 = 占用同一个远征槽（st.expeditions[idx]），但具有自己专属的 exId（'support_escort'）；
+   *   挂上后不主动撤回就一直保持（end: null，不参与 claimExpedition 的到期结算，也不限当日次数）。
+   * 唯一写入点：mountSupport / unmountSupport；唯一读取点：isSupportFleet / supportFleetIdx。
+   * 一次只能担任一种职务（A2）：已挂支援的舰队不能再派普通远征 / 不能再作为出击主力（由互斥保证，不靠 UI 拦）。 */
+  const SUPPORT_EX_ID = 'support_escort';
+  function mountSupport(fleetIdx) {
+    const G = GameRef();
+    const st = G.state;
+    /* 复用 fleetDispatchBlocker：未解锁 / 空 / 远征中 / 入渠中 / 大破 一律拒绝（坑 #44） */
+    const blk = fleetDispatchBlocker(fleetIdx);
+    if (!blk.ok) return { ok: false, msg: blk.msg };
+    st.supportFleet = Number(fleetIdx);
+    st.expeditions[fleetIdx] = { exId: SUPPORT_EX_ID, start: Date.now(), end: null };
+    return { ok: true };
+  }
+  function unmountSupport() {
+    const G = GameRef();
+    const st = G.state;
+    const idx = st.supportFleet;
+    if (idx == null) return { ok: false, msg: '当前没有挂载中的支援舰队' };
+    st.expeditions[idx] = null;
+    st.supportFleet = null;
+    return { ok: true };
+  }
+  /* 唯一读取点：双条件自校验（挂在 supportFleet 上 AND 远征槽确实是我们写的 exId），防数据被别处污染 */
+  function isSupportFleet(i) {
+    const st = GameRef().state;
+    const idx = st.supportFleet;
+    return idx != null && Number(idx) === Number(i)
+      && st.expeditions[i] && st.expeditions[i].exId === SUPPORT_EX_ID;
+  }
+  function supportFleetIdx() {
+    const st = GameRef().state;
+    return (st.supportFleet != null) ? Number(st.supportFleet) : 0;
   }
 
   function startExpedition(fleetIdx, exId) {
@@ -141,9 +173,11 @@ const Logistics = (() => {
     if (!G.isFleetUnlocked(fleetIdx)) return { ok: false, msg: '该舰队尚未解锁！' };
     const ex = EXPEDITIONS.find(e => e.id === exId);
     if (!ex) return { ok: false, msg: '远征不存在' };
+    /* 双向互斥之一：已挂支援的舰队不能派普通远征（坑 #56 —— 一次只能担任一种职务，A2）。
+     * ⚠️ 必须排在"已在远征中"之前：支援挂载同样占用远征槽（expeditions[idx] 被写入 support_escort 记录），
+     * 否则会先命中通用拦截被误报成"远征中"，理由不可分辨。 */
+    if (isSupportFleet(fleetIdx)) return { ok: false, msg: '该舰队正作为支援舰队挂载中，无法执行其他远征！' };
     if (st.expeditions[fleetIdx]) return { ok: false, msg: '该舰队已在远征中！' };
-    /* 双向互斥之一：当日已作为支援出击的舰队不能远征（坑 #43/#50 —— 与支援分支共用同一占用记录） */
-    if (supportUsedToday(fleetIdx)) return { ok: false, msg: '该舰队今日已作为支援出击，无法远征！' };
     const fleet = st.fleet[fleetIdx];
     if (!fleet.length) return { ok: false, msg: '舰队为空！' };
     if (!checkExReq(fleet, ex)) return { ok: false, msg: '不满足远征条件（舰船数量/舰种要求）！' };
@@ -335,7 +369,7 @@ const Logistics = (() => {
     return fleets;
   }
 
-  return { startExpedition, claimExpedition, checkExReq, checkExCond, supplyCost, supplyFleet, supplyShipCost, supplyShip, repairCost, startRepair, cancelRepair, practiceReady, PracticeGen, fleetDispatchBlocker, fleetFiringShips, supportUsedToday, markSupportUsed };
+  return { startExpedition, claimExpedition, checkExReq, checkExCond, supplyCost, supplyFleet, supplyShipCost, supplyShip, repairCost, startRepair, cancelRepair, practiceReady, PracticeGen, fleetDispatchBlocker, fleetFiringShips, fleetCombatReady, mountSupport, unmountSupport, isSupportFleet, supportFleetIdx, SUPPORT_EX_ID };
 })();
 
 if (typeof window !== 'undefined') window.Logistics = Logistics;

@@ -225,6 +225,7 @@ const SortieUI = (() => {
         <span class="spot-name">${m.name}</span>
         <span class="spot-prog">${locked ? '需击破 ' + m.need : (mp.cleared ? '已攻略' : `击破 ${mp.kills}/${mp.gauge + mp.kills}`)}</span>
         ${diffBadge(m, false)}
+        ${supportBadgeHtml(m)}
       </button>`;
     }).join();
     return `<div class="area-map">
@@ -405,15 +406,18 @@ const SortieUI = (() => {
         : `<span class="dim">${detail}</span>`}</div>`;
     }
     html += specialsHtml(it.specials, it.airSup);
-    /* 支援舰队自检行（V0.306 批次2 / 坑 #50）：与选择器**同源**（同一个 `Sortie.supportCandidates`），
-     * 让玩家在"舰队能力"这一组里就看到"这一场有没有人能来支援、大概来几艘"。 */
+    /* 支援舰队状态行（V0.307 批次1 重写）：持久挂载态，与出击准备页支援区同源 */
     if (!Sortie.isHistoricMap(m)) {
-      const cands = Sortie.supportCandidates(fidx);
-      const cur = (selSupport && cands.includes(selSupport)) ? supportInfo(selSupport) : null;
-      html += cur
-        ? `<div><b>支援舰队</b>：<span class="ok">第 ${cur.idx} 舰队</span>（预计 ${cur.expect} 艘参与，士气 ${cur.minMorale}）`
-          + ` —— 每场消耗该队油弹各 5%、士气 10</div>`
-        : `<div><b>支援舰队</b>：<span class="dim">未派遣${cands.length ? '（可派：' + cands.map(i => '第 ' + i + ' 舰队').join('、') + '）' : '（无可用舰队）'}</span></div>`;
+      const supIdx = Game.state.supportFleet || 0;
+      if (supIdx) {
+        html += `<div><b>支援舰队</b>：<span class="ok">第 ${supIdx} 舰队（挂载中）</span>`
+          + (Sortie.supportEligible(m)
+              ? ` —— 本图困难海域，将于 BOSS 节点自动进场一次`
+              : ` —— 本图不激活（非困难海域或全线夜战）`)
+          + `</div>`;
+      } else {
+        html += `<div><b>支援舰队</b>：<span class="dim">未挂载（可在「后勤 / 远征」页挂为支援舰队）</span></div>`;
+      }
     }
     if (m.threatNote) html += `<div class="md-threat"><b>威胁评估</b>：${Util.esc(m.threatNote)}</div>`;
     html += `<div class="dim">自检只作提示，不阻止出击。对位不满足、士气偏低仍可出击，失败后可按归因调整编成。</div>`;
@@ -451,93 +455,53 @@ const SortieUI = (() => {
     </div>`;
   }
 
-  /* ============ 支援舰队选择器（V0.306 批次2）============
-   * 坑 #50：它必须出现在**出击准备页**，不能是一个孤立的新页面。
-   * 候选集与可用性与引擎**同源**：
-   *   - `Sortie.supportCandidates` = 已解锁 − 出击中（**结构**排除，坑 #43）
-   *   - `Logistics.fleetDispatchBlocker / fleetFiringShips` = 远征那一套（坑 #44）
-   * Gate 3：不满足的一律**置灰并写明原因**，玩家要在操作前知道自己在选什么。
-   * 两条设计事实（定价实测的结论）必须写进 UI，不许让玩家自己试出来：
-   *   ① 高装甲决战图（T5）上支援近乎无效；② 航母面板火力极低 → 航母型后备几乎没有支援价值。 */
-  let selSupport = 0;
+  /* ============ 支援舰队（V0.307 批次1 重写）============
+   * 支援改为"持久挂载态"（在「后勤 / 远征」页挂为支援舰队），出击准备页只显示只读状态行。
+   * 旧 V0.306 的"逐次选舰队 + 当日一次 + 每个战斗节点发动"设计已废除（任务书批 1）。 */
 
-  /* 单支候选舰队的支援信息 —— UI 与引擎读同一批判据，不另算一套 */
-  function supportInfo(idx) {
-    const st = Game.state;
-    const fleet = st.fleet[idx] || [];
-    const L = (typeof Logistics !== 'undefined') ? Logistics : null;
-    const fire = L ? L.fleetFiringShips(idx) : fleet.slice();
-    const blk = L ? L.fleetDispatchBlocker(idx) : { ok: true, msg: null };
-    const used = L ? L.supportUsedToday(idx) : false;
-    const ex = st.expeditions[idx];
-    const ships = fleet.map(u => st.ships[u]).filter(Boolean);
-    const minMorale = ships.length ? Math.min.apply(null, ships.map(s => Number(s.morale) || 0)) : 0;
-    const minFuel = ships.length ? Math.min.apply(null, ships.map(s => (s.supply ? s.supply.fuel : 1))) : 1;
-    const minAmmo = ships.length ? Math.min.apply(null, ships.map(s => (s.supply ? s.supply.ammo : 1))) : 1;
-    const carriers = ships.filter(s => { const t = Game.shipDef(s).type; return t === 'CV' || t === 'CVL'; }).length;
-    const B = (typeof Battle !== 'undefined') ? Battle : null;
-    const minN = (B && B.SUPPORT_MIN_SHIPS) || 2, maxN = (B && B.SUPPORT_MAX_SHIPS) || 3;
-    const expect = Math.max(0, Math.min(maxN, fire.length));
-    let state = 'ok', reason = '';
-    if (!blk.ok) { state = 'blocked'; reason = blk.msg.replace(/[！!]$/, ''); }
-    else if (used) { state = 'blocked'; reason = '今日已作为支援出击（每支舰队每天 1 次）'; }
-    else if (ex) { state = 'blocked'; reason = '远征中'; }
-    else if (!fire.length) { state = 'weak'; reason = '全员士气过低，派出去也不会开火'; }
-    else if (fire.length < fleet.length) { state = 'weak'; reason = `${fleet.length - fire.length} 艘士气过低，仅 ${fire.length} 艘会开火`; }
-    return {
-      idx, state, reason, expect, minN, maxN, carriers, minMorale,
-      fuel: Math.round(minFuel * 100), ammo: Math.round(minAmmo * 100),
-      exLeft: ex ? Math.max(0, Math.round((ex.end - Date.now()) / 1000)) : 0,
-      count: fleet.length
-    };
+  /* 全夜战图判定（V0.307 批次1）：与引擎 supportEligible 的"存在昼战节点"判据同源（否定式） */
+  function mapIsAllNight(m) {
+    const defs = m.defs || {};
+    const hasDay = Object.values(defs).some(d =>
+        ((d.type === 'battle' || d.type === 'boss') && d.mode !== 'night')
+        || (d.type === 'boss' && !d.mode));
+    return !hasDay;
   }
 
+  /* 海域列表 / 详情小标记（V0.307 批次1 / Item 19）：可派支援 / 全线夜战不发动 */
+  function supportBadgeHtml(m) {
+    if (Sortie.isHistoricMap(m)) return '';
+    if (Sortie.supportEligible(m)) return `<span style="display:inline-block;margin-top:2px;font-size:10px;color:#1a7f37;font-weight:700">可派支援</span>`;
+    if (mapIsAllNight(m)) return `<span style="display:inline-block;margin-top:2px;font-size:10px;color:#888">全线夜战·不发动</span>`;
+    return '';
+  }
+
+  /* 出击准备页支援区：只读状态行（不再选舰队） */
   function supportPicker(m, fidx) {
     const st = Game.state;
     if (Sortie.isHistoricMap(m)) {
       return `<div class="sup-pick">
         <div class="sp-head">支援舰队</div>
-        <div class="sp-note dim">史实重演要求参战舰艇独立作战 —— <b>历史战役无法派遣支援舰队</b>。
-          （Q4：允许支援会与史实加成链多一处对拍，本版不做。）</div>
+        <div class="sp-note dim">史实重演要求参战舰艇独立作战 —— <b>历史战役无法派遣支援舰队</b>。</div>
       </div>`;
     }
-    const cands = Sortie.supportCandidates(fidx);
-    if (!cands.length) {
+    const supIdx = st.supportFleet || 0;
+    if (!supIdx) {
       return `<div class="sup-pick">
         <div class="sp-head">支援舰队</div>
-        <div class="sp-note dim">尚未解锁其他舰队 —— 解锁第 2 舰队后即可在出击时派遣支援。</div>
+        <div class="sp-note dim">未挂载支援舰队。可在「后勤 / 远征」页将一支舰队<b>挂为支援舰队</b>：挂载后，在困难海域的 BOSS 节点自动进场一次。</div>
       </div>`;
     }
-    /* 选中的舰队若此刻已不可用（临时变化），回落到"不派遣"并给出提示 */
-    if (selSupport && !cands.includes(selSupport)) selSupport = 0;
-    if (selSupport) {
-      const si = supportInfo(selSupport);
-      if (si.state === 'blocked') selSupport = 0;
-    }
-    /* 定价实测的两条设计事实：T5 高装甲图无效 / 航母型后备无价值 */
-    const warn = [];
-    if (Number(m.diff) >= 5) warn.push('本图为**决战级高装甲海域**：实测支援在此类图上几乎无收益（伤害多为个位数），建议改派别的舰队做远征。');
-    const si = selSupport ? supportInfo(selSupport) : null;
-    if (si && si.carriers > 0 && si.carriers >= Math.ceil(si.count / 2)) {
-      warn.push('该队以**航母为主**：面板火力极低，作为支援的贡献远低于炮击舰。');
-    }
-    const opts = [`<button class="sp-opt${selSupport === 0 ? ' sel' : ''}" data-sup="0">不派遣</button>`]
-      .concat(cands.map(i => {
-        const s = supportInfo(i);
-        const dis = s.state === 'blocked';
-        const lab = `第 ${i} 舰队`;
-        const meta = dis ? s.reason
-          : `${s.expect} 艘可支援 · 士气 ${s.minMorale} · 油${s.fuel}% 弹${s.ammo}%`;
-        return `<button class="sp-opt${selSupport === i ? ' sel' : ''}${s.state === 'weak' ? ' weak' : ''}${dis ? ' dis' : ''}" data-sup="${i}" ${dis ? 'disabled' : ''} title="${UI.esc(meta)}">
-          <span class="sp-lab">${lab}</span><span class="sp-meta">${UI.esc(meta)}</span></button>`;
-      })).join('');
+    /* 已挂载：显示状态 + 本图是否会发动（Item 18 文案修正） */
+    const eligible = Sortie.supportEligible(m);
+    const fireLine = eligible
+      ? `<span class="ok">本图困难海域，将于 BOSS 节点自动进场一次</span>`
+      : (mapIsAllNight(m)
+          ? `<span class="dim">本图全线夜战，支援不会发动</span>`
+          : `<span class="dim">本图非困难海域，支援不会发动</span>`);
     return `<div class="sup-pick">
-      <div class="sp-head">支援舰队（可选）</div>
-      <div class="sp-opts">${opts}</div>
-      <div class="sp-note dim">支援在<b>每个战斗节点</b>发动一次（随机 2~3 艘自由炮击，伤害约为主力的半手）；
-        发动时消耗该队油弹各 5%、士气 10（低于出击的 15），<b>未发动则不扣</b>；
-        但<b>当日派遣即占用</b> —— 该舰队今天不能再去远征。</div>
-      ${warn.length ? `<div class="sp-warn">${briefHtml(warn.join(' '))}</div>` : ''}
+      <div class="sp-head">支援舰队</div>
+      <div class="sp-note"><b>第 ${supIdx} 舰队（挂载中，远征态）</b> —— ${fireLine}。</div>
     </div>`;
   }
 
@@ -565,7 +529,8 @@ const SortieUI = (() => {
       <div class="md-board">${mapBoard(m, null, { mini: true })}</div>
       <div class="md-title">${m.id} ${m.name} ${diffBadge(m, true)}
         ${mp.cleared ? '<span class="map-clear-badge">★ 已攻略</span>' : ''}
-        ${m.need ? '<span class="md-eo">BOSS海域</span>' : ''}</div>
+        ${m.need ? '<span class="md-eo">BOSS海域</span>' : ''}
+        ${supportBadgeHtml(m)}</div>
       ${diffNoteHtml(m)}
       <div class="md-gauge">
         <div class="gauge-head"><span>海域血条</span><b>${mp.cleared ? '★ 已攻略' : `${mp.kills} / ${total} 次击破`}</b></div>
@@ -686,24 +651,15 @@ const SortieUI = (() => {
           draw();
         });
       });
-      /* 支援舰队选择（V0.306）：只改选择，不落存档 —— 真正的占用在 `Sortie.start` 内写入 `st.support` */
-      root.querySelectorAll('[data-sup]').forEach(b => {
-        b.addEventListener('click', () => {
-          selSupport = Number(b.dataset.sup) || 0;
-          draw();
-        });
-      });
       /* 出击：常规海域 / 战役常规阶 / 战役强敌阶共用同一条路径（只有 mapId 与 hard 标记不同） */
       const launch = (mapId, hard) => {
         if (lowSupply) {
           const ok = confirm(`第${['', '一', '二', '三', '四'][selFleet]}舰队油弹不足（油${Math.round(minFuel * 100)}% 弹${Math.round(minAmmo * 100)}%）！\n弹药<50%伤害减半，0%无法炮击。建议先补给再出击！\n\n仍然出击？`);
           if (!ok) return;
         }
-        /* 支援舰队（V0.306 批次2）：选择随出击一起提交；战役图一律不传（引擎侧也会拒绝） */
-        const supFleet = Sortie.isHistoricMap(Sortie.resolveMap(mapId)) ? 0 : selSupport;
-        const r = hard ? Sortie.startHard(mapId, selFleet) : Sortie.start(mapId, selFleet, { supportFleet: supFleet });
+        /* 支援舰队（V0.307 批次1）：持久挂载态由 `st.supportFleet` 提供，引擎在 `Sortie.start` 内读取；战役图引擎侧拒绝 */
+        const r = hard ? Sortie.startHard(mapId, selFleet) : Sortie.start(mapId, selFleet);
         if (!r.ok) { UI.toast(r.msg); return; }
-        selSupport = 0;   /* 占用已写入存档，选择状态归零（下次出击要重新选） */
         /* 油弹警告 + 士气轮换提醒（均为提示，不拦截出击） */
         const notes = [r.warn, r.advice && r.advice.text].filter(Boolean);
         if (notes.length) UI.toast(notes.join('\n'), 5200);

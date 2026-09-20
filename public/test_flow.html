@@ -1018,7 +1018,7 @@
       localStorage.removeItem('usnc_form_fixed');
       document.querySelector('#modal-root').innerHTML = '';
 
-      /* ===== V0.306 批次2：支援舰队 UI（选择器 / 置灰理由 / 结算归因必须可见） ===== */
+      /* ===== V0.307 批次1：支援舰队 UI（持久挂载 / 只读状态行 / 仅 BOSS 困难海域 / 战役禁用） ===== */
       {
         Sortie.returnHome();
         document.querySelector('#modal-root').innerHTML = '';
@@ -1035,61 +1035,63 @@
         Game.state.fleet[1] = mkS(['iowa', 'washington', 'baltimore']);
         Game.state.fleet[2] = mkS(['southdakota', 'indiana', 'atlanta']);
         Game.state.fleet[3] = mkS(['helena', 'fletcher', 'kidd']);
+        // fleet 3 占一个普通远征，验证"已挂支援就不能再派远征"的互斥（坑 #56）
         Game.state.expeditions[3] = { exId: 'ex1', end: Date.now() + 600000 };
 
-        /* ① 选择器在**既有页面**里（坑 #50）：海域详情面板，不是孤立新页 */
+        /* ① 后勤 / 远征页：挂为支援入口存在且可点；点击后 supportFleet 置位（持久挂载态，V0.307 重写） */
+        UI.go('logistics', 'expedition');
+        const mountBtn = scrEl.querySelector('[data-mountsup="2"]');
+        R(!!mountBtn, 'sup:mountButtonExists');
+        if (mountBtn) mountBtn.click();
+        R(Game.state.supportFleet === 2, 'sup:mountSetsSupportFleet', 'supportFleet=' + Game.state.supportFleet);
+        UI.go('logistics', 'expedition');
+        R(/支援挂载中（远征态）/.test(scrEl.textContent), 'sup:mountStatusShown');
+        const unmountBtn = scrEl.querySelector('[data-unmountsup]');
+        R(!!unmountBtn, 'sup:unmountButtonExists');
+        // 互斥：fleet 3 已占普通远征 -> Logistics.mountSupport(3) 应被拒（引擎层双向互斥，坑 #56）
+        R(Logistics.mountSupport(3).ok === false, 'sup:mutualExclusiveWithExpedition', 'mountSupport(3) 应被拒(远征中)');
+
+        /* ② 出击准备页：只读状态行（同源 st.supportFleet；V0.306 的逐次选择器已废除） */
         UI.go('sortie');
-        const sa1 = scrEl.querySelector('[data-area="1"]'); if (sa1) sa1.click();
-        const sm11 = scrEl.querySelector('[data-map="1-1"]'); if (sm11) sm11.click();
-        const spick = scrEl.querySelector('.sup-pick');
-        R(!!spick, 'sup:pickerInMapDetail');
-        const sopts = scrEl.querySelectorAll('.sup-pick .sp-opt');
-        const cands1 = Sortie.supportCandidates(1);
-        R(sopts.length === cands1.length + 1, 'sup:pickerOptionCount',
-          sopts.length + ' vs ' + (cands1.length + 1));
-        const uiSup = Array.prototype.slice.call(sopts)
-          .map(o => o.getAttribute('data-sup')).filter(v => v !== '0').sort();
-        R(JSON.stringify(uiSup) === JSON.stringify(cands1.map(String).sort()),
-          'sup:pickerSameSource', JSON.stringify({ ui: uiSup, engine: cands1 }));
-        const sdis = scrEl.querySelector('.sup-pick .sp-opt.dis');
-        R(!!sdis && sdis.hasAttribute('disabled') && /远征/.test(sdis.textContent),
-          'sup:pickerBlockedReason', sdis ? sdis.textContent.replace(/\s+/g, ' ').trim() : '(无)');
-        R((spick ? spick.innerHTML : '').indexOf('**') < 0, 'sup:pickerNoMarkdownLeak');
+        // 困难海域 4-4（位于海域 4 区）：挂载后本图应激活
+        const sa4 = scrEl.querySelector('[data-area="4"]'); if (sa4) sa4.click();
+        const sm44 = scrEl.querySelector('[data-map="4-4"]'); if (sm44) sm44.click();
+        R(/第 2 舰队（挂载中，远征态）/.test(scrEl.textContent), 'sup:prepStatusMounted', scrEl.textContent.replace(/\s+/g, ' ').slice(-140));
+        R(/本图困难海域，将于 BOSS 节点自动进场一次/.test(scrEl.textContent), 'sup:prepFireLineActive', scrEl.textContent.replace(/\s+/g, ' ').slice(-140));
+        // V0.306 的 .sup-pick .sp-opt 逐次选择器已不存在（持久挂载，不在出击页选）
+        R(scrEl.querySelectorAll('.sup-pick .sp-opt').length === 0, 'sup:noLegacyPickerOptions');
+        // 非困难海域 1-1（位于海域 1 区）：不激活
+        const sa1b = scrEl.querySelector('[data-area="1"]'); if (sa1b) sa1b.click();
+        const sm11b = scrEl.querySelector('[data-map="1-1"]'); if (sm11b) sm11b.click();
+        R(/本图非困难海域，支援不会发动/.test(scrEl.textContent), 'sup:prepNotActiveOnEasy', scrEl.textContent.replace(/\s+/g, ' ').slice(-140));
+        const spPick2 = scrEl.querySelector('.sup-pick');
+        R(spPick2 && spPick2.innerHTML.indexOf('**') < 0, 'sup:prepNoMarkdownLeak');
 
-        /* ② 选中 → 高亮 + 元信息（艘数 / 士气）；Gate 3：操作前知道自己在选什么 */
-        const ssel = scrEl.querySelector('.sup-pick .sp-opt[data-sup="2"]');
-        if (ssel) ssel.click();
-        const sselNow = scrEl.querySelector('.sup-pick .sp-opt.sel');
-        R(!!sselNow && sselNow.getAttribute('data-sup') === '2', 'sup:pickerSelect',
-          sselNow ? sselNow.getAttribute('data-sup') : '(无)');
-        R(!!sselNow && /艘可支援/.test(sselNow.textContent) && /士气/.test(sselNow.textContent),
-          'sup:pickerSelectedMeta', sselNow ? sselNow.textContent.replace(/\s+/g, ' ').trim() : '(无)');
-        R(scrEl.innerHTML.indexOf('出击') >= 0, 'sup:stillOnSortiePrep');
-
-        /* ③ 历史战役页：明确说明不可派支援（Q4），且不得漏出 markdown */
+        /* ③ 历史战役页：明确说明不可派支援（A6），且无 markdown 漏出（保留 V0.306 的回归锁） */
         const stabH = scrEl.querySelector('[data-tab="hist"]');
         if (stabH) {
           stabH.click();
           const sbH1 = scrEl.querySelector('[data-battle="H1"]');
           if (sbH1) sbH1.click();
-          const hpick = scrEl.querySelector('.sup-pick');
-          R(!!hpick && /无法派遣支援舰队/.test(hpick.textContent), 'sup:histDisabled',
-            hpick ? hpick.textContent.replace(/\s+/g, ' ').slice(0, 70) : '(无 .sup-pick)');
-          R(!!hpick && hpick.innerHTML.indexOf('**') < 0, 'sup:histNoMarkdownLeak');
+          const hnote = scrEl.querySelector('.sup-pick .sp-note');
+          R(!!hnote && /历史战役无法派遣支援舰队/.test(hnote.textContent), 'sup:histDisabled',
+            hnote ? hnote.textContent.replace(/\s+/g, ' ').slice(0, 70) : '(无 .sp-note)');
+          R(!!hnote && hnote.innerHTML.indexOf('**') < 0, 'sup:histNoMarkdownLeak');
         }
 
-        /* ④ **结算归因可见性**（接线缺陷回归锁，V0.306 批次2 实测发现）：
-         * 【结算归因】行产生于 `settleBattle`，而演出播放器早已走完 —— 若 `showResult` 不冲刷尾行，
-         * 它（连同 MVP / 新荣誉 / 新击）**永远不会显示** = 任务书 2.5 明令禁止的「静默发放」。 */
+        /* ④ **结算归因可见性**（接线缺陷回归锁）+ 支援开火行：仅 BOSS 困难海域发动（V0.307 收窄） */
         localStorage.setItem('usnc_form_fixed', '单纵阵');
         let supFireLine = false, supAttrLine = '';
         for (let attempt = 0; attempt < 4 && !supAttrLine; attempt++) {
           Sortie.returnHome();
           document.querySelector('#modal-root').innerHTML = '';
-          Game.state.support = { day: '', fleets: [] };      // 每次重试前清掉当日占用
-          const stS = Sortie.start('1-1', 1, { supportFleet: 2 });
+          // 复位再挂：确保挂载态（每次重试前清掉挂载），并恢复支援队状态以防连续重试衰减
+          Logistics.unmountSupport();
+          for (const u of Game.state.fleet[2]) { const s = Game.state.ships[u]; s.morale = 96; s.hp = Game.shipStats(u).hpMax; s.supply = { fuel: 1, ammo: 1 }; }
+          Logistics.mountSupport(2);
+          const stS = Sortie.start('4-4', 1);
           if (!stS.ok) { break; }
-          Game.state.sortie.node = 'A';                      // 1-1 A = 战斗点
+          Game.state.sortie.node = 'C';                      // 4-4 的 BOSS 节点
           UI.go('sortie');
           const sadv = scrEl.querySelector('[data-act="advance"]');
           if (!sadv) { break; }
@@ -1099,9 +1101,9 @@
           const ssk = scrEl.querySelector('#fxSkip') || document.querySelector('#fxSkip');
           if (ssk) ssk.click();
           const send = document.querySelector('#modal-root [data-end]');
-          if (send) send.click();                            // 追击选择：不夜战（保证结算行一次到位）
+          if (send) send.click();                            // 不夜战，保证结算行一次到位
           const slog = (scrEl.querySelector('#battleLog') || {}).textContent || '';
-          if (slog.indexOf('支援炮击') >= 0) supFireLine = true;
+          if (slog.indexOf('支援炮击（玩家支援）') >= 0) supFireLine = true;
           if (slog.indexOf('【结算归因】支援舰队') >= 0) supAttrLine = slog;
           const sback = scrEl.querySelector('#battleLog [data-back]');
           if (sback) sback.click();
@@ -1110,8 +1112,12 @@
         document.querySelector('#modal-root').innerHTML = '';
         R(supFireLine, 'sup:battleLogSupportLine');
         R(!!supAttrLine, 'sup:settleAttrVisible',
-          supAttrLine ? supAttrLine.replace(/\s+/g, ' ').slice(-150) : '(战报里没有【结算归因】行)');
+          supAttrLine ? supAttrLine.replace(/\s+/g, ' ').slice(-150) : '(战报里没有【结算归因】支援舰队行)');
         Sortie.returnHome();
+
+        /* ⑤ 撤回：unmountSupport 清空 supportFleet（持久挂载态可解除） */
+        Logistics.unmountSupport();
+        R(Game.state.supportFleet === null, 'sup:unmountClearsSupportFleet', 'supportFleet=' + Game.state.supportFleet);
       }
 
       /* ============================================================

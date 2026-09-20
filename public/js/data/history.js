@@ -21,6 +21,8 @@
 const HISTORY_BATTLES = [
   {
     id: 'H1', name: '圣克鲁斯海战', date: '1942-10-26', stars: 9,
+    /* V0.307 批次1：NPC 支援（战役系统编成，零消耗）。H1 = 缺席叙事（TF64 因补给撤退，未参战，见考据 §2.1） */
+    npcSupport: { absent: true, name: '第 64 特混舰队（TF 64，威利斯·李）', note: '伦内尔岛以南，李的战列舰正在补给——她们今天到不了。' },
     admReq: 10,
     /* 军事简报体两段：态势 / 威胁与编成建议（与 maps[].brief 同口径） */
     brief: '圣克鲁斯。1942 年 10 月 26 日，企业与大黄蜂在这片海域迎击翔鹤·瑞鹤机动部队。'
@@ -76,6 +78,9 @@ const HISTORY_BATTLES = [
   },
   {
     id: 'H2', name: '铁底湾 · 第一次瓜达尔卡纳尔海战', date: '1942-11-13', stars: 9,
+    /* V0.307 批次1：NPC 支援（零消耗）。H2 = TF64（华盛顿+南达科他+4 驱逐），BOSS 第二波/迎击时抵达（考据 §2.2）。
+     * 半史实演绎：真实是 TF64 独自打的；4 驱逐取已实装舰近似（Walke/Benham/Preston/Gwin 未实装）。 */
+    npcSupport: { name: '第 64 特混舰队（TF 64，威利斯·李）', ships: ['washington','southdakota','fletcher','kidd','laffey','heermann'], lv: 50, note: '史料上她们（TF64）是下一夜才赶到的——这一次，她们没有缺席。（半史实演绎）' },
     admReq: 10,
     brief: '铁底湾。1942 年 11 月 13 日夜，卡拉汉少将的巡洋-驱逐部队在黑暗中撞上比叡的炮战队列'
       + '——一场没有战列舰、没有航空母舰的混战。\n'
@@ -125,6 +130,8 @@ const HISTORY_BATTLES = [
   },
   {
     id: 'M1', name: '中途岛海战', date: '1942-06-04', stars: 10,
+    /* V0.307 批次1：NPC 支援缺席叙事（M1 全程无友军到场；ban BB 规则与配支援自相矛盾，见考据 §2.3） */
+    npcSupport: { absent: true, name: '萨拉托加（CV-3）', note: '6 月 9 日，萨拉托加带着 34 架补充机抵达——她们来得太晚，也来得太及时。' },
     admReq: 12,   // [PLACEHOLDER] 高于 H1/H2 的 10，卡在 4-x 攻略期；上线后按通关数据微调
     brief: '中途岛。1942 年 6 月 4 日，四支机动部队的航空战队在黎明前折戟——决定胜负的不是炮，是五分钟。\n'
       + '本战役全程考验制空：B 点与 BOSS 均为航空战节点，建议编入 ≥2 艘航母并搭载舰战。'
@@ -173,6 +180,9 @@ const HISTORY_BATTLES = [
   },
   {
     id: 'M2', name: '莱特湾海战', date: '1944-10-23', stars: 11,
+    /* V0.307 批次1：NPC 支援（零消耗）。M2 = 奥尔登多夫分遣队（3 战列+4 重巡+4 驱逐），BOSS 危机时抵达（考据 §2.4 方案A）。
+     * 史实近似：Mississippi / California 未实装，以 colorado / newmexico / westvirginia 近似 3 战列。 */
+    npcSupport: { name: '第七舰队火力支援部队（奥尔登多夫分遣队）', ships: ['colorado','newmexico','westvirginia','sanfrancisco','portland','neworleans','minneapolis','fletcher','kidd','laffey','heermann'], lv: 50, note: '史料上她们（奥尔登多夫分遣队）没能赶上——这一次赶上了。（史实近似：Mississippi / California 未实装）' },
     admReq: 14,   // [PLACEHOLDER] 5-x 攻略期；终章战役应晚于 M1 解锁
     /* 全游戏第一个「资源压力」战役（坑 #25）：四节点消耗 + 弹药补正是设计意图，不是 bug */
     brief: '莱特湾。1944 年 10 月，两支舰队在菲律宾海域合围——史上规模最大的海战，也是对后勤的终极考验。\n'

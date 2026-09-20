@@ -36,7 +36,8 @@ const LogisticsUI = (() => {
       let needRerender = false;
       if (tab === 'expedition') {
         const ex = Game.state.expeditions[exFleet];
-        if (ex && now >= ex.end && !root.querySelector('[data-claimex]')) needRerender = true;
+        /* 支援挂载（end:null）不算"已到期待领取"，否则每秒空转重渲染（坑 #55） */
+        if (ex && ex.end != null && now >= ex.end && !root.querySelector('[data-claimex]')) needRerender = true;
       } else if (tab === 'dock') {
         const jobs = Game.state.repairs.filter(Boolean).map(r => r.end);
         const rendered = [...root.querySelectorAll('[data-until]')].map(el => parseInt(el.dataset.until, 10));
@@ -49,10 +50,30 @@ const LogisticsUI = (() => {
     function expPanel() {
       const st = Game.state;
       const exFleets = Game.unlockedFleets().filter(f => f !== 1);
+      /* 支援舰队挂载（V0.307 批次1）：在远征页挂/撤支援舰队（持久挂载态，见批 1） */
+      const supIdx = st.supportFleet || 0;
+      const supportBlock = `<div class="section-title">支援舰队挂载（V0.307）</div>
+        <div class="flex" style="gap:8px;flex-wrap:wrap">
+          ${Game.unlockedFleets().map(f => {
+            const mounted = (f === supIdx);
+            const blk = mounted ? { ok: true } : Logistics.fleetDispatchBlocker(f);
+            return `<div class="panel" style="margin:4px 0;flex:1 1 22%;min-width:140px">
+              <div style="font-weight:700">第${['', '一', '二', '三', '四'][f]}舰队</div>
+              <div style="font-size:12px" class="${mounted ? 'ok' : 'dim'}">${mounted ? '支援挂载中（远征态）' : '未挂载'}</div>
+              ${mounted
+                ? `<button class="btn btn-sm" data-unmountsup>撤回</button>`
+                : (blk.ok
+                    ? `<button class="btn btn-sm" data-mountsup="${f}">挂为支援</button>`
+                    : `<button class="btn btn-sm" disabled title="${UI.esc(blk.msg)}">不可挂</button>`)}
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="hint">支援舰队挂载后保持<b>远征态</b>，自动跟随出击：在困难海域（T3+ 且含昼战节点）的 <b>BOSS 节点</b>自动进场一次。不限当日次数，可在本页随时撤回。历史战役不激活玩家支援；挂载中的舰队不能另派远征、也不能作为出击主力。</div>`;
       if (!exFleets.includes(exFleet)) exFleet = exFleets[0] || 2;
       root.insertAdjacentHTML('beforeend', `<div class="panel">
         <h3>远征 <span class="dim">（派出舰队远征，出发后舰队锁定）</span>
           <label class="dim" style="float:right;display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12px"><input type="checkbox" id="exLoop" ${localStorage.getItem('usnc_exloop_f' + exFleet) === '1' ? 'checked' : ''}>自动循环（领取后自动再派遣同一远征）</label></h3>
+        ${supportBlock}
         <div class="tabs">
           ${exFleets.map(f => `<button class="${exFleet === f ? 'active' : ''}" data-exf="${f}">第${['', '一', '二', '三', '四'][f]}舰队</button>`).join('')}
         </div>
@@ -92,6 +113,24 @@ const LogisticsUI = (() => {
           const r = Logistics.startExpedition(exFleet, b.dataset.ex);
           if (!r.ok) { UI.toast(r.msg); return; }
           UI.toast(`远征「${r.ex.name}」出发！${Util.fmtTime(r.ex.time * 1000)}后完成`);
+          Game.save(); render();
+        });
+      });
+      /* 支援舰队挂载 / 撤回（V0.307 批次1） */
+      root.querySelectorAll('[data-mountsup]').forEach(b => {
+        b.addEventListener('click', () => {
+          const f = parseInt(b.dataset.mountsup, 10);
+          const r = Logistics.mountSupport(f);
+          if (!r.ok) { UI.toast(r.msg); return; }
+          UI.toast(`第${['', '一', '二', '三', '四'][f]}舰队已挂为支援舰队（远征态）`);
+          Game.save(); render();
+        });
+      });
+      root.querySelectorAll('[data-unmountsup]').forEach(b => {
+        b.addEventListener('click', () => {
+          const r = Logistics.unmountSupport();
+          if (!r.ok) { UI.toast(r.msg); return; }
+          UI.toast('已撤回支援舰队挂载');
           Game.save(); render();
         });
       });

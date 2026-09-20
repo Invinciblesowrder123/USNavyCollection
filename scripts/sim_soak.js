@@ -18,7 +18,7 @@
  *   （如 `npm run probe:recon`），不是刷连跑次数。
  * ============================================================ */
 
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -37,34 +37,52 @@ console.log(`结束后若全绿，只能排除 p ≥ ${(excludedP(ROUNDS) * 100)
 const failures = [];
 let lastSummary = '';
 
-for (let i = 1; i <= ROUNDS; i++) {
-  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'simulate.js')], {
-    cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024
+function runOne() {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [path.join(ROOT, 'scripts', 'simulate.js')], {
+      cwd: ROOT, maxBuffer: 64 * 1024 * 1024
+    });
+    let out = '';
+    child.stdout.on('data', d => { out += d.toString(); });
+    child.stderr.on('data', d => { out += d.toString(); });
+    child.on('error', e => { out += 'SPAWN_ERROR: ' + e.message; });
+    child.on('close', (code, signal) => resolve({ out, status: signal ? null : code }));
   });
-  const out = (r.stdout || '') + (r.stderr || '');
-  const summary = (out.match(/通过 \d+ 项，失败 \d+ 项/) || ['(无汇总行)']).pop();
-  lastSummary = summary;
-  const bad = out.split('\n').filter(l => l.indexOf('✗') >= 0).map(l => l.trim());
-  const ok = r.status === 0 && bad.length === 0;
-  fs.writeFileSync(path.join(OUTDIR, `run_${String(i).padStart(3, '0')}${ok ? '' : '_FAIL'}.log`), out, 'utf8');
-  if (ok) {
-    process.stdout.write(`  ${i}/${ROUNDS} ok  ${summary}\n`);
-  } else {
-    failures.push(i);
-    console.log(`  ${i}/${ROUNDS} ✗ exit=${r.status} ${summary}`);
-    if (bad.length) for (const l of bad) console.log('      ' + l);
-    const tail = out.trim().split('\n').slice(-20);
-    console.log('      --- 末 20 行 ---');
-    for (const l of tail) console.log('      ' + l);
-    console.log(`      （完整输出：${path.relative(ROOT, path.join(OUTDIR, `run_${String(i).padStart(3, '0')}_FAIL.log`))}）`);
-  }
 }
 
-console.log(`\n结果：${ROUNDS - failures.length}/${ROUNDS} 全绿${failures.length ? '，失败轮次 ' + failures.join(',') : ''}`);
-console.log(`最后一轮汇总：${lastSummary}`);
-if (!failures.length) {
-  console.log(`可排除的假失败率下界：p ≥ ${(excludedP(ROUNDS) * 100).toFixed(1)}%（N=${ROUNDS}, 95% 置信）`);
-} else {
-  console.log('失败轮的完整输出已落盘 → 先按断言行逐条归因，**不要**直接调阈值让它变绿。');
-}
-process.exit(failures.length ? 1 : 0);
+(async () => {
+  for (let i = 1; i <= ROUNDS; i++) {
+    let r, tries = 0;
+    while (tries < 3) {
+      r = await runOne();
+      if (r.status !== null || !/EBUSY/.test(r.out)) break;
+      tries++;
+    }
+    const out = r.out;
+    const summary = (out.match(/通过 \d+ 项，失败 \d+ 项/) || ['(无汇总行)']).pop();
+    lastSummary = summary;
+    const bad = out.split('\n').filter(l => l.indexOf('✗') >= 0).map(l => l.trim());
+    const ok = r.status === 0 && bad.length === 0;
+    fs.writeFileSync(path.join(OUTDIR, `run_${String(i).padStart(3, '0')}${ok ? '' : '_FAIL'}.log`), out, 'utf8');
+    if (ok) {
+      process.stdout.write(`  ${i}/${ROUNDS} ok  ${summary}\n`);
+    } else {
+      failures.push(i);
+      console.log(`  ${i}/${ROUNDS} ✗ exit=${r.status} ${summary}`);
+      if (bad.length) for (const l of bad) console.log('      ' + l);
+      const tail = out.trim().split('\n').slice(-20);
+      console.log('      --- 末 20 行 ---');
+      for (const l of tail) console.log('      ' + l);
+      console.log(`      （完整输出：${path.relative(ROOT, path.join(OUTDIR, `run_${String(i).padStart(3, '0')}_FAIL.log`))}）`);
+    }
+  }
+
+  console.log(`\n结果：${ROUNDS - failures.length}/${ROUNDS} 全绿${failures.length ? '，失败轮次 ' + failures.join(',') : ''}`);
+  console.log(`最后一轮汇总：${lastSummary}`);
+  if (!failures.length) {
+    console.log(`可排除的假失败率下界：p ≥ ${(excludedP(ROUNDS) * 100).toFixed(1)}%（N=${ROUNDS}, 95% 置信）`);
+  } else {
+    console.log('失败轮的完整输出已落盘 → 先按断言行逐条归因，**不要**直接调阈值让它变绿。');
+  }
+  process.exit(failures.length ? 1 : 0);
+})();

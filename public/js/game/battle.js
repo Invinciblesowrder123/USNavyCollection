@@ -297,10 +297,19 @@ const Battle = (() => {
     const minN = Number(cfg.min) || SUPPORT_MIN_SHIPS;
     const maxN = Number(cfg.max) || SUPPORT_MAX_SHIPS;
     const mode = cfg.mode || SUPPORT_MODE;
-    const ids = (opts.supportFleet || []).map(x => (x && typeof x === 'object') ? x.uid : x).filter(Boolean);
-    if (!ids.length) return { fired: false, reason: 'EMPTY', ships: [], hit: 0, dmg: 0, sunk: 0 };
-    const pool = ids.map(u => makePlayerShip(u)).filter(s => s && s.alive);
-    if (!pool.length) return { fired: false, reason: 'NO_ALIVE', ships: [], hit: 0, dmg: 0, sunk: 0 };
+    const src = opts.supportSrc || 'player';
+    /* 来源区分：npc = 战役系统编成（不经 state.ships、零消耗）；player = 玩家挂载舰队（uid 取自 state.ships） */
+    let pool, hadInput = false;
+    if (src === 'npc' && Array.isArray(opts.supportNpcShips) && opts.supportNpcShips.length) {
+      hadInput = true;
+      const npcLv = Number(opts.supportNpcLv) || 50;
+      pool = opts.supportNpcShips.map((id, i) => makeRosterShip({ id, lv: npcLv }, i)).filter(Boolean);
+    } else {
+      const ids = (opts.supportFleet || []).map(x => (x && typeof x === 'object' && x.uid != null) ? x.uid : x).filter(Boolean);
+      hadInput = ids.length > 0;
+      pool = ids.map(u => makePlayerShip(u)).filter(s => s && s.alive);
+    }
+    if (!pool.length) return { fired: false, reason: hadInput ? 'NO_ALIVE' : 'EMPTY', src, ships: [], hit: 0, dmg: 0, sunk: 0 };
     const n = Math.min(pool.length, Util.ri(minN, maxN));
     /* 随机取 n 艘（不重复）：逐次 pick 后移除 */
     const picked = [];
@@ -330,9 +339,9 @@ const Battle = (() => {
       total += dmg;
       if (wasAlive && !t.alive) sunk++;
     }
-    if (!names.length) return { fired: false, reason: 'NO_TARGET', ships: [], hit: 0, dmg: 0, sunk: 0 };
-    log.push({ event: { kind: 'support', ships: names, hit, dmg: total, sunk } });
-    return { fired: true, reason: null, ships: names, hit, dmg: total, sunk };
+    if (!names.length) return { fired: false, reason: 'NO_TARGET', src, ships: [], hit: 0, dmg: 0, sunk: 0 };
+    log.push({ event: { kind: 'support', src, ships: names, hit, dmg: total, sunk } });
+    return { fired: true, reason: null, src, ships: names, hit, dmg: total, sunk };
   }
 
   /* 参与触接的机种：舰攻 / 水侦（水爆同槽）/ 舰侦。舰爆、舰战不参与（与设计稿一致） */
@@ -1162,10 +1171,17 @@ const Battle = (() => {
      * UI 层追击选择自动夜战突入（不再询问）。 */
     if (opts.nightOnly) {
       L('—— 夜战节点！能见度极低，舰队在黑暗中接敌 ——');
+      /* 支援炮击（夜战节点同样发动：战役 NPC 支援在夜战 BOSS 也生效，见任务书 §2.5）——
+       * 与昼战同一条 supportPhase，假值整体跳过、零随机数（drift 不受影响）。 */
+      const supportReport = opts.support ? supportPhase(log, sideB, formBName, opts) : null;
+      if (supportReport && supportReport.fired) {
+        const tag = supportReport.src === 'npc' ? '（NPC 支援）' : '（玩家支援）';
+        L(`支援炮击${tag}！第 ${supportReport.ships.join('、')} 实施自由炮击 —— 命中 ${supportReport.hit} 发，累计伤害 ${supportReport.dmg}${supportReport.sunk ? `，击沉 ${supportReport.sunk} 艘` : ''}。`);
+      }
       const r0 = settle(log, sideA, sideB, false, formAName, formBName);
       r0.forceNight = true;
       /* 夜战节点无索敌/航空阶段：显式标记 recon=null，避免归因误判为「索敌失败」 */
-      attachBattleContext(r0, { reconOk: null, myAir: 0, enAir: 0, airSup: false, eng: null, airKey: null, airWing: hasAirWing(sideA), airPassive: false });
+      attachBattleContext(r0, { reconOk: null, myAir: 0, enAir: 0, airSup: false, eng: null, airKey: null, airWing: hasAirWing(sideA), airPassive: false, support: supportReport, supportSrc: opts.supportSrc });
       return r0;
     }
 
@@ -1353,7 +1369,8 @@ const Battle = (() => {
      * 结果挂到结算结果上（`r.support`）供战报与结算归因使用；假值时 supportReport === null。 */
     const supportReport = opts.support ? supportPhase(log, sideB, formBName, opts) : null;
     if (supportReport && supportReport.fired) {
-      L(`支援炮击！第 ${supportReport.ships.join('、')} 实施自由炮击 —— 命中 ${supportReport.hit} 发，累计伤害 ${supportReport.dmg}${supportReport.sunk ? `，击沉 ${supportReport.sunk} 艘` : ''}。`);
+      const tag = supportReport.src === 'npc' ? '（NPC 支援）' : '（玩家支援）';
+      L(`支援炮击${tag}！第 ${supportReport.ships.join('、')} 实施自由炮击 —— 命中 ${supportReport.hit} 发，累计伤害 ${supportReport.dmg}${supportReport.sunk ? `，击沉 ${supportReport.sunk} 艘` : ''}。`);
     }
 
     /* ---- 炮击战 ---- */
@@ -1508,7 +1525,7 @@ const Battle = (() => {
 
     /* ---- 结算 ---- */
     const r = settle(log, sideA, sideB, nightUsed, formAName, formBName);
-    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng, airKey, airWing, airPassive: passiveAA, touch: touchSide, support: supportReport });
+    attachBattleContext(r, { reconOk, myAir, enAir, airSup, eng, airKey, airWing, airPassive: passiveAA, touch: touchSide, support: supportReport, supportSrc: opts.supportSrc });
     return r;
   }
 
@@ -1529,6 +1546,9 @@ const Battle = (() => {
     /* 支援炮击（V0.306 批次2）：{fired, reason, ships, hit, dmg, sunk} 或 null（未派遣）——
      * game 层用它写结算归因行（**不许静默发放**，任务书 2.5） */
     r.support = ctx.support || null;
+    /* supportSrc 仅在支援实际启用时写入：npc = 战役零消耗编成 / player = 玩家挂载舰队。
+     * 非支援场景不写此键 —— 守住 drift 五基线逐位一致（坑 #55·批1）。 */
+    if (ctx.supportSrc) r.supportSrc = ctx.supportSrc;
     return r;
   }
 
@@ -1546,7 +1566,7 @@ const Battle = (() => {
       reconOk: dayResult.recon, myAir: dayResult.myAir, enAir: dayResult.enAir,
       airSup: dayResult.airSup, eng: dayResult.engagement, airKey: dayResult.airKey,
       airWing: dayResult.airWing, airPassive: dayResult.airPassive, touch: dayResult.touch,
-      support: dayResult.support
+      support: dayResult.support, supportSrc: dayResult.supportSrc
     });
   }
 

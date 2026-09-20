@@ -10,7 +10,7 @@
 
 const Game = (() => {
   const SAVE_KEY = 'usnc_save_v1';
-  const CURRENT_SAVE_VERSION = 8;
+  const CURRENT_SAVE_VERSION = 9;
   const DEBUG_KEY = 'usnc_debug_v1';
   const REGEN_MS = 30000;
   const REGEN = { fuel: 3, ammo: 3, steel: 3, baux: 1 };
@@ -66,7 +66,7 @@ const Game = (() => {
     development: [],                    // {start,end,recipe} 开发队列
     repairs: [null, null],              // 入渠槽位 {ship,start,end}
     expeditions: { 1: null, 2: null },  // 舰队编号 -> {exId,start,end}
-    support: { day: '', fleets: [] },   // 支援舰队当日占用（V0.306 坑 #45）：day=periodKeys().daily，fleets=当日已作为支援出击的舰队编号
+    supportFleet: null,                 // 支援舰队挂载（V0.307 重写）：单值 = 被挂载的舰队编号；null = 未挂载。一次只能挂一支（数据结构保证）
     quests: {},                         // qid -> {progress, claimed}
     mapProgress: {},                    // mapId -> {gauge, cleared, kills}
     sortie: null,                       // {mapId, fleetIdx, node, path[]}
@@ -451,7 +451,7 @@ const Game = (() => {
     state.development = [];
     state.repairs = [null, null];
     state.expeditions = { 1: null, 2: null };
-    state.support = { day: '', fleets: [] };
+    state.supportFleet = null;
     state.quests = {};
     state.mapProgress = {};
     state.sortie = null;
@@ -657,6 +657,20 @@ const Game = (() => {
     return save;
   }
 
+  /* v8 -> v9：支援舰队规则重写（V0.307 批次1 / 坑 #55）。
+   * 语义从"当日占用"变为"持续挂载"——单值 `st.supportFleet`（挂载的舰队编号）。
+   * 跨版本语义变了，不许猜玩家想挂哪一支 ⇒ **已挂载态一律清空**。
+   * 注意：本函数是 supportFleet 键的**唯一补写点**；normalizeSave 依然不补新键（坑 #30）。 */
+  function migrateV8ToV9(data) {
+    const save = cloneSave(data);
+    /* ⚙️J：st.support 直接 delete（而不是"保留但不用"）—— 它会变成无消费者的净负债 */
+    if (save.support !== undefined) delete save.support;
+    save.supportFleet = null;
+    save.saveVersion = 9;
+    save.version = 9;
+    return save;
+  }
+
   /* `mapProgress[m.id]` 条目的**唯一形状定义点**（坑 #47/#49，V0.306 修复）：
    * `newGame()` / `normalizeSave()` / 引擎运行时兜底三条路径必须产出**同一键集合**。
    * 旧实现三处各写一份字面量 → 运行时领奖后多出 `transportRewarded`，键集合出现第三种形态。
@@ -664,7 +678,7 @@ const Game = (() => {
   function mapProgressEntry(m) {
     return { gauge: m.gauge, cleared: false, kills: 0, transport: 0, transportRewarded: 0 };
   }
-  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5, 5: migrateV5ToV6, 6: migrateV6ToV7, 7: migrateV7ToV8 };
+  const SAVE_MIGRATIONS = { 1: migrateV1ToV2, 2: migrateV2ToV3, 3: migrateV3ToV4, 4: migrateV4ToV5, 5: migrateV5ToV6, 6: migrateV6ToV7, 7: migrateV7ToV8, 8: migrateV8ToV9 };
   function normalizeSave(save) {
     if (!save.resources || typeof save.resources !== 'object') {
       save.resources = { fuel: 1000, ammo: 1000, steel: 1000, baux: 500, screws: 0, devMats: 10 };
@@ -829,7 +843,7 @@ const Game = (() => {
     expForLevel, admiralTitle, finishTimers, nextUid, STAT_NAMES,
     setTestMode, isTestMode, isFleetUnlocked, unlockFleet, unlockedFleets,
     migrateSave, normalizeSave, CURRENT_SAVE_VERSION, defaultRecord, normalizeRecord,
-    mapProgressEntry,
+    mapProgressEntry, SAVE_MIGRATIONS,
     libraryStats, libraryHasShip, libraryHasEquip
   };
 })();
