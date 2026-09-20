@@ -207,19 +207,22 @@ const Sortie = (() => {
 
   function nodeDef(map, nodeId) { return map.defs[nodeId] || { type: 'empty' }; }
 
-  /* 运输能力唯一计算点（V0.306 坑 #47）：AV=10，携带上陆用舟艇=8，其余=0。
-   * 判据是**类别** `cat === '上陆用舟艇'`，不是槽位 `SLOT.EQUIP` ——
+  /* 运输能力唯一计算点（V0.307 批2 坑 #60）：三档登陆装备 + AV 显式 d.transport（落点批3，批2 先读字段、回落 +10）。
+   * 判据是**类别** `cat ∈ TRANSPORT_BY_CAT`，不是槽位 `SLOT.EQUIP` ——
    * 槽位 14 同时容纳「设备」类装备，按槽位判会把设备误算成运输力。 */
+  const TRANSPORT_BY_CAT = { '强袭登陆艇': 8, '两栖坦克': 10, '两栖支援坦克': 6 };
   function transportCapacity(fleetIdx) {
     const G = GameRef(); const st = G.state;
     return (st.fleet[fleetIdx] || []).reduce((sum, uid) => {
       const s = st.ships[uid]; if (!s) return sum;
-      const d = G.shipDef(s); if (d && d.type === 'AV') return sum + 10;
-      const hasBoat = (s.equipped || []).some(eu => {
+      const d = G.shipDef(s);
+      let add = 0;
+      if (d) add += (d.transport != null ? d.transport : (d.type === 'AV' ? 10 : 0));
+      const boat = (s.equipped || []).reduce((acc, eu) => {
         const e = st.equipment[eu]; const ed = e && EquipmentData[e.id];
-        return ed && ed.cat === '上陆用舟艇';
-      });
-      return sum + (hasBoat ? 8 : 0);
+        return acc + (ed && TRANSPORT_BY_CAT[ed.cat] ? TRANSPORT_BY_CAT[ed.cat] : 0);
+      }, 0);
+      return sum + add + boat;
     }, 0);
   }
 

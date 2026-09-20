@@ -156,7 +156,36 @@ const EQ = [
   { id: 'fleetcom',   en: 'Fleet Command Facility', zh: '舰队司令部设施', cat: '设备', slot: SLOT.EQUIP, stat: { los: 2 }, cost: [10, 10, 10, 30], buildable: false, kai: 0, rare: true, r: 4, scrap: { steel: 12, baux: 10 }, dev: {} },
   { id: 'repair_facility', en: 'Repair Facility', zh: '舰艇修理设施', cat: '设备', slot: SLOT.EQUIP, stat: {}, cost: [10, 10, 10, 30], buildable: false, kai: 0, rare: true, r: 4, scrap: { steel: 15 }, dev: {} },
   { id: 'crew_vet',   en: 'Carrier Crew Veteran', zh: '熟练舰载机整备员', cat: '航空要员', slot: SLOT.EQUIP, stat: { aa: 2, bmb: 2 }, cost: [10, 20, 10, 50], buildable: false, kai: 10, rare: true, r: 3, scrap: { baux: 3 }, dev: {} },
-  { id: 'm4a1',       en: 'M4A1 DD Tank', zh: 'M4A1 DD水陆两用车', cat: '上陆用舟艇', slot: SLOT.EQUIP, stat: { fp: 2, asw: 3 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 8, ammo: 5 }, dev: {} },
+  { id: 'm4a1',       en: 'M4A1 DD Tank', zh: 'M4A1 DD 两栖坦克', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 2, asw: 3 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 8, ammo: 5 }, dev: {} },
+  { id: 'lcpl',  en: 'LCP(L) Personnel Boat', zh: 'LCP(L)大型人员登陆艇', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 1, evd: 1 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, r: 1, scrap: { steel: 10, ammo: 6 }, dev: { MINE: { BAUX: 1 } } },
+  { id: 'lcpr',  en: 'LCP(R) Ramp Boat', zh: 'LCP(R)跳板型人员登陆艇', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 1, evd: 2 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, rare: true, r: 2, scrap: { steel: 10, ammo: 6 }, dev: { CV: { BAUX: 1 } } },
+  { id: 'lcvp',  en: 'LCVP Higgins Boat', zh: 'LCVP希金斯艇', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 2, evd: 1 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, rare: true, r: 2, scrap: { steel: 10, ammo: 6 }, dev: { GUN: { OIL: 1 } } },
+  { id: 'dukw',  en: 'DUKW Amphibious Truck', zh: 'DUKW两栖卡车', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 2, evd: 2 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, rare: true, r: 2, scrap: { steel: 10, ammo: 6 }, dev: { MINE: { OIL: 1 } } },
+  { id: 'lcm3',  en: 'LCM(3) Mechanized Landing Craft', zh: 'LCM(3)机械化登陆艇', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 3, evd: 1, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lct5',  en: 'LCT(5) Tank Landing Craft', zh: 'LCT(5)坦克登陆艇', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 3, evd: 1, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lci_l', en: 'LCI(L) Infantry Landing Craft', zh: 'LCI(L)大型步兵登陆艇', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 3, evd: 2, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lcvp_a', en: 'LCVP Armored Late', zh: 'LCVP后期装甲强化型', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 3, evd: 1, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lci_g', en: 'LCI(G) Gunboat', zh: 'LCI(G)炮艇型步兵登陆艇', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 5, evd: 2, los: 2 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 4, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lcs_l3', en: 'LCS(L)(3) Support Landing Craft', zh: 'LCS(L)(3)大型支援登陆艇', cat: '强袭登陆艇', slot: SLOT.EQUIP, stat: { fp: 7, evd: 2, los: 2 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 5, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'm4a2_wade', en: 'M4A2 Deep Wading Sherman', zh: 'M4A2深涉水型', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 2, evd: 1 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, r: 1, scrap: { steel: 10, ammo: 6 }, dev: { GUN: { AMMO: 1 } } },
+  { id: 'valentine_dd', en: 'Valentine DD Tank', zh: '瓦伦丁DD两栖坦克', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 2, evd: 1 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, r: 1, scrap: { steel: 10, ammo: 6 }, dev: { CV: { OIL: 1 } } },
+  { id: 'm4a2_barv', en: 'Sherman BARV', zh: '谢尔曼BARV海滩装甲回收车', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 1, evd: 1 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, rare: true, r: 2, scrap: { steel: 10, ammo: 6 }, dev: { MINE: { AMMO: 1 } } },
+  { id: 'm4a2_dd', en: 'M4A2 DD Tank', zh: 'M4A2 DD两栖坦克', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 3, evd: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'm4a4_dd', en: 'M4A4 DD Tank', zh: 'M4A4 DD两栖坦克', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 3, evd: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'm4a2_t6', en: 'M4A2 with T6 Flotation', zh: 'M4A2+T6浮渡装置', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 5, evd: 1, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 4, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'm4a3_dd', en: 'M4A3 DD Tank', zh: 'M4A3 DD后期型', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 5, evd: 2 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 4, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'm4a1_dd_m2', en: 'M4A1 DD mod.2', zh: 'M4A1 DD mod.2强化围帐型', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 5, evd: 2, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 4, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'm4a1_dd_105', en: 'M4A1(105) DD', zh: 'M4A1 DD(105)突击支援型', cat: '两栖坦克', slot: SLOT.EQUIP, stat: { fp: 7, evd: 1, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 5, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lvt1', en: 'LVT-1 Alligator', zh: 'LVT-1鳄鱼', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 1, evd: 2 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, r: 1, scrap: { steel: 10, ammo: 6 }, dev: { SUB: { OIL: 1 } } },
+  { id: 'm29c', en: 'M29C Weasel', zh: 'M29C水鼬两栖输送车', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 1, evd: 1 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, r: 1, scrap: { steel: 10, ammo: 6 }, dev: { SUB: { AMMO: 1 } } },
+  { id: 'lvt2', en: 'LVT-2 Water Buffalo', zh: 'LVT-2水牛', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 2, evd: 2 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, rare: true, r: 2, scrap: { steel: 10, ammo: 6 }, dev: { GUN: { BAUX: 1 } } },
+  { id: 'lvt_a2', en: 'LVT(A)-2 Armored Buffalo', zh: 'LVT(A)-2装甲水牛', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 2, evd: 1 }, cost: [30, 30, 100, 10], buildable: true, kai: 6, rare: true, r: 2, scrap: { steel: 10, ammo: 6 }, dev: { CV: { AMMO: 1 } } },
+  { id: 'lvt_a1', en: 'LVT(A)-1 Amtank', zh: 'LVT(A)-1 37mm炮塔型', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 3, evd: 1, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lvt4', en: 'LVT-4 Water Buffalo', zh: 'LVT-4水牛(尾门型)', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 3, evd: 2, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 3, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lvt_a3', en: 'LVT(A)-3 Armored LVT-4', zh: 'LVT(A)-3装甲型LVT-4', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 4, evd: 1, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 4, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lvt_a4', en: 'LVT(A)-4 75mm Howitzer', zh: 'LVT(A)-4 75mm榴弹炮型', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 6, evd: 1, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 4, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lvt3', en: 'LVT-3 Bushmaster', zh: 'LVT-3大毒蛇', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 4, evd: 2, los: 1 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 4, scrap: { steel: 10, ammo: 6 }, dev: {} },
+  { id: 'lvt_a5', en: 'LVT(A)-5 Stabilized', zh: 'LVT(A)-5稳定炮塔型', cat: '两栖支援坦克', slot: SLOT.EQUIP, stat: { fp: 7, evd: 1, los: 2 }, cost: [30, 30, 100, 10], buildable: false, kai: 10, rare: true, r: 5, scrap: { steel: 10, ammo: 6 }, dev: {} },
   /* ---------- 消耗性物资（出击时消耗，不可开发/改修） ---------- */
   { id: 'dc_team',    en: 'Damage Control Team', zh: '应急修理要员', cat: '消耗品', slot: SLOT.EQUIP, stat: {}, cost: [10, 10, 10, 10], buildable: false, kai: 0, rare: true, r: 4, scrap: { steel: 2 }, dev: {} },
   { id: 'rations',    en: 'Combat Rations', zh: '战斗粮食', cat: '消耗品', slot: SLOT.EQUIP, stat: {}, cost: [10, 10, 10, 10], buildable: false, kai: 0, r: 2, scrap: { steel: 1 }, dev: {} },
@@ -225,7 +254,7 @@ const EQUIP_CAT_ZH = {
   '声呐': '声呐', '爆雷': '爆雷', '爆雷投射机': '爆雷投射机',
   '穿甲弹': '穿甲弹', '对空弹': '对空弹', '照明弹': '照明弹',
   '增设装甲': '增设装甲', '机关部强化': '机关部强化',
-  '航空要员': '航空要员', '上陆用舟艇': '上陆用舟艇', '消耗品': '消耗性物资', '设备': '设备'
+  '航空要员': '航空要员', '强袭登陆艇': '强袭登陆艇', '两栖坦克': '两栖坦克', '两栖支援坦克': '两栖支援坦克', '消耗品': '消耗性物资', '设备': '设备'
 };
 
 /* 装备稀有度（等级）名称（参照舰C wiki：稀有度 白→绿→蓝→紫→金；r 字段 1~4，预留 5 金） */
@@ -235,7 +264,7 @@ const EQUIP_RARITY_ZH = { 1: '白', 2: '绿', 3: '蓝', 4: '紫', 5: '金' };
 const CAT_ORDER = ['小主炮', '中主炮', '大主炮', '副炮', '鱼雷', '舰战', '夜间舰战', '喷式舰战',
   '舰攻', '夜间舰攻', '舰爆', '舰侦', '对潜哨戒机', '水侦', '水爆', '大型飞行艇',
   '对空电探', '对水电探', '两用电探', '高角炮', '高射装置', '机枪', '声呐', '爆雷', '爆雷投射机',
-  '穿甲弹', '对空弹', '照明弹', '增设装甲', '机关部强化', '航空要员', '上陆用舟艇', '消耗品', '设备'];
+  '穿甲弹', '对空弹', '照明弹', '增设装甲', '机关部强化', '航空要员', '强袭登陆艇', '两栖坦克', '两栖支援坦克', '消耗品', '设备'];
 
 /* 属性中文名（UI 用） */
 const EQUIP_STAT_ZH = {
@@ -382,8 +411,26 @@ const IMPROVE = {
   bulge_l:    { need: 'bb', screws: 2, res: [10, 30, 150, 0], matFrom: 1 },
   /* 机关部强化 */
   boiler_h:   { need: 'cl', screws: 1, res: [10, 10, 60, 0], matFrom: 6 },
-  /* 上陆用舟艇 */
-  m4a1:       { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6 },
+  /* 登陆装备（批2：强袭登陆艇 / 两栖坦克 / 两栖支援坦克）—— m4a1 改二换类，其余经改修进化链获得 */
+  m4a1:       { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'm4a1_dd_m2', mats: ['m4a1'] } },
+  'lcvp': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lcm3', mats: ['lcvp'] } },
+  'lcm3': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lct5', mats: ['lcm3'] } },
+  'lct5': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lci_l', mats: ['lct5'] } },
+  'lci_l': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lcvp_a', mats: ['lci_l'] } },
+  'lcvp_a': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lci_g', mats: ['lcvp_a'] } },
+  'lci_g': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lcs_l3', mats: ['lci_g'] } },
+  'm4a2_wade': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'm4a2_dd', mats: ['m4a2_wade'] } },
+  'm4a2_dd': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'm4a2_t6', mats: ['m4a2_dd'] } },
+  'm4a2_t6': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'm4a4_dd', mats: ['m4a2_t6'] } },
+  'm4a4_dd': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'm4a3_dd', mats: ['m4a4_dd'] } },
+  'm4a1_dd_m2': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'm4a1_dd_105', mats: ['m4a1_dd_m2'] } },
+  'lvt2': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lvt_a1', mats: ['lvt2'] } },
+  'lvt_a1': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lvt4', mats: ['lvt_a1'] } },
+  'lvt4': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lvt_a3', mats: ['lvt4'] } },
+  'lvt_a3': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lvt_a4', mats: ['lvt_a3'] } },
+  'lvt_a4': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lvt_a5', mats: ['lvt_a4'] } },
+  'lvt_a2': { need: 'dd', screws: 1, res: [20, 20, 40, 0], matFrom: 6, update: { to: 'lvt3', mats: ['lvt_a2'] } },
+
   /* 航空要员 */
   crew_vet:   { need: 'cv', screws: 1, res: [10, 20, 10, 30], matFrom: 6 },
   /* 设备 */

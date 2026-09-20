@@ -4853,9 +4853,9 @@ section('V0.306·批次3 运输作战（可达性 + 零随机数 + 门槛硬验�
   const capAv = capOfFleet(['curtiss', 'fletcher'], 20);
   const capBoat = capOfFleet(['fletcher', 'benson'], 20, 0);
   const capBoth = capOfFleet(['curtiss', 'fletcher'], 20, 1);
-  assert('（原语层）capacity 三档取值：AV=10 / 携带上陆用舟艇=8 / 裸舰=0（且可叠加 = 18）',
-    capBare === 0 && capAv === 10 && capBoat === 8 && capBoth === 18,
-    `裸=${capBare} AV=${capAv} 舟艇=${capBoat} AV+舟艇=${capBoth}`);
+  assert('（原语层）capacity 三档取值：AV=10 / 携带两栖坦克(m4a1)=10 / 裸舰=0（且可叠加 = 20）',
+    capBare === 0 && capAv === 10 && capBoat === 10 && capBoth === 20,
+    `裸=${capBare} AV=${capAv} 坦克=${capBoat} AV+坦克=${capBoth}`);
 
   /* ---- D. 运输结算：零随机数 / 不战斗 / 不耗资源 / 与阵型无关（任务书 §394-395）----
    * ⚠️ 防御性：若路由改动导致 T 不可达，本函数必须**干净地返回 res:null** 而不能驱动一场真实战斗，
@@ -4912,12 +4912,12 @@ section('V0.306·批次3 运输作战（可达性 + 零随机数 + 门槛硬验�
   beginTransportSave(TRANSPORT, 30, 1);
   const g24 = goalOf('2-4');
   const r1 = oneTransportRun('2-4'), r2 = oneTransportRun('2-4'), r3 = oneTransportRun('2-4');
-  assert('（集成层·一次性）专门运输编成**首趟即达标**（AV 10 + 舟艇 8 = 门槛 18），并真的发放资源',
-    !!r1.res && r1.res.amount === 18 && r1.res.rewarded === true && r1.gain.fuel === 300 && r1.gain.ammo === 300,
+  assert('（集成层·一次性）专门运输编成**首趟即达标**（AV 10 + 两栖坦克 10 = 20 ≥ 门槛 18），并真的发放资源',
+    !!r1.res && r1.res.amount === 20 && r1.res.rewarded === true && r1.gain.fuel === 300 && r1.gain.ammo === 300,
     `goal=${g24} res=${JSON.stringify(r1.res)} gain=${JSON.stringify(r1.gain)} ${r1.err || ''}`);
   assert('（集成层·一次性）重复达成**不重复发**（第 2、3 趟 rewarded=false 且资源零增）',
     !!r2.res && !!r3.res && r2.res.rewarded === false && r3.res.rewarded === false &&
-    r2.gain.fuel === 0 && r3.gain.fuel === 0 && r3.mp.transport === 54,
+    r2.gain.fuel === 0 && r3.gain.fuel === 0 && r3.mp.transport === 60,
     `r2=${JSON.stringify(r2.gain)} r3=${JSON.stringify(r3.gain)} total=${r3.mp.transport} ${r2.err || ''} ${r3.err || ''}`);
   assert('（原语层·账本）一次性走 `mapProgress.transportRewarded` 账本（存发放时间戳，非 boolean 状态位）',
     typeof r1.mp.transportRewarded === 'number' && r1.mp.transportRewarded > 0 && r1.mp.transportRewarded <= Date.now(),

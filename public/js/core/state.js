@@ -330,7 +330,7 @@ const Game = (() => {
     const s = Math.sqrt(star);
     const out = {};
     switch (ed.cat) {
-      case '小主炮': case '中主炮': case '副炮': case '穿甲弹': case '设备': case '上陆用舟艇':
+      case '小主炮': case '中主炮': case '副炮': case '穿甲弹': case '设备': case '强袭登陆艇': case '两栖坦克': case '两栖支援坦克':
         out.fp = s; break;
       case '大主炮': out.fp = 1.5 * s; break;
       case '鱼雷': out.tp = 1.2 * s; break;

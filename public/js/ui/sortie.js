@@ -538,7 +538,7 @@ const SortieUI = (() => {
       </div>
       <div class="md-desc">${m.desc}</div>
       <div class="md-rows">
-        ${tGoal > 0 ? `<div><b>运输进度</b>：<span class="${tDone ? 'ok' : ''}">${tHave} / ${tGoal}</span>${tDone ? '（已达成，奖励已发放）' : ''}<span class="dim"> · 运输点 ${tNode}：每舰 AV +10 / 携带「上陆用舟艇」+8</span></div>` : ''}
+        ${tGoal > 0 ? `<div><b>运输进度</b>：<span class="${tDone ? 'ok' : ''}">${tHave} / ${tGoal}</span>${tDone ? '（已达成，奖励已发放）' : ''}<span class="dim"> · 运输点 ${tNode}：每舰 AV +10 / 强袭登陆艇 +8 · 两栖坦克 +10 · 两栖支援坦克 +6</span></div>` : ''}
         ${items.length ? `<div><b>出现物品</b>：${items.join('、')}</div>` : ''}
         ${losNeed ? `<div><b>分支索敌</b>：≥${losNeed}<span class="${los >= losNeed ? '' : 'red'}">（当前 ${los}${los >= losNeed ? '，满足' : '，不足' }）</span></div>` : ''}
         ${ddNeed ? `<div><b>分支驱逐</b>：≥${ddNeed} 艘</div>` : ''}
@@ -787,7 +787,7 @@ const SortieUI = (() => {
           <span class="hint" style="align-self:center">出击开始！索敌值 ${Game.fleetLos(so.fleetIdx)}</span></div>`;
       }
       if (def.type === 'resource') return `<div class="hint">资源点。点击前进收集资源。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">收集资源并前进</button></div>`;
-      if (def.type === 'transport') return `<div class="hint">运输点。需要 AV 或携带上陆用舟艇的舰船。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">卸载作业并前进</button></div>`;
+      if (def.type === 'transport') return `<div class="hint">运输点。需要 AV 或携带登陆装备（强袭登陆艇 / 两栖坦克 / 两栖支援坦克）的舰船。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">卸载作业并前进</button></div>`;
       if (def.type === 'supply') return `<div class="hint">补给点。恢复一半油弹。</div><div class="btn-row"><button class="btn btn-gold" data-act="advance">补给并前进</button></div>`;
       const fixedForm = localStorage.getItem('usnc_form_fixed');
       if (def.type === 'battle') return `<div class="btn-row"><button class="btn btn-gold" data-act="advance">迎击敌军！${fixedForm ? `（固定阵型：${fixedForm}）` : '（选择阵型）'}</button>

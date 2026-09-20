@@ -360,7 +360,7 @@
       R(msHtml.indexOf('100%') >= 0 && msHtml.indexOf('纪念荣誉') >= 0, 'v305:milestone100HonorOnly');
       R(Progression.LIB_MILESTONES.join(',') === '25,50,75', 'v305:milestoneNoHundredTier');
       R(typeof Acquisition === 'object' && Acquisition.shipRoutes('fletcher').length > 0, 'v305:acquisitionApi');
-      /* V0.306 修复：m4a1（全装备表唯一「上陆用舟艇」）已挂 2-1 任务奖励 —— 运输作战的 P0-3 前置。
+      /* V0.306 修复 + V0.307 批2：m4a1（批2 改二换类为「两栖坦克」，id 不变）已挂 2-1 任务奖励 —— 运输作战的 P0-3 前置。
        * 锁定数量 6 → 5；这 5 件仍无渠道，数量变化即需人复核（坑 #6 的正向用法）。 */
       R(Acquisition.unimplemented('equip').length === 5, 'v305:unimplementedMarked', Acquisition.unimplemented('equip').join(','));
       R(Acquisition.equipRoutes('m4a1').some(r => r.key === 'quest'), 'v306:m4a1Obtainable',
@@ -1152,7 +1152,7 @@
         const tRowTxt = tRow ? tRow.textContent.replace(/\s+/g, ' ').trim() : '(无)';
         R(/\d+\s*\/\s*\d+/.test(tRowTxt) && tRowTxt.indexOf(String(goal24)) >= 0, 'trans:detailRowSameSource', tRowTxt);
         R(tRowTxt.indexOf('undefined') < 0, 'trans:detailRowNoUndefined', tRowTxt);
-        R(tRowTxt.indexOf('上陆用舟艇') >= 0 && tRowTxt.indexOf('AV') >= 0, 'trans:detailRowSources', tRowTxt);
+        R(tRowTxt.indexOf('强袭登陆艇') >= 0 && tRowTxt.indexOf('AV') >= 0, 'trans:detailRowSources', tRowTxt);
 
         /* ② 可达性：走**真实路由**到运输点，节点屏必须给「卸载作业」而不是「迎击」 */
         const mkTShip = (id, lv, eqs) => {
@@ -1161,7 +1161,7 @@
           sh.hp = Game.shipStats(sh.uid).hpMax;
           return sh.uid;
         };
-        /* 专门运输编成 = AV(curtiss) + 带「上陆用舟艇」(m4a1) 的驱逐 → 10 + 8 = 18 = 门槛 */
+        /* 专门运输编成 = AV(curtiss) + 带「两栖坦克」(m4a1) 的驱逐 → 10 + 10 = 20 ≥ 门槛 18 */
         const tFleet = [mkTShip('curtiss', 30, ['soc']), mkTShip('fletcher', 30, ['m4a1'])];
         Game.state.fleet[2] = tFleet.slice();
         Game.state.mapProgress['2-4'].cleared = false;
