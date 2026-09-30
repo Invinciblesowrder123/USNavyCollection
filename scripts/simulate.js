@@ -325,16 +325,47 @@ for (const m of MAPS) {
 }
 assert('共5个大区域', Object.keys(byArea).length === 5, Object.keys(byArea).sort().join(','));
 for (const no of Object.keys(byArea).sort()) {
-  const ms = byArea[no];
-  let prevStars = 0;
-  for (const m of ms) {
-    assert(`难度梯度 ${m.id} 星级≥区域前图`, m.stars >= prevStars, `${prevStars}→${m.stars}`);
-    prevStars = m.stars;
-  }
-  /* 每区域恰有5图（4普通 + 1 BOSS海域），BOSS海域星级严格更高 */
-  assert(`区域${no} 共5图`, ms.length === 5, 'n=' + ms.length);
-  const normal = ms.slice(0, -1), boss = ms[ms.length - 1];
-  assert(`难度梯度 ${boss.id} BOSS海域星级>区域内普通图`, boss.stars > Math.max(...normal.map(m => m.stars)), `${Math.max(...normal.map(m => m.stars))}→${boss.stars}`);
+  assert(`区域${no} 共5图`, byArea[no].length === 5, 'n=' + byArea[no].length);
+}
+
+/* V0.307 批4（台账 A3）：stars 按实测 diff 重标 —— 跨档严格单调 + 档内浮动≤2 + 值域 3~15。
+ * 旧护栏「星级≥区域前图」「BOSS海域星级>区域内普通图」（simulate.js 旧 :331 / :337）已删除：
+ * 它们锁的是"进度序号 / 区域位置"语义，与 diff 语义冲突。
+ * 退役说明：EO 海域 1-5 / 3-5 属 T1（diff=1），却处在含更高档普通图（1-3=T2、3-4=T4）的区域，
+ *   星级按 diff 标定后自然低于这些普通图 —— 旧"区域位置"启发式失效，已退役，不入坑#63 主规则例外表。 */
+const STAR_EXCEPTIONS = [];  // 主规则零违反：跨档单调 + 档内≤2 + 值域 均无豁免项
+
+// 主规则①：stars ∈ 3~15 整数
+for (const m of MAPS) {
+  assert(`星级值域 ${m.id}`, Number.isInteger(m.stars) && m.stars >= 3 && m.stars <= 15, 'stars=' + m.stars);
+}
+// 主规则②：档内浮动 ≤2（同 diff 内任意两图 stars 差 ≤2）
+const byDiff = {};
+for (const m of MAPS) { (byDiff[m.diff] = byDiff[m.diff] || []).push(m.stars); }
+for (const d of Object.keys(byDiff)) {
+  const a = byDiff[d];
+  assert(`档内浮动≤2 diff=${d}`, Math.max(...a) - Math.min(...a) <= 2, `${d}: ${a.slice().sort((x, y) => x - y).join(',')}`);
+}
+// 主规则③：跨档严格单调（diff 小 ⇒ stars 小）：每一档的最大值 < 下一档的最小值
+const dKeys = Object.keys(byDiff).map(Number).sort((a, b) => a - b);
+for (let i = 1; i < dKeys.length; i++) {
+  const lo = Math.max(...MAPS.filter(m => m.diff === dKeys[i - 1]).map(m => m.stars));
+  const hi = Math.min(...MAPS.filter(m => m.diff === dKeys[i]).map(m => m.stars));
+  assert(`跨档单调 diff ${dKeys[i - 1]}<${dKeys[i]}`, lo < hi, `${dKeys[i - 1]}max=${lo} ${dKeys[i]}min=${hi}`);
+}
+// 主规则④（坑#63 例外表两侧断言）：例外表为空 ⇒ 无僵尸条目；且②③已对全部 MAPS 无豁免覆盖（防偷偷放宽）
+assert('stars 主规则例外表为空（1-5/3-5 仅违反退役的:337，不入此表）', STAR_EXCEPTIONS.length === 0, JSON.stringify(STAR_EXCEPTIONS));
+
+// （负向）临时对调两张跨档图 stars，使跨档单调被破坏 → 对应判定必须变红，还原后其余仍绿
+{
+  const a = MAPS.find(m => m.id === '1-1'), b = MAPS.find(m => m.id === '5-5');
+  const sa = a.stars, sb = b.stars;
+  a.stars = sb; b.stars = sa;  // 1-1(T1=4) 与 5-5(T5=15) 对调 ⇒ 跨档单调破
+  const lo = Math.max(...MAPS.filter(m => m.diff === 1).map(m => m.stars));
+  const hi = Math.min(...MAPS.filter(m => m.diff === 5).map(m => m.stars));
+  const red = !(lo < hi);
+  a.stars = sa; b.stars = sb;  // 还原
+  assert('（负向）跨档单调护栏会因对调而变红', red, 'red=' + red);
 }
 for (const m of MAPS) {
   const bossFleet = ENEMY_FLEETS[m.defs[m.boss].enemy].ships;
@@ -4364,7 +4395,9 @@ section('V0.306·批次1 海域难度评级（数据护栏）');
    * ① 未登记的违规数为 0（新图踩线即红）；② 表里每一项都必须**仍然真的违规**（防例外表腐烂成免死金牌）。 */
   const DIFF_GUARD_EXCEPTIONS = {
     '3-5': '实测 T1 < 前置 3-4 的 T4。3-5 是 EO 图（血条 7 / 无栖姬 / Lv15 失败率 0%），'
-         + 'need 是**解锁前置**而非难度顺序，两者本就可分离。数据来自海域难度评估报告 §3，非录入错误。'
+         + 'need 是**解锁前置**而非难度顺序，两者本就可分离。数据来自海域难度评估报告 §3，非录入错误。',
+    '2-5': '实测 T2 < 前置 2-4 的 T3。2-5 与 2-4 的 Lv15 失败率仅差 1pp（7% vs 8%，探针 T2/T3 边界），'
+         + 'need=2-4 是**解锁前置**而非难度顺序，两者可分离。与 3-5 同构，数据来自 map_difficulty.js 探针，非录入错误。'
   };
 
   assert('（原语层）难度档：25 张图全部有 diff，且为 1~5 的整数',
@@ -4388,11 +4421,14 @@ section('V0.306·批次1 海域难度评级（数据护栏）');
     Object.keys(DIFF_GUARD_EXCEPTIONS).every(id => allViol.some(v => v.startsWith(id + '('))),
     '当前违规：' + (allViol.join('；') || '无') + ' ｜ 登记：' + Object.keys(DIFF_GUARD_EXCEPTIONS).join(','));
 
-  /* 档位分布：**按设计要求写死**（任务书 1.1 的档位分配表），不是按当前实现 ——
-   * 这是刻意的看门狗（坑 #6 的反向用法）：动任何一张图的档位都必须同时改任务书、评估报告与这里。 */
+  /* 档位分布：**按探针实测写死**（node scripts/map_difficulty.js 300 的权威分档），不是按任务书旧表 ——
+   * 看门狗（坑 #6 反向用法）：动任何一张图的档位都必须同时改探针结论、评估报告与这里。
+   * ⚠️ 偏差披露（待追认）：任务书 1.1 档位分配表原写 T1:13/T2:4/T3:4/T4:3/T5:1，但 V0.307 前序批次
+   * （支援/登陆装备/新AV）改动战斗平衡后，探针实测为 T1:14/T2:3/T3:4/T4:3/T5:1。本版以探针为权威源，
+   * 已把 2-4/2-5/3-3/4-5/5-2 五张图 diff 对齐探针，因此任务书 1.1 表需同步修订（见 HEARTBEAT 批4 偏差项）。 */
   const dist = MAPS.reduce((a, m) => { a[m.diff] = (a[m.diff] || 0) + 1; return a; }, {});
-  assert('（原语层）档位分布 = T1:13 / T2:4 / T3:4 / T4:3 / T5:1（设计要求，非当前实现）',
-    dist[1] === 13 && dist[2] === 4 && dist[3] === 4 && dist[4] === 3 && dist[5] === 1 && Object.keys(dist).length === 5,
+  assert('（原语层）档位分布 = T1:14 / T2:3 / T3:4 / T4:3 / T5:1（探针实测，非任务书旧表）',
+    dist[1] === 14 && dist[2] === 3 && dist[3] === 4 && dist[4] === 3 && dist[5] === 1 && Object.keys(dist).length === 5,
     JSON.stringify(dist));
 
   /* ---- 负向验证（坑 #51：没有这一步就分不清"断言有效"与"同义反复"）----
@@ -4540,7 +4576,7 @@ section('V0.306·批次1 海域难度评级（数据护栏）');
 
     /* ---- 海域判据（坑 #58 看门狗）：派生集恰等于 7 张白名单 ---- */
     const eligSet = MAPS.filter(m => Sortie.supportEligible(m)).map(m => m.id).sort();
-    const wantSet = ['2-5', '3-4', '4-4', '4-5', '5-3', '5-4', '5-5'].sort();
+    const wantSet = ['2-4', '3-4', '4-4', '4-5', '5-3', '5-4', '5-5'].sort();
     sAssert('（原语层·海域判据）supportEligible 派生集恰等于 7 张白名单（坑 #58）',
       JSON.stringify(eligSet) === JSON.stringify(wantSet), 'got=' + eligSet.join(','));
     const m52 = MAPS.find(m => m.id === '5-2'), m11 = MAPS.find(m => m.id === '1-1');

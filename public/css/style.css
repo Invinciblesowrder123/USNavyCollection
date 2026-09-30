@@ -895,9 +895,11 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .map-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .map-head h3 { border-bottom: none; padding-bottom: 0; margin: 0; }
 .map-board-wrap { overflow-x: auto; }
-/* 注：`.map-stars`（3~15 颗金星）自 V0.306 起**不再渲染**（坑 #54：不得与难度档并存两个指标）。
- * 规则保留以便回退，三处调用点已全部换成 `.diff-badge`。 */
-.map-stars { color: var(--gold); font-size: 12px; letter-spacing: 2px; vertical-align: 1px; }
+/* `.map-stars`（1~15 颗金星）自 V0.307 批4 起**恢复渲染**（与 diff-badge 并存，方向必须一致，坑#64）。
+ * 值域由 maps[].stars（3~15）驱动；diff>=4 的图加 .hard 高难特效。 */
+.map-stars { color: var(--gold); font-size: 11px; letter-spacing: 1px; vertical-align: 1px; white-space: nowrap; }
+/* 高难图（diff>=4）差异化视觉：仅 2 色阶（暗金 → 炽红），静态描边/辉光，不做浮动动效（方向红线） */
+.map-stars.hard { color: #ff7a59; text-shadow: 0 0 4px rgba(255,90,60,.55); border: 1px solid rgba(255,120,90,.6); border-radius: 3px; padding: 0 3px; }
 
 /* ---------- 海域难度档徽标（V0.306 批次1） ----------
  * 配色纪律：只用**两个色阶**——低档冷色（蓝）→ 高档暖色（琥珀/橙/红），不做彩虹。

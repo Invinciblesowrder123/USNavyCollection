@@ -29,6 +29,14 @@ const SortieUI = (() => {
     if (!d || !DIFF_ZH[d]) return '';
     return `<span class="diff-badge diff-${d}">T${d}${withLabel ? ' ' + DIFF_ZH[d] : ''}</span>`;
   }
+  /* stars 渲染（V0.307 批4）：玩家可见难度，按实测 diff 重标；与 diff-badge 并存（方向必须一致，坑#64）。
+   * diff>=4 的图加 .hard 高难特效（2 色阶，无浮动动效，遵守方向红线）。战役无 diff ⇒ 不触发 hard。 */
+  function mapStarsHtml(m) {
+    const s = m && m.stars;
+    if (!Number.isInteger(s) || s < 1) return '';
+    const hard = (m.diff >= 4);
+    return `<span class="map-stars${hard ? ' hard' : ''}">${'★'.repeat(s)}</span>`;
+  }
   /* 难度提示行：走 briefHtml（转义 + 换行 + **强调**），与作战简报同一套渲染 */
   function diffNoteHtml(m) {
     const t = String((m && m.diffNote) || '').trim();
@@ -225,6 +233,7 @@ const SortieUI = (() => {
         <span class="spot-name">${m.name}</span>
         <span class="spot-prog">${locked ? '需击破 ' + m.need : (mp.cleared ? '已攻略' : `击破 ${mp.kills}/${mp.gauge + mp.kills}`)}</span>
         ${diffBadge(m, false)}
+        ${mapStarsHtml(m)}
         ${supportBadgeHtml(m)}
       </button>`;
     }).join();
@@ -358,7 +367,7 @@ const SortieUI = (() => {
     const got = Progression.historicRewardState(m.id);
     const canGo = gate.ok && !st.sortie && (st.fleet[fidx] || []).length > 0;
     return `<div class="map-detail hist-detail">
-      <div class="md-title">${m.id} ${Util.esc(m.name)}
+      <div class="md-title">${m.id} ${Util.esc(m.name)} ${mapStarsHtml(m)}
         <span class="md-eo">历史战役</span> <span class="dim">${m.date}</span></div>
       <div class="md-desc">史实背景：${Util.esc(m.histRule.tip)}</div>
       ${briefBox({ brief: m.brief })}
@@ -552,7 +561,7 @@ const SortieUI = (() => {
     const tDone = tGoal > 0 && tHave >= tGoal;
     return `<div class="map-detail${locked ? ' locked' : ''}">
       <div class="md-board">${mapBoard(m, null, { mini: true })}</div>
-      <div class="md-title">${m.id} ${m.name} ${diffBadge(m, true)}
+      <div class="md-title">${m.id} ${m.name} ${diffBadge(m, true)} ${mapStarsHtml(m)}
         ${mp.cleared ? '<span class="map-clear-badge">★ 已攻略</span>' : ''}
         ${m.need ? '<span class="md-eo">BOSS海域</span>' : ''}
         ${supportBadgeHtml(m)}</div>
@@ -757,7 +766,7 @@ const SortieUI = (() => {
       root.innerHTML = `
         <div class="panel">
           <div class="map-head">
-            <h3>${map.id} ${map.name} ${hist ? '' : diffBadge(map, true)}
+            <h3>${map.id} ${map.name} ${hist ? '' : diffBadge(map, true)} ${mapStarsHtml(map)}
               ${hist ? `<span class="md-eo">${so.hard ? '强敌阶' : '常规阶'}${so.hard ? ` · 第 ${wave} 波` : ''}</span>` : ''}</h3>
             <button class="btn btn-red btn-sm" data-act="retreat">撤退返回</button>
           </div>

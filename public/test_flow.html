@@ -768,7 +768,7 @@
       UI.go('sortie');
 
       /* ============================================================
-       * V0.306 批次1：海域难度评级（列表徽标 / 详情徽标+提示 / 出击前徽标 / map-stars 停用）
+       * V0.306 批次1：海域难度评级（列表徽标 / 详情徽标+提示 / 出击前徽标）；map-stars 于 V0.307 批4 恢复渲染
        * 断言的基准是 maps[].diff 这份**唯一数据源** —— UI 若另算一套档位，这里会红。
        * ============================================================ */
       {
@@ -793,8 +793,13 @@
         R(!!d.querySelector('.diff-note') && /\d/.test(d.querySelector('.diff-note').textContent),
           'diff:detailNoteHasNumber', d.querySelector('.diff-note') ? d.querySelector('.diff-note').textContent.trim().slice(0, 40) : '(无)');
         R(d.innerHTML.indexOf('undefined') < 0, 'diff:detailNoUndefined');
-        /* 坑 #54：双指标不得并存 —— 全文档不许再出现 .map-stars */
-        R(document.querySelectorAll('.map-stars').length === 0, 'diff:noMapStars');
+        /* V0.307 批4：stars 恢复渲染（与 diff-badge 并存，方向一致，坑#64）；须与 maps[].stars 同源 */
+        const starEls = sc.querySelectorAll('.area-map .spot-btn .map-stars');
+        R(starEls.length === spots.length, 'diff:listStars', 'spots=' + spots.length + ' stars=' + starEls.length);
+        R(Array.prototype.every.call(starEls, elm => {
+          const mm = MAPS.find(x => x.id === elm.closest('.spot-btn').dataset.map);
+          return elm.textContent.replace(/[^★]/g, '').length === mm.stars;
+        }), 'diff:listStarsSameSource');
 
         /* 不破版：1080×1400（e2e.js 固定视口）下 diffNote 必须折行、不溢出容器 */
         const note = d.querySelector('.diff-note');
@@ -815,7 +820,10 @@
           const head = document.querySelector('#screen .map-head h3');
           const hb = head ? head.querySelector('.diff-badge') : null;
           R(!!hb && hb.textContent.trim() === 'T1 基础', 'diff:activeHeadBadge', head ? head.textContent.trim() : '(无)');
-          R(document.querySelectorAll('.map-stars').length === 0, 'diff:activeNoMapStars');
+          /* V0.307 批4：出击前页头 stars 恢复渲染且与数据同源 */
+          const ah = head ? head.querySelector('.map-stars') : null;
+          R(!!ah && ah.textContent.replace(/[^★]/g, '').length === MAPS.find(m => m.id === '3-5').stars,
+            'diff:activeHeadStars', head ? head.textContent.trim() : '(无)');
           Sortie.returnHome();
         }
         UI.go('sortie');
@@ -851,8 +859,8 @@
         'hist:ruleConditionsListed');
       /* 简报里的 **强调** 必须被渲染成粗体，不能把 markdown 标记漏给玩家 */
       R(scrEl.innerHTML.indexOf('**') < 0, 'hist:noMarkdownLeak');
-      /* V0.306 坑 #54：战役详情原也渲染 .map-stars，已一并停用（战役无 diff 档，不做替代徽标） */
-      R(scrEl.querySelectorAll('.map-stars').length === 0, 'hist:noMapStars');
+      /* V0.307 批4：战役详情恢复渲染 stars（战役不重标，按历史数据 stars 原值渲染） */
+      R(!!scrEl.querySelector('.hist-detail .map-stars'), 'hist:detailStars', 'n=' + scrEl.querySelectorAll('.map-stars').length);
       /* V0.304：M1 禁入规则出击前可见；M2 混编三组条件 + 资源压力简报可见（坑 #22/#25） */
       openHist('M1');
       R(!!scrEl.querySelector('.hist-rule') && scrEl.querySelector('.hist-rule').textContent.indexOf('禁入') >= 0,
