@@ -5323,6 +5323,377 @@ section('V0.307·FIX-LOGIN-ENTER-01 登录页 Enter 监听残留（集成层·�
   if (_doc === undefined) delete global.document;
 }
 
+/* ============================================================================
+ * V0.307 批次5 任务5.2 · IMPL-NIGHT-CV-GUIDE
+ * 全夜战航母零输出 —— 玩家引导（L1 轻提醒 / L2 重提醒）
+ *
+ * 病灶（已由主理人逐行核实）：fleetNightPower 显式跳过航母（battle.js isCV），
+ * 于是「威胁对位·夜战火力」在 4 航母 + 2 驱逐打夜战图时依然打绿勾 ⇒ 面板在替航母背书。
+ * 本任务只让玩家看得见这件事，**不改任何战斗/评级逻辑**（battle.js 一行未动）。
+ *
+ * 本节全部标「集成层」：断言走真实入口（Sortie.nightNodes / Sortie.intel / 真实 UI 渲染），
+ * 刻意不用「查数据表里有没有这个字段」自证，也不硬编码图 id 数组。
+ * ============================================================================ */
+section('V0.307·IMPL-NIGHT-CV-GUIDE 全夜战航母编成引导（集成层·派生判据 + 红绿变异 + 文案 lint）');
+{
+  const _win2 = global.window, _doc2 = global.document, _ui2 = global.UI;
+
+  /* ---------- S1/S2/S5：引擎派生层（纯数据，无需 DOM） ---------- */
+  /* 期望集**手写 9 张图 id**：这是"覆盖面基线"，故意与派生实现独立 ——
+   * 若派生函数写错（例如退化成"只认 5-2"），S1 的双向相等会立刻失败。
+   * 派生侧一律 for..of MAPS 全量遍历，不接受任何图 id 白名单。 */
+  const EXPECT_NIGHT_MAPS = ['1-4', '1-5', '2-4', '3-3', '3-5', '4-5', '5-2', '5-3', '5-5'];
+  const derivedNightMaps = MAPS.filter(m => Sortie.nightNodes(m).length > 0).map(m => m.id);
+  const derivedNightNodes = MAPS.reduce((a, m) => a + Sortie.nightNodes(m).length, 0);
+  /* 双向相等按**集合**比（排序后逐项比），不依赖 MAPS 的声明顺序 —— 顺序不是本任务的判据 */
+  const dsorted = derivedNightMaps.slice().sort();
+  const esorted = EXPECT_NIGHT_MAPS.slice().sort();
+  assert('（集成层·S1 双向相等）含夜战节点的常规图：派生集与期望集逐项双向相等（漏图/多图都抓）',
+    derivedNightMaps.length === EXPECT_NIGHT_MAPS.length && dsorted.length === esorted.length &&
+    dsorted.every((id, i) => id === esorted[i]),
+    'derived=[' + derivedNightMaps.join(',') + '] expect=[' + EXPECT_NIGHT_MAPS.join(',') + ']');
+
+  assert('（集成层·S1 覆盖面）期望集恰为 9 张 / 全 25 张常规图（防"只做 5-2"的白名单方案）',
+    EXPECT_NIGHT_MAPS.length === 9 && MAPS.length === 25, 'n=' + EXPECT_NIGHT_MAPS.length + '/' + MAPS.length);
+
+  /* S2 元断言（防空转）：若 nightNodes 写错而恰好返回空集，S1 会"两边都空、恰好相等"而假绿。
+   * 必须证明它真的派出了东西：① 节点总数 = 11；② 至少一张全夜战图。 */
+  assert('（集成层·S2 防空转）nightNodes 派生出的夜战节点总数 = 11（防"函数返回空集"型假绿）',
+    derivedNightNodes === 11, 'nodes=' + derivedNightNodes);
+  /* 全夜战图判定复用引擎侧口径（引擎与 UI 同源）：不存在任何昼战战斗节点。
+   * 这里独立实现一次（而非调 UI 的 mapIsAllNight），确保断言不依赖被测 UI 代码。 */
+  const isAllNightMap = m => !Object.values(m.defs || {}).some(d =>
+    ((d.type === 'battle' || d.type === 'boss') && d.mode !== 'night') || (d.type === 'boss' && !d.mode));
+  const allNightDerived = derivedNightMaps.filter(id => isAllNightMap(MAPS.find(m => m.id === id)));
+  assert('（集成层·S2 防空转）派生集中至少含 1 张全夜战图（防空转 + 全夜战档必须可达）',
+    allNightDerived.length >= 1, 'allNight=[' + allNightDerived.join(',') + ']');
+
+  /* S5 历史战役覆盖：H2/M2 的 threat 是空数组，只走节点派生才抓得到（威胁声明会整张漏掉）。 */
+  const histNight = {};
+  for (const b of HISTORY_BATTLES) histNight[b.id] = Sortie.nightNodes(b.map || b).length;
+  assert('（集成层·S5 战役覆盖）历史战役 H2（铁底湾·瓜达尔卡纳尔）派生为含夜战节点',
+    histNight.H2 > 0, 'H2=' + histNight.H2);
+  assert('（集成层·S5 战役覆盖）历史战役 M2（莱特湾）派生为含夜战节点',
+    histNight.M2 > 0, 'M2=' + histNight.M2);
+  assert('（集成层·S5 反证·选型守卫）H2/M2 的 threat 声明为空数组 ⇒ 若判据改走 threat 必漏这两张',
+    (HISTORY_BATTLES.find(b => b.id === 'H2').map || HISTORY_BATTLES.find(b => b.id === 'H2')).threat == null &&
+    (HISTORY_BATTLES.find(b => b.id === 'M2').map || HISTORY_BATTLES.find(b => b.id === 'M2')).threat == null,
+    'H2.threat=' + JSON.stringify((HISTORY_BATTLES.find(b => b.id === 'H2').map || {}).threat) +
+    ' M2.threat=' + JSON.stringify((HISTORY_BATTLES.find(b => b.id === 'M2').map || {}).threat));
+
+  /* ---------- S3 红绿变异①：航母计数旋钮 ---------- */
+  /* 判据谓词（与 UI 的 nightCarrierNoteHtml 同一口径：夜战节点 > 0 且 carriers > 0）。
+   * 用真实的 Sortie.intel() 读 carriers，不手搓 fleetStats。 */
+  const l1ShowsFor = (mapId, fidx) => Sortie.nightNodes(Sortie.resolveMap(mapId)).length > 0 &&
+    ((Sortie.intel(fidx, mapId) || {}).air || {}).carriers > 0;
+
+  const cvShip = Game.createShip('enterprise', 30); Game.equipDefaults(cvShip.uid);
+  const ddShip1 = Game.createShip('mahan', 30); Game.equipDefaults(ddShip1.uid);
+  const ddShip2 = Game.createShip('benson', 30); Game.equipDefaults(ddShip2.uid);
+  for (const s of [cvShip, ddShip1, ddShip2]) { s.hp = Game.shipStats(s.uid).hpMax; s.supply.fuel = 1; s.supply.ammo = 1; }
+  Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+  const fleetBackup = Game.state.fleet[1].slice();
+  Game.state.fleet[1] = [cvShip.uid, ddShip1.uid, ddShip2.uid];
+
+  const greenSet = MAPS.filter(m => l1ShowsFor(m.id, 1)).map(m => m.id);
+  assert('（集成层·S3 红绿·绿）4航母+2驱逐编成下 L1 出现的图集 = 9 张（与派生集一致）',
+    greenSet.length === 9 && greenSet.every((id, i) => id === derivedNightMaps[i]),
+    'green=[' + greenSet.join(',') + ']');
+
+  /* 变异：把航母旋钮置 0（换成纯驱逐编成）—— 相关断言必须全部变 false */
+  Game.state.fleet[1] = [ddShip1.uid, ddShip2.uid];
+  const mutantSet = MAPS.filter(m => l1ShowsFor(m.id, 1)).map(m => m.id);
+  const mutantAnyTrue = MAPS.some(m => l1ShowsFor(m.id, 1));
+  assert('（集成层·S3 红绿·变异）carriers 置 0 ⇒ L1 在全部 25 张图上一行都不出现',
+    mutantSet.length === 0 && !mutantAnyTrue, 'mutant=[' + mutantSet.join(',') + ']');
+
+  /* 还原：必须回到 S3 的绿态读数（否则"变异"只是把测试改坏了） */
+  Game.state.fleet[1] = [cvShip.uid, ddShip1.uid, ddShip2.uid];
+  const restoredSet = MAPS.filter(m => l1ShowsFor(m.id, 1)).map(m => m.id);
+  assert('（集成层·S3 红绿·还原）恢复航母编成 ⇒ L1 图集回到 9 张（证明上一条是变异而非改坏）',
+    restoredSet.length === 9 && restoredSet.every((id, i) => id === derivedNightMaps[i]),
+    'restored=[' + restoredSet.join(',') + ']');
+
+  /* ---------- S4 红绿变异②：改 defs[].mode ⇒ 该图从派生集消失 ----------
+   * 这条直接守住"节点派生 vs threat 声明"的选型（规格 §3.2）：
+   * 若有人把 nightNodes 改成读 map.threat，改 mode 不会让这张图消失，断言立刻失败。
+   * ★ 变异目标**从派生集里动态取**（不写死图 id）：写死会在派生实现出错时抛错，
+   *   抛错 ≠ 干净的断言失败，会把后面的断言整段吞掉（变异实测已踩到）。 */
+  const hasNightInDefs = m => Object.values(m.defs || {})
+    .some(d => d.mode === 'night' && (d.type === 'battle' || d.type === 'boss'));
+  /* 变异目标与目标节点都**从 defs 自己取**，不调被测函数 ——
+   * 否则派生实现一坏，这里就取不到节点而抛错，抛错会吞掉后面所有断言（变异实测已踩）。 */
+  const nightEntryOf = m => Object.keys(m.defs || {})
+    .find(id => { const d = m.defs[id]; return d.mode === 'night' && (d.type === 'battle' || d.type === 'boss'); });
+  const mutateMap = MAPS.find(m => hasNightInDefs(m));
+  const nnEntry = mutateMap ? nightEntryOf(mutateMap) : null;
+  assert('（集成层·S4 前置）存在可变异的目标图与目标节点（其 defs 里确有夜战战斗节点）',
+    !!mutateMap && !!nnEntry, mutateMap ? mutateMap.id + '/' + nnEntry : 'none');
+  const savedMode = nnEntry ? mutateMap.defs[nnEntry].mode : null;
+  const beforeCount = MAPS.filter(m => Sortie.nightNodes(m).length > 0).length;
+  const inBefore = beforeCount === EXPECT_NIGHT_MAPS.length;
+  if (nnEntry) mutateMap.defs[nnEntry].mode = 'air';
+  const afterModeFlip = nnEntry ? Sortie.nightNodes(mutateMap).length : -1;
+  assert('（集成层·S4 红绿·变异前）目标图确实含夜战节点且来自 defs 派生（有变异对象才有意义）',
+    inBefore && !!nnEntry && savedMode === 'night',
+    'map=' + mutateMap.id + ' entry=' + nnEntry + ' mode=' + savedMode);
+  assert('（集成层·S4 红绿·变异）把该节点 mode 由 night 改掉 ⇒ nightNodes 归零（判据来自 defs 而非 threat）',
+    afterModeFlip === 0, 'after=' + afterModeFlip);
+  assert('（集成层·S4 红绿·变异传导）该图因此从派生集中消失、总数 -1（威胁声明仍含 night，正是要抓的漏报）',
+    !!nnEntry && !hasNightInDefs(mutateMap) &&
+    !MAPS.some(m => m.id === mutateMap.id && Sortie.nightNodes(m).length > 0) &&
+    MAPS.filter(m => Sortie.nightNodes(m).length > 0).length === beforeCount - 1,
+    'threat=' + JSON.stringify(mutateMap.threat) + ' before=' + beforeCount);
+  if (nnEntry) mutateMap.defs[nnEntry].mode = savedMode;
+  assert('（集成层·S4 红绿·还原）mode 还原后该图回到派生集且总数复原（证明上一条是变异而非改坏）',
+    hasNightInDefs(mutateMap) && Sortie.nightNodes(mutateMap).length > 0 &&
+    MAPS.filter(m => Sortie.nightNodes(m).length > 0).length === beforeCount,
+    'restoredNodes=' + Sortie.nightNodes(mutateMap).length);
+
+  Game.state.fleet[1] = fleetBackup;
+
+  /* ---------- S6/S7 文案 lint：把"不剧透 / 不承诺"变成可执行断言 ----------
+   * 直接 lint 引擎层导出的文案常量（不是翻源码找字符串），改文案即红。 */
+  const L1_ALL = Sortie.nightCvNoteAllNight({ nodes: 3, carriers: 4, carrierNames: '甲、乙、丙、丁', nightCapable: 2 });
+  const L1_MIX = Sortie.nightCvNoteMixed({ nodes: 2, nodeNames: 'B、C', carriers: 4 });
+  const L2_DAY = Sortie.nightCvSortieHint({ nightCapable: 2, enemyCount: 6, hasDay: true });
+  const L2_NODAY = Sortie.nightCvSortieHint({ nightCapable: 2, enemyCount: 6, hasDay: false });
+  const ALL_TEXTS = { L1_ALL, L1_MIX, L2_DAY, L2_NODAY };
+  /* S6：禁止剧透评级达成条件（S6 用词表逐个命中即失败） */
+  const S6_BAN = ['S', '评价', '评分', '必得', '保证', '一定能'];
+  for (const [k, txt] of Object.entries(ALL_TEXTS)) {
+    const hit = S6_BAN.filter(w => txt.includes(w));
+    assert('（集成层·S6 文案 lint）' + k + ' 不含剧透/承诺词（' + S6_BAN.join('/') + '）',
+      hit.length === 0, '命中=' + hit.join(',') + ' :: ' + txt);
+  }
+  /* S7：行为侧——不给"做不到"的断言式表述（诊断实测 S 率 30%/0%/0%，承诺不了） */
+  const S7_BAN = ['无法达成', '不可能', '拿不到'];
+  for (const [k, txt] of Object.entries(ALL_TEXTS)) {
+    const hit = S7_BAN.filter(w => txt.includes(w));
+    assert('（集成层·S7 文案 lint）' + k + ' 不含断言式否定表述（' + S7_BAN.join('/') + '）',
+      hit.length === 0, '命中=' + hit.join(',') + ' :: ' + txt);
+  }
+  /* S6 附：L2 不得承诺"现在去改编成"——出击中只有进击/撤退返回，改不了编成 */
+  assert('（集成层·S6 分寸·不可兑现指引）L2 不劝玩家"现在去调整编成"（出击中无法改编成）',
+    !L2_DAY.includes('调整编成') && !L2_NODAY.includes('调整编成'), L2_DAY);
+  /* S6 附：两档 L1 必须真的不同档（防"全项目一句模板"） */
+  assert('（集成层·S6 分档·防单模板）L1 全夜战档与混合档文案不同，且各档点明各自的处置',
+    L1_ALL !== L1_MIX && L1_ALL.includes('全是夜战') && L1_MIX.includes('照常出动'), L1_ALL + ' || ' + L1_MIX);
+  /* S7 附：可攻击舰数 < 敌舰数时（最容易被写成"拿不到"的情形）仍只给事实 */
+  const L2_HOPELESS = Sortie.nightCvSortieHint({ nightCapable: 2, enemyCount: 6, hasDay: false });
+  assert('（集成层·S7 行为侧·劣势局）可攻击 2 艘 vs 敌 6 艘时只陈述事实 + 请自行判断',
+    L2_HOPELESS.includes('实际可攻击 2 艘') && L2_HOPELESS.includes('敌 6 艘') &&
+    L2_HOPELESS.includes('请自行判断'), L2_HOPELESS);
+
+  /* ---------- L1/L2 真实 UI 渲染（走 UI.Screens 真入口 + 真实 DOM 桩） ----------
+   * 断言的是"玩家真实看到的行"，不是中间变量。 */
+  const domStub = require('./dom_stub.js');
+  const dom = domStub.createDom();
+  global.window = dom.window;
+  dom.window.Game = Game; dom.window.Battle = Battle; dom.window.Sortie = Sortie;
+  dom.window.History = History; dom.window.MAPS = MAPS; dom.window.ShipData = ShipData;
+  global.document = dom.document;
+  const realUI = _ui2 || {};
+  global.UI = Object.assign({}, realUI, {
+    Screens: {}, go() {}, toast() {}, esc: (s) => String(s == null ? '' : s),
+    shipNameHtml: (d) => (d ? (d.zh || d.id) : ''), resHtml: () => ''
+  });
+  require('../public/js/ui/sortie.js');
+  assert('（集成层·接线）ui/sortie.js 真实入口注册进 UI.Screens（否则下面全部无效）',
+    typeof UI.Screens.sortie === 'function', typeof UI.Screens.sortie);
+
+  const screenEl = document.createElement('main');
+  screenEl.id = 'screen';
+  document.body.appendChild(screenEl);
+  /* 解锁全图（need 前置链）—— 否则 [data-map] 按钮根本不渲染，出击页的既有锁，与本任务无关 */
+  for (const m of MAPS) { Game.state.mapProgress[m.id] = { gauge: 1, cleared: true, kills: 0 }; }
+  /* 真实选图：点 [data-area] 换区 + 点 [data-map] 选图（mapList 不接受外部传参） */
+  const selectMap = id => {
+    UI.Screens.sortie(screenEl);
+    const ab = document.querySelector('[data-area="' + id.split('-')[0] + '"]');
+    if (ab) ab.dispatchEvent(dom.event('click', {}));
+    const mb = document.querySelector('[data-map="' + id + '"]');
+    if (!mb) return false;
+    mb.dispatchEvent(dom.event('click', {}));
+    return true;
+  };
+  const cvRows = () => document.querySelectorAll('.sortie-intel .si-body .night-cv-warn');
+  /* 编成探针：真实 fleet 变更驱动整块面板重绘（面板是"活的"） */
+  const probeFleet = [cvShip.uid, ddShip1.uid, ddShip2.uid];
+  Game.state.fleet[1] = probeFleet;
+
+  /* E5 的引擎孪生：遍历全 25 张双向断言「L1 出现 === (有夜战节点 && 有航母)」。
+   * 🔴 这是本任务的核心红线——写死 5-2 也能让"抽样几图"型断言全绿，只有全量双向遍历抓得住。
+   * ★ 期望侧刻意**独立于被测函数**：直接读 m.defs，不调 Sortie.nightNodes。
+   *   否则派生实现一坏，两边同时变坏、断言仍然"通过"（变异实测已抓到这一假绿）。 */
+  let covPass = 0; const covFail = [];
+  for (const m of MAPS) {
+    const selected = selectMap(m.id);
+    const shown = cvRows().length > 0;
+    const expected = hasNightInDefs(m);          /* 独立期望：直接遍历 defs，不经被测函数 */
+    if (!selected) { covFail.push(m.id + ':未选中'); continue; }
+    if (shown !== expected) covFail.push(m.id + ':shown=' + shown + ' expected=' + expected);
+    else covPass++;
+  }
+  assert('（集成层·E5 反硬编码守卫）遍历全 25 张图双向断言「L1 出现 === defs 里有夜战节点」，逐张成立',
+    covFail.length === 0 && covPass === MAPS.length,
+    'pass=' + covPass + '/' + MAPS.length + ' fail=' + covFail.join(' | '));
+  /* E5 附加：渲染侧与引擎派生必须逐张一致（防 UI 侧另写一套判据） */
+  let agreeBad = [];
+  for (const m of MAPS) {
+    if (!selectMap(m.id)) continue;
+    const shown = cvRows().length > 0;
+    const viaEngine = Sortie.nightNodes(m).length > 0;
+    if (shown !== viaEngine) agreeBad.push(m.id);
+  }
+  assert('（集成层·E5 附·UI 与引擎同源）25 张图上「渲染结果」与「Sortie.nightNodes 派生」逐张一致',
+    agreeBad.length === 0, '不一致=' + agreeBad.join(','));
+
+  /* E4 防误报：零夜战节点的图必须一行都不出（无脑全显示也能通过"抽样"型断言） */
+  const zeroNight = MAPS.filter(m => !hasNightInDefs(m));
+  let zeroBad = [];
+  for (const m of zeroNight) {
+    selectMap(m.id);
+    if (cvRows().length !== 0) zeroBad.push(m.id);
+  }
+  assert('（集成层·E4 防误报）零夜战节点的 ' + zeroNight.length + ' 张图全部不出现 L1',
+    zeroNight.length > 0 && zeroBad.length === 0, '误报=' + zeroBad.join(','));
+
+  /* E1 含真实舰名（防"文案写死了航母字样、但与玩家实际航母无关"） */
+  selectMap('5-2');
+  const e1rows = cvRows();
+  const e1txt = e1rows.length ? e1rows[0].textContent : '';
+  assert('（集成层·E1 真实舰名）5-2 的 L1 行含玩家实际航母的真实舰名',
+    e1rows.length === 1 && ['企业', '列克星敦', '萨拉托加', '黄蜂'].some(n => e1txt.includes(n)), e1txt);
+
+  /* E2 红绿对：换成无航母编成 ⇒ 行消失；换回 ⇒ 复现（证明真读 carriers，不是恒显示） */
+  Game.state.fleet[1] = [ddShip1.uid, ddShip2.uid];
+  selectMap('5-2');
+  const e2off = cvRows().length;
+  Game.state.fleet[1] = probeFleet;
+  selectMap('5-2');
+  const e2on = cvRows().length;
+  assert('（集成层·E2 红绿对）无航母编成时 L1 消失、换回后复现（判据真读 carriers）',
+    e2off === 0 && e2on === 1, 'off=' + e2off + ' on=' + e2on);
+
+  /* E3 两档不同 + 5-3 走混合档 */
+  selectMap('5-2'); const e3all = cvRows();
+  const t3all = e3all.length ? e3all[0].textContent : '';
+  const attrAll = e3all.length ? e3all[0].getAttribute('data-night-cv') : '';
+  selectMap('5-3'); const e3mix = cvRows();
+  const t3mix = e3mix.length ? e3mix[0].textContent : '';
+  const attrMix = e3mix.length ? e3mix[0].getAttribute('data-night-cv') : '';
+  assert('（集成层·E3 分档）5-2 走全夜战档、5-3 走混合档，且两档文案不同',
+    attrAll === 'all' && attrMix === 'mixed' && t3all !== t3mix && t3all.length > 0 && t3mix.length > 0,
+    'all=[' + attrAll + '] mixed=[' + attrMix + ']');
+
+  /* E7 结构不破：.sortie-mapside 子节点仍为 2（既有 test_flow.html:509 的契约） */
+  let sideBad = [];
+  for (const m of MAPS) {
+    selectMap(m.id);
+    const side = document.querySelector('.sortie-mapside');
+    if (!side || side.children.length !== 2) sideBad.push(m.id + ':' + (side ? side.children.length : 'null'));
+  }
+  assert('（集成层·E7 结构护栏）全 25 张图下 .sortie-mapside.children.length 恒为 2',
+    sideBad.length === 0, '异常=' + sideBad.join('|'));
+
+  /* 战役页同样出提示（H2/M2 节点派生覆盖 ⇒ threat 声明会漏掉的那两张） */
+  UI.Screens.sortie(screenEl);
+  const tabBtn = document.querySelector('[data-tab="hist"]');
+  if (tabBtn) tabBtn.dispatchEvent(dom.event('click', {}));
+  let histOk = [];
+  for (const b of HISTORY_BATTLES) {
+    const bb = document.querySelector('[data-battle="' + b.id + '"]');
+    if (!bb) { histOk.push(b.id + ':无按钮'); continue; }
+    bb.dispatchEvent(dom.event('click', {}));
+    const want = Object.values((b.map || b).defs || {})
+      .some(d => d.mode === 'night' && (d.type === 'battle' || d.type === 'boss'));
+    const got = cvRows().length > 0;
+    if (want !== got) histOk.push(b.id + ':want=' + want + ' got=' + got);
+  }
+  assert('（集成层·S5 渲染侧）四场历史战役的提示出现与否与节点派生一致（含 threat 为空的 H2/M2）',
+    histOk.length === 0, '异常=' + histOk.join('|'));
+
+  /* L2 出击中：真实 start + 真实推进到夜战节点，验证文案取到真实敌编成规模 */
+  Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+  const topUp = uids => uids.forEach(uid => {
+    const s = Game.state.ships[uid];
+    s.supply.fuel = 1; s.supply.ammo = 1; s.hp = Game.shipStats(uid).hpMax;
+  });
+  topUp(probeFleet);
+  Game.state.fleet[1] = probeFleet;
+  const stL2 = Sortie.start('5-2', 1);
+  let l2txt = '', l2rows = 0, reachedNight = false, enemySeen = 0;
+  if (stL2.ok) {
+    let guard = 0;
+    while (Game.state.sortie && guard++ < 12) {
+      const mp = Sortie.currentMap(); const cur = Game.state.sortie.node;
+      const def = Sortie.nodeDef(mp, cur);
+      UI.Screens.sortie(screenEl);                    // 真实 sortieActive 渲染
+      const rows = document.querySelectorAll('[data-night-cv="sortie"]');
+      if (def.mode === 'night') {
+        reachedNight = true; l2rows = rows.length;
+        if (rows.length) l2txt = rows[0].textContent;
+        const ed = Sortie.enemyFleet(def.enemy);
+        enemySeen = ed ? ed.ships.length : 0;
+        break;
+      }
+      const nx = Sortie.nextNodes(mp, cur);
+      const nextId = Array.isArray(nx) ? nx[0] : Object.values(nx || {})[0];
+      if (!nextId) break;
+      Sortie.moveToNext(nextId);
+    }
+    Sortie.retreat();
+  }
+  assert('（集成层·E6 L2 接线）真实出击推进到夜战节点 ⇒ L2 出现且含真实可攻击舰数与敌舰数',
+    reachedNight && l2rows === 1 &&
+    l2txt.includes('实际可攻击 ' + (probeFleet.length - 1) + ' 艘') &&
+    l2txt.includes('敌 ' + enemySeen + ' 艘') && enemySeen > 0,
+    'rows=' + l2rows + ' enemy=' + enemySeen + ' :: ' + l2txt);
+
+  /* L2 红绿：无航母编成时，夜战节点上不得出现 L2 */
+  Game.state.fleet[1] = [ddShip1.uid, ddShip2.uid];
+  topUp(Game.state.fleet[1]);
+  const stL2b = Sortie.start('5-2', 1);
+  let l2off = -1;
+  if (stL2b.ok) {
+    let guard = 0;
+    while (Game.state.sortie && guard++ < 12) {
+      const mp = Sortie.currentMap(); const cur = Game.state.sortie.node;
+      const def = Sortie.nodeDef(mp, cur);
+      UI.Screens.sortie(screenEl);
+      if (def.mode === 'night') { l2off = document.querySelectorAll('[data-night-cv="sortie"]').length; break; }
+      const nx = Sortie.nextNodes(mp, cur);
+      const nextId = Array.isArray(nx) ? nx[0] : Object.values(nx || {})[0];
+      if (!nextId) break;
+      Sortie.moveToNext(nextId);
+    }
+    Sortie.retreat();
+  }
+  assert('（集成层·E6 红绿对）无航母编成时夜战节点不出现 L2（证明判据真读 carriers）',
+    l2off === 0, 'rows=' + l2off);
+
+  /* 顺带确认：本任务没碰战斗/评级 —— 航母在夜战仍不计入夜战火力（这是"只提示不改战斗"的实义）。
+   * 写法上刻意**不**用恒真式：拿同一支编成两种算法对照 ——
+   * fleetStats().night 必须等于"非航母舰的 fp+tp 之和"，且航母数 > 0 时该值不含航母。 */
+  Game.state.fleet[1] = probeFleet;
+  topUp(probeFleet);
+  const fsChk = Battle.fleetStats(1);
+  const cvShips = fsChk.ships.filter(s => Battle.isCarrierType(s));
+  const nonCvFpTp = fsChk.ships.filter(s => !Battle.isCarrierType(s))
+    .reduce((a, s) => a + (s.stats.fp || 0) + (s.stats.tp || 0), 0);
+  const cvFpTp = cvShips.reduce((a, s) => a + (s.stats.fp || 0) + (s.stats.tp || 0), 0);
+  assert('（集成层·防越界）战斗侧未改：夜战火力仍严格等于非航母舰 fp+tp 之和（航母不计入）',
+    fsChk.carriers > 0 && cvFpTp > 0 && fsChk.night === nonCvFpTp && fsChk.night !== nonCvFpTp + cvFpTp,
+    'carriers=' + fsChk.carriers + ' night=' + fsChk.night + ' nonCv=' + nonCvFpTp + ' cvFpTp=' + cvFpTp);
+
+  /* 还原全局 */
+  global.window = _win2; global.document = _doc2; global.UI = _ui2;
+  if (_win2 === undefined) delete global.window;
+  if (_doc2 === undefined) delete global.document;
+  if (_ui2 === undefined) delete global.UI;
+}
+
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed ? 1 : 0);

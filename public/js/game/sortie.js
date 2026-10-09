@@ -1033,6 +1033,40 @@ const Sortie = (() => {
     if (def.type === 'whirlpool') return NODE_BANNER.whirlpool;
     return '';
   }
+
+  /* ============ 夜战航母编成引导文案（V0.307 批次5 任务5.2）============
+   * 放在引擎层与 NODE_BANNER 同理：文案是**规则的一部分**（航母在夜战节点不开火是硬规则），
+   * 放 UI 会让文案与判据分家，也没法被 simulate.js 直接 lint（S6/S7 要 lint 真实常量，不能靠"翻源码找字符串"）。
+   *
+   * ★ 分寸纪律（断言 S6/S7 守着，见 scripts/simulate.js）：
+   *   ① 不出现 S / 评价 / 评分 / 必得 / 保证 / 一定能 —— 不剧透达成条件、不把 S 变成作业题；
+   *      诊断实测 5-2 三节点 S 率 30%/0%/0%，任何达成承诺都是埋雷。
+   *   ② 不出现 无法达成 / 不可能 / 拿不到 —— 只陈述"航母不开火"这个事实，结论交给玩家自己下。
+   *   ③ 不说"现在去调整编成"—— 出击中无法改编成（sortieActive 只有进击/撤退返回），给了就是骗玩家。
+   * 两档措辞必须不同：全夜战图航母是纯空位，混合图航母在昼战节点仍有真实价值，
+   * 若混合图也写"航母没用"，会误导玩家把整支舰队拆了。 */
+
+  /* L1 轻提醒 · 全夜战档：整张图没有昼战阶段，航母每一个都是空位。
+   * o = { nodes, carriers, carrierNames, nightCapable } */
+  function nightCvNoteAllNight(o) {
+    return `⚠ 夜战编成 —— 本图 ${o.nodes} 个节点全是夜战，没有昼战阶段，`
+      + `你的 ${o.carriers} 艘航母（${o.carrierNames}）不会开火。`
+      + `本图能攻击的只有 ${o.nightCapable} 艘，其余是空位。把这些位置让给驱逐舰或轻巡洋舰。`;
+  }
+  /* L1 轻提醒 · 混合档：必须点明"夜战节点不行、昼战节点照常"，否则会误导玩家拆掉整支舰队。
+   * o = { nodes, nodeNames, carriers } */
+  function nightCvNoteMixed(o) {
+    return `ℹ 夜战节点 —— 本图有 ${o.nodes} 个夜战节点（${o.nodeNames}），航母在这些节点无法攻击；`
+      + `在昼战节点照常出动。若这几场打算靠夜战拿战果，驱逐舰与轻巡洋舰才是输出位。`;
+  }
+  /* L2 重提醒 · 出击中逐节点：给事实（可攻击舰数 vs 敌舰数），不给结论。
+   * 这是航母信息在 sortieActive 态的唯一幸存位置（该态只渲染 brief，不渲染 diffNote/threatNote）。
+   * o = { nightCapable, enemyCount, hasDay } */
+  function nightCvSortieHint(o) {
+    return `｜ 参谋提醒：现在是夜战，航母不会开火 —— 实际可攻击 ${o.nightCapable} 艘，敌 ${o.enemyCount} 艘。`
+      + `全歼与否，请自行判断；`
+      + (o.hasDay ? `下一个昼战节点航母可以正常出击。` : `本图没有昼战节点。`);
+  }
   /* 全部用到的节点 mode（含 type:'whirlpool'）—— 常规海域 + 历史战役，供文案覆盖度断言使用 */
   function usedNodeModes() {
     const s = new Set();
@@ -1077,6 +1111,17 @@ const Sortie = (() => {
   /* 该图是否含航空战点（mode:'air'） */
   function mapHasAirNode(map) {
     return Object.values((map && map.defs) || {}).some(d => d.mode === 'air');
+  }
+
+  /* 该图的夜战节点 id 列表（V0.307 批次5 任务5.2 · 全夜战航母编成引导；与 mapHasAirNode 并列）。
+   * ★ 判据必须走**节点派生** `defs[].mode === 'night'`，**不得**改走 `map.threat.includes('night')`：
+   * 战役图（H2/M2）的 `threat` 是空数组，走声明会让它们整张拿不到夜战提示（连 ✓/✗ 都没有）。
+   * 只收战斗/BOSS 型节点 —— 夜战锁定（battle.js 航母不放行）只发生在真正交战的节点上。
+   * 返回 id 数组（而非布尔）：编成引导要按档位区分「全夜战」与「混合」，且混合档要报节点名。 */
+  function nightNodes(map) {
+    return Object.entries((map && map.defs) || {})
+      .filter(([, d]) => d.mode === 'night' && (d.type === 'battle' || d.type === 'boss'))
+      .map(([id]) => id);
   }
 
   /* 海域威胁维度对位判定：只对该图声明的维度返回结果（未声明维度的海域返回空数组，UI 不显示该区块） */
@@ -1274,6 +1319,10 @@ const Sortie = (() => {
     THREAT_INFO, THREAT_KEYS,
     /* 节点进入横幅文案表（批次1：航空战点三种边界的文案必须可区分） */
     NODE_BANNER, nodeBanner, usedNodeModes, mapHasAirNode,
+    /* 夜战节点派生（V0.307 批次5 任务5.2）：节点派生口径，非 threat 声明 —— 战役图也能覆盖 */
+    nightNodes,
+    /* 夜战航母编成引导文案（L1/L2）：与 NODE_BANNER 同层，UI 只渲染不组句 */
+    nightCvNoteAllNight, nightCvNoteMixed, nightCvSortieHint,
     /* 海域作战目标（方向四） */
     checkObjectives, objectiveCondText, objectivePreview, objectiveMet, rewardText,
     /* 士气（方向三） */

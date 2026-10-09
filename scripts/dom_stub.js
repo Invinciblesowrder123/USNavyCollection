@@ -273,10 +273,24 @@ function descendants(el) {
 
 /** 把 '.login-tabs button' 拆成 [{class:login-tabs}, {tag:button}] */
 function parseCompound(s) {
-  const c = { tag: null, id: null, classes: [] };
+  const c = { tag: null, id: null, classes: [], attrs: [] };
+  /* 属性选择器 [data-fleet] / [data-x="1"] 先单独摘出来 ——
+   * 本项目的 UI 事件接线几乎全靠 [data-*]（[data-supply] / [data-fleet] / [data-tab]…），
+   * 不支持的话 mapList 渲染完会在 querySelector(...).addEventListener 处抛错，
+   * 断言根本跑不到那儿 ⇒ 假绿。（V0.307 批次5 任务5.2 补） */
+  let rest = String(s);
+  const attrRe = /\[\s*([\w-]+)\s*(?:([~^$*|]?=)\s*(?:"([^"]*)"|'([^']*)'|([^\]]*?)))?\s*\]/g;
+  let am;
+  while ((am = attrRe.exec(rest)) !== null) {
+    const name = am[1];
+    const op = am[2] || null;
+    const val = am[3] !== undefined ? am[3] : (am[4] !== undefined ? am[4] : (am[5] !== undefined ? am[5].trim() : null));
+    c.attrs.push({ name: String(name).toLowerCase(), op, val });
+  }
+  rest = rest.replace(attrRe, '');
   const re = /([#.]?)([\w-]+)/g;
   let m;
-  while ((m = re.exec(s))) {
+  while ((m = re.exec(rest))) {
     if (m[1] === '#') c.id = m[2];
     else if (m[1] === '.') c.classes.push(m[2]);
     else c.tag = m[2].toLowerCase();
@@ -288,6 +302,12 @@ function matchCompound(el, c) {
   if (c.tag && el.localName !== c.tag) return false;
   if (c.id !== null && el.id !== c.id) return false;
   for (const k of c.classes) if (el.classList.indexOf(k) < 0) return false;
+  for (const a of (c.attrs || [])) {
+    if (!el.hasAttribute(a.name)) return false;
+    if (a.op === '=' && el.getAttribute(a.name) !== a.val) return false;
+    /* ~= ^= $= *= 暂不支持：显式抛错而不是静默放行（静默放行就是假绿） */
+    if (a.op && a.op !== '=') throw new Error('dom_stub: 属性选择器操作符 ' + a.op + ' 未实现（会造成假绿）');
+  }
   return true;
 }
 

@@ -1213,6 +1213,199 @@
         UI.go('sortie');
       }
 
+      /* ============================================================
+       * V0.307 批次5 · IMPL-NIGHT-CV-GUIDE：全夜战航母零输出的玩家引导
+       *
+       * 病灶：「威胁对位·夜战火力」在航母在场时依然打绿勾（fleetNightPower 跳过航母），
+       * 面板于是在替航母背书。本段验证 L1（出击前）与 L2（出击中）两处提示。
+       *
+       * 🔴 E5 是本段核心红线：**遍历 MAPS 全 25 张双向断言，禁止写图 id 数组**。
+       *    写死 5-2 能让 E1~E4 全绿，只有全量双向遍历抓得住。
+       * ============================================================ */
+      {
+        /* 编成探针：造两支舰队（有航母 / 无航母），直接改 state.fleet 后整页重绘 ——
+         * 面板是"活的"（Sortie.intel 按当前选中舰队实时算），所以切编成即应变化。 */
+        const mkShip = id => { const s = Game.createShip(id, 30); Game.equipDefaults(s.uid); s.hp = Game.shipStats(s.uid).hpMax; s.supply.fuel = 1; s.supply.ammo = 1; return s.uid; };
+        const cvUids = ['enterprise', 'lexington', 'saratoga', 'wasp'].map(mkShip);
+        const ddUids = ['mahan', 'benson'].map(mkShip);
+        const fleetBackupCV = Game.state.fleet[1].slice();
+        Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+        for (const uid of cvUids.concat(ddUids)) {
+          const s = Game.state.ships[uid];
+          s.supply.fuel = 1; s.supply.ammo = 1; s.hp = Game.shipStats(uid).hpMax;
+        }
+        Game.state.fleet[1] = cvUids.concat(ddUids);
+        /* 解锁全图（need 前置链）——否则 [data-map] 不渲染，是出击页既有锁，与本任务无关 */
+        for (const m of MAPS) Game.state.mapProgress[m.id] = { gauge: 1, cleared: true, kills: 0 };
+
+        const goMap = id => {
+          UI.go('sortie');
+          const ab = document.querySelector('#screen [data-area="' + id.split('-')[0] + '"]');
+          if (ab) ab.click();
+          const mb = document.querySelector('#screen [data-map="' + id + '"]');
+          if (!mb) return false;
+          mb.click();
+          return true;
+        };
+        const cvRow = () => document.querySelector('#screen .sortie-intel .si-body .night-cv-warn');
+        const cvRows = () => document.querySelectorAll('#screen .sortie-intel .si-body .night-cv-warn');
+        /* ★ 期望侧**独立于被测派生函数**：直接遍历 defs。
+         *   若期望侧也调 Sortie.nightNodes，派生实现一坏两边同时坏 → 假绿。 */
+        const hasNightInDefs = m => Object.keys(m.defs || {}).some(id => {
+          const d = m.defs[id];
+          return d.mode === 'night' && (d.type === 'battle' || d.type === 'boss');
+        });
+
+        R(typeof Sortie.nightNodes === 'function' && Sortie.nightNodes(MAPS[0]) !== undefined, 'nightcv:apiExists');
+
+        /* --- E1：5-2 含玩家实际航母的真实舰名（防"文案写死了航母字样、与玩家航母无关"） --- */
+        R(goMap('5-2'), 'nightcv:e1MapSelectable');
+        const e1 = cvRow();
+        const e1txt = e1 ? e1.textContent.replace(/\s+/g, ' ') : '';
+        const realNames = (Sortie.intel(1, '5-2').air.carrierNames || []);
+        R(!!e1 && realNames.length > 0 && realNames.some(n => e1txt.indexOf(n) >= 0),
+          'nightcv:e1HasRealCarrierName', e1txt.slice(0, 90));
+        R(!!e1 && realNames.every(n => e1txt.indexOf(n) >= 0), 'nightcv:e1ListsAllCarriers',
+          'intel=' + realNames.join('/'));
+
+        /* --- E2 红绿对：切到无航母舰队 ⇒ 该行消失；换回 ⇒ 复现 --- */
+        Game.state.fleet[1] = ddUids.slice();
+        goMap('5-2');
+        const e2off = cvRows().length;
+        Game.state.fleet[1] = cvUids.concat(ddUids);
+        goMap('5-2');
+        const e2on = cvRows().length;
+        R(e2off === 0 && e2on === 1, 'nightcv:e2RedGreen', `off=${e2off} on=${e2on}`);
+
+        /* --- E3：5-3 走混合档，且与 5-2 全夜战档文案不同 --- */
+        goMap('5-2');
+        const tAll = cvRow() ? cvRow().textContent.replace(/\s+/g, ' ') : '';
+        const kAll = cvRow() ? cvRow().getAttribute('data-night-cv') : '';
+        goMap('5-3');
+        const tMix = cvRow() ? cvRow().textContent.replace(/\s+/g, ' ') : '';
+        const kMix = cvRow() ? cvRow().getAttribute('data-night-cv') : '';
+        R(kAll === 'all' && kMix === 'mixed', 'nightcv:e3Tiers', `5-2=${kAll} 5-3=${kMix}`);
+        R(tAll.length > 0 && tMix.length > 0 && tAll !== tMix, 'nightcv:e3TextDiffers');
+        R(tMix.indexOf('照常出动') >= 0, 'nightcv:e3MixedSaysDayStillWorks', tMix.slice(0, 90));
+
+        /* --- E4 防误报：零夜战节点的图必须一行都不出（无脑全显示也能"通过"抽样型断言） --- */
+        const zeroNightMaps = MAPS.filter(m => !hasNightInDefs(m));
+        const zeroBad = [];
+        for (const m of zeroNightMaps) {
+          if (!goMap(m.id)) { zeroBad.push(m.id + ':未选中'); continue; }
+          if (cvRows().length !== 0) zeroBad.push(m.id);
+        }
+        R(zeroNightMaps.length > 0 && zeroBad.length === 0, 'nightcv:e4NoFalsePositive',
+          `零夜战图=${zeroNightMaps.length} 误报=${zeroBad.join(',')}`);
+
+        /* --- E5 ★核心红线：遍历全 25 张双向断言（禁止图 id 数组） --- */
+        const covBad = [];
+        let covOk = 0;
+        for (const m of MAPS) {
+          if (!goMap(m.id)) { covBad.push(m.id + ':未选中'); continue; }
+          const shown = cvRows().length > 0;
+          const expected = hasNightInDefs(m);
+          if (shown !== expected) covBad.push(`${m.id}:shown=${shown} expected=${expected}`);
+          else covOk++;
+        }
+        R(covBad.length === 0 && covOk === MAPS.length, 'nightcv:e5FullCoverageBidirectional',
+          `pass=${covOk}/${MAPS.length} fail=${covBad.join(' | ')}`);
+        /* E5 附：渲染侧必须与引擎派生逐张一致（防 UI 另写一套判据） */
+        const agreeBad = [];
+        for (const m of MAPS) {
+          if (!goMap(m.id)) continue;
+          if ((cvRows().length > 0) !== (Sortie.nightNodes(m).length > 0)) agreeBad.push(m.id);
+        }
+        R(agreeBad.length === 0, 'nightcv:e5UiMatchesEngine', '不一致=' + agreeBad.join(','));
+
+        /* --- E7 结构护栏：.sortie-mapside 子节点仍为 2（既有 layout:mapSideHasMapAndIntelOnly 契约） --- */
+        const sideBad = [];
+        for (const m of MAPS) {
+          if (!goMap(m.id)) continue;
+          const side = document.querySelector('#screen .sortie-mapside');
+          if (!side || side.children.length !== 2) sideBad.push(m.id + ':' + (side ? side.children.length : 'null'));
+        }
+        R(sideBad.length === 0, 'nightcv:e7MapSideChildrenStable', '异常=' + sideBad.join('|'));
+
+        /* --- E8 窄屏不溢出：1080px 下 L1 行不撑破 .sortie-intel --- */
+        const prevW = window.innerWidth;
+        try {
+          Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1080 });
+          goMap('5-2');
+          const rowEl = cvRow(), boxEl = document.querySelector('#screen .sortie-intel');
+          const overflow = (rowEl && boxEl)
+            ? (rowEl.scrollWidth - rowEl.clientWidth) + (boxEl.scrollWidth - boxEl.clientWidth)
+            : -1;
+          R(!!rowEl && !!boxEl && rowEl.scrollWidth <= rowEl.clientWidth + 1 && boxEl.scrollWidth <= boxEl.clientWidth + 1,
+            'nightcv:e8NoOverflow1080', `rowDelta=${rowEl ? rowEl.scrollWidth - rowEl.clientWidth : 'n/a'} boxDelta=${boxEl ? boxEl.scrollWidth - boxEl.clientWidth : 'n/a'}`);
+        } finally {
+          Object.defineProperty(window, 'innerWidth', { configurable: true, value: prevW });
+        }
+
+        /* --- E6：出击中推进到夜战节点 ⇒ L2 出现，且含真实可攻击舰数与敌舰数 --- */
+        Sortie.returnHome();
+        Game.state.fleet[1] = cvUids.concat(ddUids);
+        for (const uid of cvUids.concat(ddUids)) {
+          const s = Game.state.ships[uid];
+          s.supply.fuel = 1; s.supply.ammo = 1; s.hp = Game.shipStats(uid).hpMax;
+        }
+        Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+        const stL2 = Sortie.start('5-2', 1);
+        let l2txt = '', l2rows = 0, reachedNight = false, enemySeen = 0, nightNode = '';
+        if (stL2.ok) {
+          let guard = 0;
+          while (Game.state.sortie && guard++ < 12) {
+            const mp = Sortie.currentMap();
+            const cur = Game.state.sortie.node;
+            const def = Sortie.nodeDef(mp, cur);
+            UI.go('sortie');
+            const rows = document.querySelectorAll('#screen [data-night-cv="sortie"]');
+            if (def.mode === 'night') {
+              reachedNight = true; nightNode = cur; l2rows = rows.length;
+              if (rows.length) l2txt = rows[0].textContent.replace(/\s+/g, ' ');
+              const ed = Sortie.enemyFleet(def.enemy);
+              enemySeen = ed ? ed.ships.length : 0;
+              break;
+            }
+            const nx = Sortie.nextNodes(mp, cur);
+            const nextId = Array.isArray(nx) ? nx[0] : Object.values(nx || {})[0];
+            if (!nextId) break;
+            Sortie.moveToNext(nextId);
+          }
+        }
+        const expectCapable = cvUids.concat(ddUids).length - 4;   /* 航母不开火 */
+        R(reachedNight && l2rows === 1 && enemySeen > 0
+          && l2txt.indexOf(`实际可攻击 ${expectCapable} 艘`) >= 0
+          && l2txt.indexOf(`敌 ${enemySeen} 艘`) >= 0,
+          'nightcv:e6SortieHintRealNumbers', `node=${nightNode} enemy=${enemySeen} :: ${l2txt.slice(0, 110)}`);
+        /* E6 红绿：无航母编成时夜战节点不得出现 L2 */
+        if (Game.state.sortie) Sortie.retreat();
+        Game.state.fleet[1] = ddUids.slice();
+        for (const uid of ddUids) { const s = Game.state.ships[uid]; s.supply.fuel = 1; s.supply.ammo = 1; s.hp = Game.shipStats(uid).hpMax; }
+        Game.gain({ fuel: 99999, ammo: 99999, steel: 99999, baux: 99999 });
+        const stL2b = Sortie.start('5-2', 1);
+        let l2off = -1;
+        if (stL2b.ok) {
+          let guard = 0;
+          while (Game.state.sortie && guard++ < 12) {
+            const mp = Sortie.currentMap();
+            const cur = Game.state.sortie.node;
+            const def = Sortie.nodeDef(mp, cur);
+            UI.go('sortie');
+            if (def.mode === 'night') { l2off = document.querySelectorAll('#screen [data-night-cv="sortie"]').length; break; }
+            const nx = Sortie.nextNodes(mp, cur);
+            const nextId = Array.isArray(nx) ? nx[0] : Object.values(nx || {})[0];
+            if (!nextId) break;
+            Sortie.moveToNext(nextId);
+          }
+        }
+        R(l2off === 0, 'nightcv:e6RedGreenNoCarrier', `rows=${l2off}`);
+
+        if (Game.state.sortie) Sortie.retreat();
+        Game.state.fleet[1] = fleetBackupCV;
+        UI.go('home');
+      }
+
       document.querySelector('#result').textContent = JSON.stringify({ errors: window.__errors, results: window.__results });
     } catch (e) {
       window.__errors.push('FATAL ' + e.message + ' ' + (e.stack || '').split('\n')[1]);

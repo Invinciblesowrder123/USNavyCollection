@@ -1224,6 +1224,13 @@ table.data tr:hover td { background: rgba(90,168,232,0.08); }
 .md-morale { font-size: 11.5px; line-height: 1.7; border-radius: 4px; padding: 5px 8px; margin-top: 4px; }
 .md-morale.red { color: #ffb0b0; border-left: 2px solid var(--red); background: rgba(224,85,85,.10); }
 .md-morale.low { color: #ffd6a8; border-left: 2px solid var(--orange); background: rgba(240,160,80,.10); }
+/* ---- 夜战航母编成提醒（V0.307 批次5 任务5.2）：L1 出击前 / L2 出击中 ----
+ * 配色纪律：复用 .md-morale.low 的**橙色族**。🔴 不用红色 —— 本项目里红色是「红脸/失败」专用
+ * （.md-morale.red），这条是参谋提醒不是报错，用红会过度施压（且航母零输出不等于输仗）。
+ * 独立成类而非并入 .md-morale：本条要能被 E2E 单独选中（.night-cv-warn），且 L2 是行内 <span> 不是块。 */
+.night-cv-warn { color: #ffd6a8; font-size: 11.5px; line-height: 1.7; }
+div.night-cv-warn { border-left: 2px solid var(--orange); background: rgba(240,160,80,.10); border-radius: 4px; padding: 5px 8px; margin-top: 4px; }
+
 .morale-row { font-size: 11.5px; line-height: 1.9; }
 /* ---- 支援舰队选择器（V0.306 批次2）：出击准备页内，不另起页面（坑 #50）----
  * 配色纪律：与 `.diff-badge` 同族（冷色=可用、暖色=警示），不做彩虹。 */

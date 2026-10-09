@@ -416,6 +416,13 @@ const SortieUI = (() => {
       const mods = mr.tiers.filter(t => t.hit !== 1 || t.evd !== 1).map(t => `${t.name}：${t.desc}`).join('；');
       html += `<div class="morale-row"><b>舰队士气</b>：平均 <b>${mr.avg}</b>（${seg.join(' ｜ ')}）<span class="dim">｜ ${Util.esc(mods)}</span></div>`;
     }
+    /* 夜战编成提醒（V0.307 批次5 任务5.2 · L1 轻提醒）
+     * 病灶：「威胁对位·夜战火力」这行判据自洽却误导 —— fleetNightPower 显式跳过航母，
+     * 只要还有驱逐/轻巡它就打绿勾，等于在替航母背书。本行是**新增**行，不改 threatCheck 判据（只提示不拦截）。
+     * 判据全部派生：夜战节点走 Sortie.nightNodes（节点派生，非 threat 声明 ⇒ 战役图也覆盖），
+     * 航母数/舰名走 Sortie.intel 已有字段 air.carriers / air.carrierNames，零新增数据字段。 */
+    const cvNightHtml = nightCarrierNoteHtml(m, fidx, it);
+    if (cvNightHtml) html += cvNightHtml;
     if (it.threats.length) {
       const t = it.threats.map(x => x.ok
         ? `<span class="ok">✓ ${x.name}</span>`
@@ -500,6 +507,49 @@ const SortieUI = (() => {
         ((d.type === 'battle' || d.type === 'boss') && d.mode !== 'night')
         || (d.type === 'boss' && !d.mode));
     return !hasDay;
+  }
+
+  /* 夜战编成提醒行（L1 · V0.307 批次5 任务5.2）：返回 HTML 片段或 ''（不满足条件时一行都不出）。
+   * 判据全部来自引擎，UI 不另算：
+   *   - 夜战节点：Sortie.nightNodes(m)（节点派生，**不是** m.threat 声明 ⇒ H2/M2 战役也覆盖）
+   *   - 航母数/舰名：Sortie.intel() 已返回的 air.carriers / air.carrierNames（零新增数据字段）
+   *   - 可攻击舰数：fleetStats.count - carriers（Battle.fleetStats 同源，非 UI 自算）
+   * 文案在引擎层（与 NODE_BANNER 同理），此处只选档 + 渲染。
+   * ⚠ 必须是 .si-body 的子元素（不能加成 .sortie-mapside 的兄弟节点）——
+   *    既有断言 test_flow.html:509 要求 .sortie-mapside.children.length === 2。 */
+  function nightCarrierNoteHtml(m, fidx, it) {
+    const nodes = Sortie.nightNodes(m);
+    if (!nodes.length) return '';
+    const carriers = (it.air && it.air.carriers) || 0;
+    if (carriers <= 0) return '';          // 没航母就没有空位问题，不凑行
+    const names = ((it.air && it.air.carrierNames) || []).join('、');
+    /* 可攻击舰数 = 全舰队 − 航母。fleetStats.count 与 air.carriers 同源（都出自 Battle.fleetStats），
+     * 这里只做减法，不重算一遍"谁算航母"（那是引擎 isCV 的职责）。 */
+    const fs = Game.battleFleetStats(fidx);
+    const nightCapable = Math.max(0, ((fs && fs.count) || 0) - carriers);
+    const allNight = mapIsAllNight(m);
+    const text = allNight
+      ? Sortie.nightCvNoteAllNight({ nodes: nodes.length, carriers, carrierNames: names, nightCapable })
+      : Sortie.nightCvNoteMixed({ nodes: nodes.length, nodeNames: nodes.join('、'), carriers });
+    return `<div class="night-cv-warn" data-night-cv="${allNight ? 'all' : 'mixed'}">${Util.esc(text)}</div>`;
+  }
+
+  /* 夜战编成提醒（L2 · V0.307 批次5 任务5.2）：出击中逐节点追加在既有夜战提示之后。
+   * 为什么必须在 sortieActive 落这条：出击中只渲染 brief，不渲染 diffNote / threatNote，
+   * 所以「本图不需要航母」那句在点下出击的那一刻就从屏幕上消失了 —— 这里是航母信息唯一的幸存位置。
+   * 触发：def.mode === 'night' 且在场航母 > 0（fs.carriers 已按 alive 过滤，大破舰不算）。
+   * 敌舰数取自 enemyDef.ships.length —— 与同一行 enemyHint 显示的是同一个来源，不另算。
+   * ⚠ 文案禁止出现"现在去调整编成"：出击中只有进击/撤退返回，改不了编成，许诺做不到的事就是骗玩家。 */
+  function nightCvSortieHintHtml(map, def, fs, enemyDef) {
+    const carriers = (fs && fs.carriers) || 0;
+    if (def.mode !== 'night' || carriers <= 0) return '';
+    const nightCapable = Math.max(0, ((fs && fs.count) || 0) - carriers);
+    const text = Sortie.nightCvSortieHint({
+      nightCapable,
+      enemyCount: enemyDef ? enemyDef.ships.length : 0,
+      hasDay: !mapIsAllNight(map)
+    });
+    return `<span class="night-cv-warn" data-night-cv="sortie">${Util.esc(text)}</span>`;
   }
 
   /* 海域列表 / 详情小标记（V0.307 批次1 / Item 19）：可派支援 / 全线夜战不发动 */
@@ -751,7 +801,7 @@ const SortieUI = (() => {
         ? `<span class="dim">｜ 敌军：${enemyDef.ships.length} 舰（${enemyDef.formation}）${waveKey ? ` · <b style="color:#ffb0b0">第二梯队（${enemyKey}）</b>` : ''}</span>`
         : '';
       const modeHint = def.mode === 'night'
-        ? `<span class="dim">｜ 无昼战，直接夜战：驱逐/轻巡的夜战火力是关键</span>`
+        ? `<span class="dim">｜ 无昼战，直接夜战：驱逐/轻巡的夜战火力是关键</span>` + nightCvSortieHintHtml(map, def, fs, enemyDef)
         : def.mode === 'sub'
           ? `<span class="dim">｜ 潜艇伏击：需对潜舰艇（DD/CL）；低速大目标更易被雷击</span>`
           : def.mode === 'air'
