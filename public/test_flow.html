@@ -1199,12 +1199,28 @@
           R(/\d+\s*\/\s*\d+/.test(toast) && toast.indexOf(String(goal24)) >= 0, 'trans:resultToastShowsProgressGoal', toast.slice(0, 140));
           R(cap >= goal24 && toast.indexOf('奖励已发放') >= 0, 'trans:goalReachedRewarded', toast.slice(0, 140));
 
-          /* ④ 详情页进度行随后同步（回列表再进详情，读的是存档而不是上次渲染的残留） */
+          /* ④ 详情页进度行随后同步（回列表再进详情，读的是存档而不是上次渲染的残留）
+           *    🔴 此处有两个坑，缺一不可：
+           *    (a) 必须**重新 query**：上面的 returnHome + UI.go('sortie') + dbtn2.click()
+           *        已把 #screen 整块重渲染，①段捕获的 mdEl 此时 isConnected=false。
+           *        若沿用那个旧引用，读到的是上一次渲染留下的行（进度恒为 `0 / 18`）——
+           *        断言就悄悄从「测刷新」退化成「测陈旧残留」，永远是红的假信号。
+           *    (b) 必须**先点回 [data-area="2"]**：mapList 每次渲染都重算
+           *        selArea（sortie.js:656，取首个有未攻略地图的区域），重进列表默认落在
+           *        区域 1，屏幕上根本没有 [data-map="2-4"]`，点不到就等于没进详情。
+           *        ①段是先点 data-area="2" 再点图的，④段原先漏了这一步。
+           *    故另取一次节点；rowWith 本身不动（①段的用法是正确的）。*/
           Sortie.returnHome();
           UI.go('sortie');
+          const areaBtn2 = document.querySelector('#screen [data-area="2"]');
+          if (areaBtn2) areaBtn2.click();
           const dbtn2 = document.querySelector('#screen [data-map="2-4"]');
           if (dbtn2) dbtn2.click();
-          const tRow2 = rowWith('运输进度');
+          const mdEl2 = document.querySelector('#screen .map-detail');
+          const mdRows2 = mdEl2 ? mdEl2.querySelector('.md-rows') : null;
+          const tRow2 = mdRows2
+            ? Array.prototype.slice.call(mdRows2.querySelectorAll('div')).find(x => x.textContent.indexOf('运输进度') >= 0) || null
+            : null;
           const txt2 = tRow2 ? tRow2.textContent.replace(/\s+/g, ' ').trim() : '(无)';
           R(!!tRow2 && txt2.indexOf(String(after)) >= 0, 'trans:detailRowRefreshed', txt2);
         }
