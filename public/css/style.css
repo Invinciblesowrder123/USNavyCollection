@@ -69,13 +69,13 @@ body {
 
 /* ---------- 登录 / 注册 ---------- */
 body.unauth #topbar, body.unauth #navbar { display: none; }
-.login-wrap { display: flex; justify-content: center; align-items: center; min-height: 72vh; }
-.login-box { width: 360px; text-align: center; }
+.login-wrap { display: flex; justify-content: center; align-items: center; min-height: 72vh; width: 100%; min-width: 0; }
+.login-box { width: min(360px, 100%); max-width: 100%; min-width: 0; flex: 0 1 360px; text-align: center; }
 .login-box h2 { color: var(--gold); letter-spacing: 3px; margin-bottom: 8px; font-size: 22px; }
-.login-box .dim { font-size: 12px; line-height: 1.7; }
+.login-box .dim { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .login-tabs { display: flex; gap: 8px; margin: 16px 0 4px; }
 .login-tabs button {
-  flex: 1; padding: 8px; background: var(--panel);
+  flex: 1 1 0; min-width: 0; padding: 8px; background: var(--panel);
   border: 1px solid var(--line); color: var(--text);
   border-radius: 6px; cursor: pointer; font-size: 13px;
 }
@@ -89,7 +89,12 @@ body.unauth #topbar, body.unauth #navbar { display: none; }
   background: rgba(6, 13, 24, 0.7); border: 1px solid var(--line);
   border-radius: 6px; color: var(--text); font-size: 14px; outline: none;
 }
+.login-box input::placeholder { color: #aebbd0; opacity: 1; }
 .login-box input:focus { border-color: var(--gold); }
+.login-field-hint {
+  margin: 5px 2px 0; color: var(--dim); font-size: 12px;
+  line-height: 1.5; text-align: left;
+}
 .login-err { color: var(--red); font-size: 12px; min-height: 18px; margin-top: 8px; }
 .login-remember {
   display: flex; align-items: center; gap: 6px;

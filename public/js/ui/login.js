@@ -32,7 +32,8 @@ const LoginUI = (() => {
             <button data-mode="login" class="active">登 录</button>
             <button data-mode="register">注 册</button>
           </div>
-          <input id="lgName" placeholder="用户名（2~20位：中英文/数字/_/-）" maxlength="20" autocomplete="username" value="${Util.esc(rmb ? rmb.username : '')}">
+          <input id="lgName" placeholder="用户名" title="2~20位，支持中文、英文、数字、下划线和连字符" aria-describedby="lgNameHint" maxlength="20" autocomplete="username" value="${Util.esc(rmb ? rmb.username : '')}">
+          <div id="lgNameHint" class="login-field-hint">2~20位：中文、英文、数字、_、-</div>
           <input id="lgPw" type="password" placeholder="密码（6~64位）" maxlength="64" autocomplete="current-password" value="${Util.esc(rmb ? rmb.password : '')}">
           <label class="login-remember"><input type="checkbox" id="lgRemember" ${rmb ? 'checked' : ''}> 记住账号和密码</label>
           <div id="lgErr" class="login-err"></div>
