@@ -5182,6 +5182,147 @@ function assert_noBattle(res) {
   return !('battle' in res) && !('log' in res) && !('result' in res);
 }
 
+/* ============================================================================
+ * V0.307 · FIX-LOGIN-ENTER-01 登录页 Enter 键监听残留（玩家可触发的跨页面污染）
+ *
+ * 缺陷（public/js/ui/login.js:50 修复前）：
+ *   root.addEventListener('keydown', …) 绑在 **长期存在的 #screen 根容器**上。
+ *   UI.go 切页只做 root.innerHTML=''（不重建节点、不解绑监听），于是该 keydown
+ *   活过登录页 → 之后在任意页面按 Enter：
+ *     ① submit() 读 $('#lgName').value，此时 #lgName 已被清空 ⇒ null.value 抛 TypeError；
+ *     ② doSubmit 先 preventDefault() ⇒ 取消了目标按钮的默认 click，纯键盘路径失效。
+ *
+ * 本节全部为**集成层**断言：用 scripts/dom_stub.js 建真实节点树，加载**真实的**
+ * public/js/ui/login.js，经 **UI.Screens.login 真实入口** 渲染，然后向**真实绑定节点**
+ * 派发**真实冒泡事件**，观察 defaultPrevented / 默认 click 是否发生 / 是否抛错。
+ * 刻意不使用「查监听器数组」这类数据表自证写法。
+ * ============================================================================ */
+section('V0.307·FIX-LOGIN-ENTER-01 登录页 Enter 监听残留（集成层·真实事件流）');
+{
+  const domStub = require('./dom_stub.js');
+  const dom = domStub.createDom();
+  const document = dom.document;
+
+  /* login.js 依赖的宿主全局：仅本节需要，装完即还原，避免污染后续 section */
+  const savedGlobals = {};
+  const _win = global.window, _doc = global.document, _ui = global.UI, _acct = global.Account;
+  savedGlobals.window = _win; savedGlobals.document = _doc; savedGlobals.UI = _ui; savedGlobals.Account = _acct;
+  global.window = dom.window;
+  global.document = document;
+  global.UI = { Screens: {} };                 // common.js 只做 UI.Screens.login = … 的接线
+  const accountCalls = [];
+  global.Account = {
+    login: (n, p) => { accountCalls.push({ m: 'login', n, p }); return Promise.resolve({ ok: true, save: {} }); },
+    register: (n, p) => { accountCalls.push({ m: 'register', n, p }); return Promise.resolve({ ok: true, save: {} }); }
+  };
+
+  const { LoginUI } = require('../public/js/ui/login.js');   // 真实模块，非复刻
+  assert('（集成层·接线）login.js 真实入口注册进 UI.Screens（否则下面全部无效）',
+    UI.Screens.login === LoginUI.screen, typeof UI.Screens.login);
+
+  /* 真实 #screen：与 index.html:26 <main id="screen"> 同构，跨切页长期存在 */
+  const screenEl = document.createElement('main');
+  screenEl.id = 'screen';
+  document.body.appendChild(screenEl);
+
+  /* ---- 1. 登录页渲染 + Enter 提交回归（修复不得破坏的既有功能）---- */
+  UI.Screens.login(screenEl);                   // ← 走 UI.Screens 真实入口
+  const nameEl = document.querySelector('#lgName');
+  const pwEl = document.querySelector('#lgPw');
+  const submitEl = document.querySelector('#lgSubmit');
+  assert('（集成层）登录页真实渲染出 #lgName / #lgPw / #lgSubmit',
+    !!nameEl && !!pwEl && !!submitEl);
+  /* 10-01 已验收的文案与无障碍属性：本次修复不得触碰（防回归护栏） */
+  assert('（集成层·防误伤）10-01 文案/无障碍属性原样保留（placeholder/title/aria-describedby/#lgNameHint）',
+    nameEl.getAttribute('placeholder') === '用户名' &&
+    nameEl.getAttribute('aria-describedby') === 'lgNameHint' &&
+    nameEl.getAttribute('title') === '2~20位，支持中文、英文、数字、下划线和连字符' &&
+    !!document.querySelector('#lgNameHint'),
+    JSON.stringify({
+      ph: nameEl.getAttribute('placeholder'), ad: nameEl.getAttribute('aria-describedby'),
+      hint: !!document.querySelector('#lgNameHint')
+    }));
+
+  nameEl.value = 'sailor';
+  pwEl.value = 'pw123456';
+  const loginEnter = dom.event('keydown', { key: 'Enter' });
+  pwEl.dispatchEvent(loginEnter);              // 在密码框按 Enter（真实冒泡到绑定节点）
+  assert('（集成层·回归）登录框内按 Enter 仍然提交（Account.login 被真实调用）',
+    accountCalls.length === 1 && accountCalls[0].m === 'login' && accountCalls[0].n === 'sailor',
+    JSON.stringify(accountCalls));
+
+  /* ---- 1b. 结构护栏（辅助证据，主证据是下面第 3 节的真实事件流断言）：
+     监听落在登录页自己的容器上，#screen 上不留 keydown。必须在登录页仍渲染时查。---- */
+  const wrapEl = document.querySelector('.login-wrap');
+  assert('（集成层·结构·辅助）keydown 绑在登录页容器 .login-wrap 上，而非长期存在的 #screen',
+    !!wrapEl && wrapEl.listenerCount('keydown') === 1 && screenEl.listenerCount('keydown') === 0,
+    'wrap=' + !!wrapEl + ' wrapListeners=' + (wrapEl ? wrapEl.listenerCount('keydown') : 'n/a') +
+    ' screenListeners=' + screenEl.listenerCount('keydown'));
+  assert('（集成层·结构·辅助）#screen 上不残留任何 keydown 监听（切页不解绑正是本缺陷的根）',
+    screenEl.listenerCount('keydown') === 0, 'screenListeners=' + screenEl.listenerCount('keydown'));
+
+  /* ---- 2. 切页：复刻 UI.go 的 root.innerHTML = ''（真实实现的切页语义）---- */
+  screenEl.innerHTML = '';
+  assert('（集成层·前置）切页后 #lgName 确实不存在了（这正是 TypeError 的前提）',
+    document.querySelector('#lgName') === null);
+
+  /* 非登录页：母港样式的一排按钮（玩家真实会聚焦它们） */
+  screenEl.innerHTML = `
+    <div class="page-head"><span class="ph-title">母港</span><span class="ph-sub">司令部总览</span></div>
+    <div class="home-top">
+      <button class="btn" id="btnGoSortie" data-go="sortie">出 击</button>
+      <button class="btn" id="btnOther" data-go="library">图 鉴</button>
+    </div>`;
+  const target = document.querySelector('#btnGoSortie');
+  let defaultClicks = 0;
+  target.addEventListener('click', () => { defaultClicks++; });
+
+  /* ---- 3. 玩家在非登录页按 Enter：必须不抛错，且不得取消按钮默认行为 ---- */
+  let threw = null;
+  const homeEnter = dom.event('keydown', { key: 'Enter' });
+  try { target.dispatchEvent(homeEnter); } catch (e) { threw = e; }
+  assert('（集成层）非登录页按 Enter **不抛错**（#lgName 已销毁不得再被访问）',
+    threw === null, threw ? (threw.constructor.name + ': ' + threw.message) : '');
+  assert('（集成层）非登录页按 Enter **不取消**目标按钮默认行为（defaultPrevented === false）',
+    homeEnter.defaultPrevented === false, 'defaultPrevented=' + homeEnter.defaultPrevented);
+  assert('（集成层）非登录页按钮聚焦后按 Enter，浏览器默认 click 真的发生（键盘路径可用）',
+    defaultClicks === 1, 'defaultClicks=' + defaultClicks);
+
+  /* 空格键同理（纯键盘可达性）：登录页残留监听会一并吃掉它 */
+  let threwSpace = null, spaceClicks = 0;
+  target.addEventListener('click', () => { spaceClicks++; });
+  const homeSpace = dom.event('keydown', { key: ' ' });
+  try { target.dispatchEvent(homeSpace); } catch (e) { threwSpace = e; }
+  assert('（集成层）非登录页按 Space 同样不抛错、且默认 click 照常发生',
+    threwSpace === null && spaceClicks === 1,
+    'threw=' + (threwSpace && threwSpace.message) + ' clicks=' + spaceClicks);
+
+  /* ---- 4. 反向护栏：登录页内 Enter 提交只认登录页自己的容器 ---- */
+  /* 注：.login-wrap 的结构校验已在第 1b 节（登录页仍渲染时）完成，此处不再重复。 */
+
+  /* ---- 5. 反复进出登录页：监听不得累积（登录 → 切走 ×3）---- */
+  for (let i = 0; i < 3; i++) {
+    UI.Screens.login(screenEl);
+    screenEl.innerHTML = '<button id="x' + i + '">按钮' + i + '</button>';
+  }
+  const beforeCalls = accountCalls.length;
+  const xBtn = document.querySelector('#x2');
+  let threwLoop = null, loopClicks = 0;
+  xBtn.addEventListener('click', () => { loopClicks++; });
+  const loopEnter = dom.event('keydown', { key: 'Enter' });
+  try { xBtn.dispatchEvent(loopEnter); } catch (e) { threwLoop = e; }
+  assert('（集成层）反复进出登录页 3 次后，非登录页按 Enter 仍不抛错',
+    threwLoop === null, threwLoop ? threwLoop.message : '');
+  assert('（集成层）反复进出登录页 3 次后，Enter 既不误触发登录提交、也不吞掉按钮默认 click',
+    accountCalls.length === beforeCalls && loopClicks === 1,
+    'calls=' + (accountCalls.length - beforeCalls) + ' clicks=' + loopClicks);
+
+  /* 还原全局（本节是 simulate.js 末尾，不污染任何其它 section） */
+  global.window = _win; global.document = _doc; global.UI = _ui; global.Account = _acct;
+  if (_win === undefined) delete global.window;
+  if (_doc === undefined) delete global.document;
+}
+
 section('总结');
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed ? 1 : 0);

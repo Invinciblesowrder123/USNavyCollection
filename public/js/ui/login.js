@@ -47,7 +47,17 @@ const LoginUI = (() => {
       b.addEventListener('click', () => setMode(b.dataset.mode)));
     const doSubmit = e => { e.preventDefault(); submit(); };
     $('#lgSubmit').addEventListener('click', doSubmit);
-    root.addEventListener('keydown', e => { if (e.key === 'Enter') doSubmit(e); });
+    /* FIX-LOGIN-ENTER-01：Enter 提交**只**绑在登录页自己的容器 .login-wrap 上，
+     * 绝不绑 #screen。#screen 是长期存在的根节点，UI.go 切页只做 root.innerHTML=''
+     * （不重建节点、不解绑监听），所以绑在它身上的 keydown 会活过登录页：
+     *   之后在**任意**页面按 Enter 都会进 doSubmit，而此时 #lgName 已被 innerHTML 清空
+     *   ⇒ submit() 读 null.value 抛 TypeError；同时 preventDefault() 顺手取消了
+     *   目标按钮的默认 click，纯键盘（focus + Enter/Space）路径失效。
+     * 绑到 .login-wrap 则随登录页 DOM 一起被丢弃，天然不跨页泄漏（无需解绑、无累积）。
+     * 登录页内的行为与原先完全一致：.login-wrap 是登录页 markup 的根，
+     * 页内任意位置（含两个页签按钮、提交按钮、两个输入框）按 Enter 都冒泡到它。*/
+    const wrap = root.querySelector('.login-wrap');
+    if (wrap) wrap.addEventListener('keydown', e => { if (e.key === 'Enter') doSubmit(e); });
     $('#lgName').focus();
   }
 
